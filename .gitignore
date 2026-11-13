@@ -5,3 +5,6 @@ dist
 *.log
 dist-tv
 .env.local
+dist-perf
+tools/perf/.cache
+tools/perf/captures

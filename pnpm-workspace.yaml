@@ -2,6 +2,7 @@ packages:
   - packages/*
   - server
   - web
+  - tools/*
 
 allowBuilds:
   esbuild: true

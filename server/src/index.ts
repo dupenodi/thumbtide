@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage } from "node:http";
+import { pathToFileURL } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
   CLOSE_CODES,
@@ -205,8 +206,8 @@ export function startServer(opts: StartOptions = {}) {
   };
 }
 
-// Run directly: `tsx src/index.ts`
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run directly: `tsx src/index.ts` (pathToFileURL, so Windows paths match too)
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT ?? 8787);
   const server = startServer({
     port,
