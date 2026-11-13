@@ -399,9 +399,11 @@
 
 .hm-warm s {
   display: block;
+  width: 100%;
   height: 100%;
   background: #ffd84d;
-  transition: width 0.2s linear;
+  transform-origin: left center;
+  transition: transform 0.2s linear;
 }
 
 /* ---- lite (the TV): no filters, no gradient text, no endless animations */
@@ -417,8 +419,28 @@
   background: none;
 }
 
+/* a smaller slam: at 2.6x the big text's layer covers more than the screen at 4K, a large raster spike */
+.hm-lite .hm-ann.go b {
+  animation-name: hm-slam-lite;
+}
+
 .hm-lite .hm-ann.champ.go b {
-  animation: hm-slam 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+  animation: hm-slam-lite 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+
+@keyframes hm-slam-lite {
+  from {
+    transform: skewX(-10deg) scale(1.4);
+    opacity: 0;
+  }
+  60% {
+    transform: skewX(-10deg) scale(0.95);
+    opacity: 1;
+  }
+  to {
+    transform: skewX(-10deg) scale(1);
+    opacity: 1;
+  }
 }
 
 .hm-lite .hm-ico svg {

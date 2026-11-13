@@ -29,6 +29,9 @@ interface Card {
   pips: HTMLElement;
   icon: HTMLElement;
   key: string;
+  /** What the icon and the pips show now (rebuilt only when these change, not on every hit). */
+  weapon: string;
+  pipKey: string;
 }
 
 export class Hud {
@@ -93,6 +96,8 @@ export class Hud {
           pips: el.querySelector(".hm-pips")!,
           icon: el.querySelector(".hm-ico")!,
           key: "",
+          weapon: "",
+          pipKey: "",
         });
       }
     }
@@ -111,8 +116,15 @@ export class Hud {
       c.el.classList.toggle("out", !s.alive);
       c.el.classList.toggle("stun", s.alive && s.stunned);
       c.el.classList.toggle("bare", s.alive && !s.armed);
-      c.icon.innerHTML = WEAPON_ICON[s.weapon];
-      c.pips.innerHTML = Array.from({ length: winsToMatch }, (_, i) => `<i${i < s.wins ? ' class="on"' : ""}></i>`).join("");
+      if (c.weapon !== s.weapon) {
+        c.weapon = s.weapon;
+        c.icon.innerHTML = WEAPON_ICON[s.weapon];
+      }
+      const pipKey = `${s.wins}/${winsToMatch}`;
+      if (c.pipKey !== pipKey) {
+        c.pipKey = pipKey;
+        c.pips.innerHTML = Array.from({ length: winsToMatch }, (_, i) => `<i${i < s.wins ? ' class="on"' : ""}></i>`).join("");
+      }
       (c.el.querySelector(".hm-stamp") as HTMLElement).textContent = !s.alive ? "K.O." : s.stunned ? "STUNNED" : !s.armed ? "NO WEAPON" : "";
     }
   }
@@ -120,11 +132,14 @@ export class Hud {
   /** Big centre text. `ms` 0 keeps it until the next call. */
   announce(kind: AnnounceKind, big: string, small = "", color = "", ms = 1400): void {
     clearTimeout(this.annTimer);
-    this.ann.className = `hm-ann ${kind}`;
-    this.ann.style.setProperty("--c", color || "#ffd84d");
-    this.ann.innerHTML = `<b data-t="${esc(big)}">${esc(big)}</b>${small ? `<span>${esc(small)}</span>` : ""}`;
-    void this.ann.offsetWidth;
-    this.ann.classList.add("go");
+    // A new element starts its animation from the beginning, without forcing a layout of the page
+    // (reading offsetWidth to restart it cost a full synchronous layout on the TV, several times a round).
+    const el = document.createElement("div");
+    el.className = `hm-ann ${kind} go`;
+    el.style.setProperty("--c", color || "#ffd84d");
+    el.innerHTML = `<b data-t="${esc(big)}">${esc(big)}</b>${small ? `<span>${esc(small)}</span>` : ""}`;
+    this.ann.replaceWith(el);
+    this.ann = el;
     if (ms) this.annTimer = window.setTimeout(() => this.clearAnnounce(), ms);
   }
 
@@ -159,6 +174,7 @@ export class Hud {
     if (text === null) return;
     this.warmText.textContent = text;
     this.warm.classList.toggle("timed", frac !== null);
-    this.warmBar.style.width = `${Math.max(0, Math.min(1, frac ?? 0)) * 100}%`;
+    // transform, not width: the TV only recomposites the bar (width meant layout + paint all warm-up long)
+    this.warmBar.style.transform = `scaleX(${Math.max(0, Math.min(1, frac ?? 0))})`;
   }
 }
