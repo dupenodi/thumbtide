@@ -33,7 +33,11 @@ export function createHud(root: HTMLElement) {
   let railKey = "";
   let turnKey = "";
   let timerBar: HTMLElement | null = null;
+  let timerOn = false;
   let chainHide: ReturnType<typeof setTimeout> | null = null;
+  /** What each card's line shows now, so unchanged text isn't written (and laid out) again. */
+  let subs: string[] = [];
+  let endHtml = "";
 
   const piece = (c: string, cls = "") => `<i class="cz-piece ${cls}" style="${colorVars(c)}"></i>`;
 
@@ -58,6 +62,9 @@ export function createHud(root: HTMLElement) {
             </div>`,
           )
           .join("");
+        subs = [];
+        timerBar = null;
+        timerOn = false;
       }
       rail.style.setProperty("--n", String(seats.length));
       rail.querySelectorAll<HTMLElement>(".cz-seat").forEach((el, i) => {
@@ -66,14 +73,23 @@ export function createHud(root: HTMLElement) {
         el.classList.toggle("out", !s.alive);
         el.classList.toggle("away", s.away);
         const tag = s.bot ? "CPU" : s.away ? "Away" : "";
-        (el.querySelector(".cz-sub") as HTMLElement).innerHTML = !s.alive
-          ? "Out"
-          : `<b>${s.pieces}</b> ${s.pieces === 1 ? "piece" : "pieces"}${tag ? `<em>${tag}</em>` : ""}`;
-        (el.querySelector(".cz-wins") as HTMLElement).textContent = s.wins ? `${s.wins}` : "";
-        (el.querySelector(".cz-wins") as HTMLElement).classList.toggle("has", s.wins > 0);
+        const sub = !s.alive ? "Out" : `<b>${s.pieces}</b> ${s.pieces === 1 ? "piece" : "pieces"}${tag ? `<em>${tag}</em>` : ""}`;
+        if (subs[i] !== sub) {
+          subs[i] = sub;
+          (el.querySelector(".cz-sub") as HTMLElement).innerHTML = sub;
+        }
+        const winsEl = el.querySelector(".cz-wins") as HTMLElement;
+        const wins = s.wins ? `${s.wins}` : "";
+        if (winsEl.textContent !== wins) winsEl.textContent = wins;
+        winsEl.classList.toggle("has", s.wins > 0);
       });
-      rail.querySelectorAll(".cz-time").forEach((t) => t.classList.remove("run", "low"));
-      timerBar = active >= 0 ? (rail.querySelector(`.cz-seat[data-i="${active}"] .cz-time i`) as HTMLElement | null) : null;
+      // the turn timer moves to the new active card; the running one isn't reset (no flicker on a join or drop)
+      const bar = active >= 0 ? (rail.querySelector(`.cz-seat[data-i="${active}"] .cz-time i`) as HTMLElement | null) : null;
+      if (bar !== timerBar) {
+        timerBar?.parentElement!.classList.remove("run", "low");
+        timerBar = bar;
+        timerOn = false;
+      }
     },
 
     /** Whose turn it is, up top (null hides it). */
@@ -93,8 +109,9 @@ export function createHud(root: HTMLElement) {
 
     /** Turn timer on the active card: 1 = full, 0 = out of time, null = no timer. */
     timer(frac: number | null) {
-      if (!timerBar) return;
-      timerBar.parentElement!.classList.toggle("run", frac !== null);
+      if (!timerBar || (frac === null && !timerOn)) return;
+      timerOn = frac !== null;
+      timerBar.parentElement!.classList.toggle("run", timerOn);
       if (frac !== null) {
         timerBar.style.transform = `scaleX(${Math.max(0, Math.min(1, frac))})`;
         timerBar.parentElement!.classList.toggle("low", frac < 0.25);
@@ -113,6 +130,13 @@ export function createHud(root: HTMLElement) {
       chainN.classList.remove("tick");
       void chainN.offsetWidth;
       chainN.classList.add("tick");
+    },
+    /** A new board: the counter goes at once (a chain that was playing never finishes). */
+    chainReset() {
+      if (chainHide) clearTimeout(chainHide);
+      chainHide = null;
+      chainEl.classList.remove("show");
+      turnEl.classList.remove("hush");
     },
     chainDone() {
       if (!chainEl.classList.contains("show")) return;
@@ -136,13 +160,15 @@ export function createHud(root: HTMLElement) {
     /** The end of a round: the winner, everyone's finish, and who decides what's next. */
     end(s: CascadeShared | null, order: number[] = [], decider?: string) {
       if (!s || s.winner < 0) {
+        if (!endHtml) return;
+        endHtml = "";
         end.hidden = true;
         end.innerHTML = "";
         return;
       }
       const w = s.seats[s.winner]!;
       const place = (k: number) => (k === 0 ? "1st" : k === 1 ? "2nd" : k === 2 ? "3rd" : `${k + 1}th`);
-      end.innerHTML = `
+      const html = `
         <div class="cz-end-card" style="${colorVars(w.color)}">
           ${piece(w.color, "big")}
           <h1><b>${esc(w.name)}</b> wins</h1>
@@ -155,6 +181,10 @@ export function createHud(root: HTMLElement) {
             .join("")}</ol>
           <p class="cz-end-next">${decider ? `<b>${esc(decider)}</b> picks what's next` : "Play again from a phone"}</p>
         </div>`;
+      // room events publish often during the end screen: rebuild (and replay its entrance) only when it changed
+      if (html === endHtml) return;
+      endHtml = html;
+      end.innerHTML = html;
       end.hidden = false;
     },
 
