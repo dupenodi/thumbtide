@@ -20,6 +20,7 @@ export const MATERIAL_TINT: Record<Material, string> = {
   stone: "#9a9ea8",
   silver: "#e9eef8",
   steel: "#dfe8f4",
+  gold: "#f2c14e",
 };
 
 export const WEAPON_TINT = Object.fromEntries(

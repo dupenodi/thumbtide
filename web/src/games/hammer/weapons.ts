@@ -9,7 +9,7 @@
 // of the berdish and the kathib (their files hold the blade only).
 
 export type WeaponClass = "hammer" | "axe" | "mace" | "sword" | "dual";
-export type Material = "wood" | "iron" | "stone" | "silver" | "steel";
+export type Material = "wood" | "iron" | "stone" | "silver" | "steel" | "gold";
 
 export type WeaponKind =
   | "mallet"
@@ -32,15 +32,21 @@ export type WeaponKind =
   | "silverblade"
   | "palash"
   | "twin"
-  | "tribune";
+  | "tribune"
+  | "krankhammer"
+  | "goldhammer"
+  | "goldaxe"
+  | "goldblade"
+  | "spikedflail"
+  | "krankmace";
 
 /** In card order: one row per class, light → heavy. */
 /** In card order: grouped by class, light → heavy. */
 export const WEAPON_KINDS: WeaponKind[] = [
-  "mallet", "hammer", "maul",
-  "bagor", "axe", "berdish",
-  "flail", "chainball", "silvermace",
-  "kathib", "claw", "sword", "severn", "innata", "broadblade", "saian", "silverblade", "palash", "hisaian",
+  "mallet", "hammer", "maul", "krankhammer", "goldhammer",
+  "bagor", "axe", "berdish", "goldaxe",
+  "flail", "chainball", "silvermace", "spikedflail", "krankmace",
+  "kathib", "claw", "sword", "severn", "innata", "broadblade", "saian", "silverblade", "palash", "hisaian", "goldblade",
   "twin", "tribune",
 ];
 
@@ -90,7 +96,7 @@ export interface PartSpec {
   /** Spawn angle; default π/2 (local +x pointing down, away from the machine). */
   angle?: number;
   /** Drawing hint. */
-  look: "hammer" | "mallet" | "axe" | "blade" | "link" | "handle" | "ball";
+  look: "hammer" | "mallet" | "axe" | "blade" | "link" | "spike" | "handle" | "ball";
   material: Material;
   /** Draw a shaft from the machine to this part (parts on a rod joint). */
   rod?: boolean;
@@ -138,6 +144,16 @@ const linkPart = (i: number, hang: number, density: number, material: Material):
   look: "link",
   material,
 });
+
+/** An n-gon inscribed in a w × h ellipse, like the exe's mesh helper (0x402390, mode n). */
+function ngon(n: number, w: number, h: number): number[] {
+  const v: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = ((i + 0.5) / n) * Math.PI * 2;
+    v.push(Math.cos(a) * w * 0.5, Math.sin(a) * h * 0.5);
+  }
+  return v;
+}
 
 const OCTAGON = [4.97488, 12.0104, -4.97489, 12.0104, -12.0104, 4.97488, -12.0104, -4.97489, -4.97488, -12.0104, 4.97489, -12.0104, 12.0104, -4.97488, 12.0104, 4.97488];
 
@@ -478,6 +494,103 @@ const list: WeaponSpec[] = [
       { a: "hull", b: "head", type: 2, radius: 58.8221, necess: 5 },
       { a: "hull", b: "back", type: 2, radius: 25, necess: 5 },
       { a: "head", b: "back", type: 0, radius: 117.351, necess: 1 },
+    ],
+  },
+  // ---- weapons the exe builds in code (item factory 0x486ff0; values read from the asm) ----
+  // hammer_krank (id 205): box 17 × 34, density 64, sharpness 3, rod 60
+  rodWeapon("krankhammer", "hammer", {
+    tier: 3,
+    label: "Krank hammer",
+    blurb: "A long-headed brute.",
+    rod: 60,
+    part: { mesh: box(8.5, 17), density: 64, sharpness: 3, bladeable: 0, look: "hammer", material: "iron" },
+  }),
+  // hammer_gold (id 206), "Dayram's hammer": box 19 × 31, density 60, sharpness 3, rod 60
+  rodWeapon("goldhammer", "hammer", {
+    tier: 3,
+    label: "Dayram's hammer",
+    blurb: "A champion's gold hammer.",
+    rod: 60,
+    part: { mesh: box(9.5, 15.5), density: 60, sharpness: 3, bladeable: 0, look: "hammer", material: "gold" },
+  }),
+  // axe_gold (id 225), "axe of Avire-Aseed": box 19 × 35, density 55, sharpness 3, bladeable 1 (u-side 0), rod 58,
+  // m_jrad_y −1
+  rodWeapon("goldaxe", "axe", {
+    tier: 3,
+    label: "Avire-Aseed axe",
+    blurb: "A champion's gold axe.",
+    rod: 58,
+    sby: -1,
+    part: { mesh: box(9.5, 17.5), density: 55, sharpness: 3, bladeable: 1, bladeableU: 0, look: "axe", material: "gold" },
+  }),
+  // gold_blade (id 238), "Arjuna sword": box 44 × 14, density 35, sharpness 3.5, bladeable 1 both edges, rod 49
+  rodWeapon("goldblade", "sword", {
+    tier: 3,
+    label: "Arjuna sword",
+    blurb: "A champion's gold sword.",
+    rod: 49,
+    part: { mesh: box(22, 7), density: 35, sharpness: 3.5, bladeable: 1, look: "blade", material: "gold" },
+  }),
+  // mace_sharp (id 216): 4 chain_large links (the first 12 × 6.6), 3 spiked links (15 × 20, 16 × 21, 17 × 22,
+  // sharpness 4, bladeable), handle 31 × 9, ball an octagon 30 × 30, density 30, sharpness 3.5, bladeable 1
+  {
+    kind: "spikedflail",
+    cls: "mace",
+    tier: 3,
+    label: "Spiked flail",
+    blurb: "Bladed links and a spiked ball.",
+    striker: "ball",
+    parts: [
+      { key: "link0", mesh: box(6, 3.3), density: 20, sharpness: 1, bladeable: 0, hang: 10, look: "link", material: "iron" },
+      linkPart(1, 19, 20, "iron"),
+      linkPart(2, 28, 20, "iron"),
+      linkPart(3, 37, 20, "iron"),
+      { key: "spike3", mesh: box(7.5, 10), density: 20, sharpness: 4, bladeable: 1, hang: 47, look: "spike", material: "iron" },
+      { key: "spike2", mesh: box(8, 10.5), density: 20, sharpness: 4, bladeable: 1, hang: 59, look: "spike", material: "iron" },
+      { key: "spike1", mesh: box(8.5, 11), density: 20, sharpness: 4, bladeable: 1, hang: 73, look: "spike", material: "iron" },
+      { key: "handle", mesh: box(15.5, 4.5), density: 30, sharpness: 1, bladeable: 0, hang: 90, look: "handle", material: "wood" },
+      { key: "ball", mesh: ngon(8, 30, 30), density: 30, sharpness: 3.5, bladeable: 1, hang: 101, look: "ball", material: "iron" },
+    ],
+    joints: [
+      { a: "hull", b: "link0", type: 3, radius: 10, necess: 999 },
+      { a: "link0", b: "link1", type: 3, radius: 9, necess: 999 },
+      { a: "link1", b: "link2", type: 3, radius: 9, necess: 999 },
+      { a: "link2", b: "link3", type: 3, radius: 9, necess: 999 },
+      { a: "link3", b: "spike3", type: 5, radius: 5, sbx: -5, necess: 999 },
+      { a: "spike3", b: "spike2", type: 5, radius: 1, sax: 5, sbx: -6, necess: 999 },
+      { a: "spike2", b: "spike1", type: 5, radius: 1, sax: 6, sbx: -7, necess: 999 },
+      { a: "spike1", b: "handle", type: 5, radius: 2, sax: 7, sbx: -8, necess: 999 },
+      { a: "handle", b: "ball", type: 5, radius: 3, sax: 8, necess: 999 },
+    ],
+  },
+  // mace_krank (id 215): 6 chain_large links (the first 14 × 8.4), grip mace_krank_hold 38 × 10, ball an octagon
+  // 34 × 34, density 70, sharpness 2
+  {
+    kind: "krankmace",
+    cls: "mace",
+    tier: 3,
+    label: "Krank mace",
+    blurb: "A wrecking ball on a long grip.",
+    striker: "ball",
+    parts: [
+      { key: "link0", mesh: box(7, 4.2), density: 20, sharpness: 1, bladeable: 0, hang: 10, look: "link", material: "iron" },
+      linkPart(1, 19, 20, "iron"),
+      linkPart(2, 28, 20, "iron"),
+      linkPart(3, 37, 20, "iron"),
+      linkPart(4, 46, 20, "iron"),
+      linkPart(5, 55, 20, "iron"),
+      { key: "handle", mesh: box(19, 5), density: 30, sharpness: 1, bladeable: 0, hang: 74, look: "handle", material: "iron" },
+      { key: "ball", mesh: ngon(8, 34, 34), density: 70, sharpness: 2, bladeable: 0, hang: 89, look: "ball", material: "stone" },
+    ],
+    joints: [
+      { a: "hull", b: "link0", type: 3, radius: 10, necess: 999 },
+      { a: "link0", b: "link1", type: 3, radius: 9, necess: 999 },
+      { a: "link1", b: "link2", type: 3, radius: 9, necess: 999 },
+      { a: "link2", b: "link3", type: 3, radius: 9, necess: 999 },
+      { a: "link3", b: "link4", type: 3, radius: 9, necess: 999 },
+      { a: "link4", b: "link5", type: 3, radius: 9, necess: 999 },
+      { a: "link5", b: "handle", type: 5, radius: 2, sbx: -17, necess: 999 },
+      { a: "handle", b: "ball", type: 5, radius: 5, sax: 10, necess: 999 },
     ],
   },
 ];

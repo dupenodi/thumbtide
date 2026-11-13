@@ -298,6 +298,18 @@ export class Renderer {
         ctx.stroke();
         ctx.fillStyle = "#b8893e";
         ctx.fillRect(minX - 3, -maxY - 3, 4, maxY * 2 + 6);
+      } else if (part.look === "spike") {
+        // a bladed chain link: an iron block with a spike on each side
+        ctx.fillStyle = "#c9ced8";
+        ctx.beginPath();
+        ctx.moveTo(-3, -maxY);
+        ctx.lineTo(0, -maxY - 6);
+        ctx.lineTo(3, -maxY);
+        ctx.moveTo(-3, maxY);
+        ctx.lineTo(0, maxY + 6);
+        ctx.lineTo(3, maxY);
+        ctx.fill();
+        this.solid(b, pal, 1.5);
       } else if (part.look === "link") {
         ctx.strokeStyle = pal.fill;
         ctx.lineWidth = 2;
@@ -540,6 +552,7 @@ const PALETTE: Record<Material, { fill: string; stroke: string }> = {
   stone: { fill: "#6c7280", stroke: "#3a3f4b" },
   silver: { fill: "#d6dce8", stroke: "#8d95a6" },
   steel: { fill: "#e6eaf2", stroke: "#7d8494" },
+  gold: { fill: "#e3b341", stroke: "#8a6414" },
 };
 
 /** Output of worldAt (read it before the next call). */

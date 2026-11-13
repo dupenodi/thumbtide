@@ -442,10 +442,12 @@ Up to four little flying machines, each with a heavy weapon on a rod or chain. T
 or sideways: the machine flies where you push, so flying in circles whips the weapon round. Damage comes from how hard
 a hit lands, big hits stun, and blades cut harder when they slide across fast. Last machine flying wins the round.
 
-Twelve weapons in four classes, each light → heavy: hammers (wooden mallet, spiked hammer, great maul), axes (bagor,
-iron axe, berdish: one cutting edge), maces (wooden flail, chain ball, silver mace) and swords (kathib, katar, hisaian).
-Most come from Hammerfight's own object files; the wooden ones and the maul are ours (see `weapons.ts`). Heavier
-weapons hit harder but drag the machine round.
+27 weapons in five classes: hammers (wooden mallet, spiked hammer, great maul, krank hammer, Dayram's gold hammer),
+axes with one cutting edge (bagor, iron axe, berdish, Avire-Aseed gold axe), maces (wooden flail, chain ball, silver
+mace, spiked flail, krank mace), eleven swords (kathib, claw, katar, severn, innata, broad blade, saian, silver blade,
+palash, hisaian, Arjuna gold sword) and two dual sets with a weapon on each side (twin blades, tribune). They come from
+Hammerfight's object files and from its item factory in the exe; the wooden ones and the maul are ours (see
+`weapons.ts`). Heavier weapons hit harder but drag the machine round.
 
 Each round starts with a warm-up: fly and swing with no damage, and pick a weapon on the phone.
 
