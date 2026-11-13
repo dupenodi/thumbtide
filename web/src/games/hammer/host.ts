@@ -56,14 +56,16 @@ const mount: HostMount = (ctx) => {
   const gain = spec.tune.gain ?? 6;
   const stickGain = spec.tune.stick ?? 150;
 
+  const lite = isWebOS || !!startParam("lite");
   const tuning = { ...DEFAULT_TUNING };
   const arena = new Arena(tuning);
-  const fx = new Fx();
+  // the TV strokes each spark separately on a weak CPU: fewer at once
+  const fx = new Fx(lite ? 80 : 240);
 
   // ---- DOM ---------------------------------------------------------------------------------------
   const root = document.createElement("div");
   // hm-lite: the TV skips filters, gradient text and endless animations, which it repaints slowly
-  root.className = isWebOS || startParam("lite") ? "hm-root hm-lite" : "hm-root";
+  root.className = lite ? "hm-root hm-lite" : "hm-root";
   root.innerHTML = `<canvas class="hm-canvas"></canvas>`;
   ctx.root.appendChild(root);
   const canvas = root.querySelector<HTMLCanvasElement>(".hm-canvas")!;
@@ -140,6 +142,7 @@ const mount: HostMount = (ctx) => {
 
   const dropSeat = (s: Seat) => {
     if (s.m) {
+      fx.trails.delete(s.m);
       byMachine.delete(s.m);
       arena.remove(s.m);
     }
@@ -190,6 +193,7 @@ const mount: HostMount = (ctx) => {
 
   const unseat = (s: Seat) => {
     if (s.m) {
+      fx.trails.delete(s.m);
       byMachine.delete(s.m);
       arena.remove(s.m);
       s.m = null;
@@ -201,6 +205,10 @@ const mount: HostMount = (ctx) => {
   let phase: Phase = "pick";
   let round = 0;
   let left = FIRST_PICK_S;
+  /** This warm-up's full length (the first one is longer), for the countdown bar and while waiting for players. */
+  let pickTotal = FIRST_PICK_S;
+  /** Real seconds in the current phase. */
+  let phaseFor = 0;
   let lastWhole = -1;
   let winner: Seat | null = null;
   let callAt = -1;
@@ -237,6 +245,10 @@ const mount: HostMount = (ctx) => {
     phase = "pick";
     round++;
     left = seconds;
+    pickTotal = seconds;
+    phaseFor = 0;
+    lastWhole = -1;
+    arena.resetTime(); // the last round may have ended in slow motion
     winner = null;
     callAt = -1;
     tuning.damage = 0; // warm-up: fly and swing, no damage
@@ -255,6 +267,7 @@ const mount: HostMount = (ctx) => {
 
   const startFight = () => {
     phase = "fight";
+    phaseFor = 0;
     tuning.damage = DEFAULT_TUNING.damage;
     tuning.slomo = DEFAULT_TUNING.slomo;
     for (const s of seated()) spawn(s);
@@ -272,6 +285,7 @@ const mount: HostMount = (ctx) => {
       if (winner.human) host.send(winner.id, { type: "win" });
     }
     phase = winner && winner.wins >= winsToMatch() ? "match" : "result";
+    phaseFor = 0;
     left = phase === "match" ? MATCH_S : RESULT_S;
     tuning.slomo = 0;
     for (const s of seats.values()) pushOwn(s);
@@ -283,6 +297,7 @@ const mount: HostMount = (ctx) => {
   };
 
   const tickPhase = (real: number) => {
+    phaseFor += real;
     if (phase === "fight") {
       const alive = seated().filter((s) => s.m?.alive).length;
       if (alive <= 1 && callAt < 0) callAt = CALL_S;
@@ -294,7 +309,7 @@ const mount: HostMount = (ctx) => {
     }
     // Practice until there are two machines to fight.
     if (phase === "pick" && seated().length < 2) {
-      left = PICK_S;
+      left = pickTotal;
     } else {
       left -= real;
     }
@@ -409,7 +424,11 @@ const mount: HostMount = (ctx) => {
         if (s?.human) host.send(s.id, { type: "hit", dmg: 0 });
         hudDirty = true;
       } else if (e.type === "clash") {
-        fx.burst(e.x, e.y, 4 + Math.min(10, Math.round(e.impact / 10)), 220, "#cfe3ff", 1.5);
+        // a grind reports a clash every step: sparks at most every 60 ms (and fewer on the TV)
+        if (clashCd > 0) continue;
+        clashCd = 0.06;
+        const n = 4 + Math.min(10, Math.round(e.impact / 10));
+        fx.burst(e.x, e.y, lite ? Math.ceil(n / 2) : n, 220, "#cfe3ff", 1.5);
       } else {
         fx.burst(e.x, e.y, 40, 420, "#ffb547", 3);
         fx.burst(e.x, e.y, 16, 200, e.victim.color, 4);
@@ -427,6 +446,28 @@ const mount: HostMount = (ctx) => {
   };
 
   // ---- HUD ---------------------------------------------------------------------------------------
+  /** A number that changes when anything a player card shows changes (no allocations: it runs every frame). */
+  const cardSig = () => {
+    let h = 0;
+    for (const s of seats.values()) {
+      if (s.slot < 0 || !s.m) continue;
+      const m = s.m;
+      h = (h * 31 + Math.round(m.hp)) | 0;
+      h = (h * 8 + (m.alive ? 1 : 0) + (m.stun > 0 ? 2 : 0) + (m.armed ? 4 : 0)) | 0;
+    }
+    return h;
+  };
+  let lastSig = NaN;
+  let lastWarm = NaN;
+  /** The HUD only when something on it changed (it used to rebuild its view of every card every frame). */
+  const maybeDrawHud = () => {
+    const sig = cardSig();
+    const warm = phase === "pick" ? Math.round(left * 10) : -1;
+    if (!hudDirty && sig === lastSig && warm === lastWarm) return;
+    lastSig = sig;
+    lastWarm = warm;
+    drawHud();
+  };
   const drawHud = () => {
     hudDirty = false;
     const views: SeatView[] = seated().map((s) => ({
@@ -447,7 +488,7 @@ const mount: HostMount = (ctx) => {
       const waiting = seated().length < 2;
       hud.warmup(
         waiting ? "Warm-up · waiting for a second player (or add computer players in Settings)" : "Warm-up · pick your weapon on your phone",
-        waiting ? null : left / (round === 1 ? FIRST_PICK_S : PICK_S),
+        waiting ? null : left / pickTotal,
       );
     } else {
       hud.warmup(null, null);
@@ -483,27 +524,34 @@ const mount: HostMount = (ctx) => {
   let acc = 0;
   let last = performance.now();
   let raf = 0;
+  let clashCd = 0;
+  /** Frame rate cap for the current state: none while anyone can fight; 30 fps once a result is on screen. */
+  const capFps = () => ((phase === "result" || phase === "match") && phaseFor > 1.5 ? 30 : 0);
   const frame = (now: number) => {
     raf = requestAnimationFrame(frame);
+    // Paused: the canvas keeps its last picture. Drawing on under the pause menu made the TV redraw the
+    // canvas and redo the menu's full-screen backdrop blur every frame, for a still screen.
+    if (paused) return;
+    const cap = capFps();
+    if (cap && now - last < 1000 / cap - 4) return;
     perfTick(now, now - last);
     const real = Math.min(0.1, (now - last) / 1000);
     last = now;
-    if (!paused) {
-      acc += real;
-      let steps = 0;
-      while (acc >= STEP && steps < 6) {
-        for (const s of seated()) readInput(s);
-        arena.step();
-        handleEvents();
-        acc -= STEP;
-        steps++;
-      }
-      if (steps === 6) acc = 0;
-      tickPhase(real);
-      fx.update(real);
+    acc += real;
+    let steps = 0;
+    while (acc >= STEP && steps < 6) {
+      for (const s of seated()) readInput(s);
+      arena.step();
+      clashCd -= STEP;
+      handleEvents();
+      acc -= STEP;
+      steps++;
     }
+    if (steps === 6) acc = 0;
+    tickPhase(real);
+    fx.update(real);
     renderer.draw(arena, Math.min(1, acc / STEP), fx);
-    drawHud();
+    maybeDrawHud();
   };
 
   startPick(FIRST_PICK_S);
@@ -515,6 +563,8 @@ const mount: HostMount = (ctx) => {
       cancelAnimationFrame(raf);
       removeEventListener("resize", fit);
       offs.forEach((o) => o());
+      hud.clearAnnounce(); // its timer
+      canvas.width = canvas.height = 0; // let the TV have the canvas memory back now, not at the next GC
       root.remove();
     },
     pause() {
