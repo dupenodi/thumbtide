@@ -179,6 +179,7 @@ export const GAMES: GameDef[] = [
         default: 0,
         applies: "now",
       },
+      { key: "music", label: "Music", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: true, applies: "now" },
       { key: "slomo", label: "Slow motion on big hits", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: true, applies: "now" },
       { key: "teamCollision", label: "Teammates collide", options: [{ value: true, label: "Yes" }, { value: false, label: "No" }], default: true, applies: "now" },
       { key: "teamDamage", label: "Friendly fire", options: [{ value: false, label: "Off" }, { value: true, label: "On" }], default: false, applies: "now" },

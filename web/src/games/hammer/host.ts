@@ -4,7 +4,9 @@
 
 import type { Host, HostPlayer } from "@thumbtide/sdk";
 import { colorFor } from "../../config.ts";
+import { audio } from "../../shell/sound.ts";
 import { isWebOS, startParam } from "../../shell/tv.ts";
+import { createGameAudio } from "./audio.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount } from "../types.ts";
 import { type Bot, driveBot, makeBot } from "./bots.ts";
@@ -15,7 +17,7 @@ import { Fx, Renderer } from "./render.ts";
 import type { HammerGame, Mode, Phase } from "./shared.ts";
 import { Arena, type Machine, STEP, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
-import { MACHINE, WEAPON_KINDS, type WeaponKind } from "./weapons.ts";
+import { MACHINE, type Material, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
 const MAX_SEATS = 4;
 const SPAWNS: [number, number][] = [
@@ -72,6 +74,13 @@ const mount: HostMount = (ctx) => {
   const lite = isWebOS || !!startParam("lite");
   const tuning = { ...DEFAULT_TUNING };
   const arena = new Arena(tuning);
+  const sound = createGameAudio(audio());
+  sound?.setMusicOn(ctx.settings().music !== false);
+  /** The material of a machine's striking part, for the hit sound. */
+  const materialOf = (m: Machine): Material => {
+    const w = WEAPONS[m.weapon];
+    return (w.parts.find((p) => p.key === w.striker) ?? w.parts[0]!).material;
+  };
   // the TV strokes each spark separately on a weak CPU: fewer at once
   const fx = new Fx(lite ? 80 : 240);
 
@@ -317,6 +326,8 @@ const mount: HostMount = (ctx) => {
     for (const s of seats.values()) pushOwn(s);
     pushShared();
     hud.clearFeed();
+    sound?.music("warm");
+    if (teamsSeated().size >= 2) sound?.sting("round");
     if (teamsSeated().size >= 2) hud.announce("round", `Round ${round}`, mode === "ffa" ? "Pick your weapon" : mode === "teams" ? "Red vs Blue" : "Players vs CPU", "#ffd84d", 1800);
     else hud.clearAnnounce();
     hudDirty = true;
@@ -332,6 +343,8 @@ const mount: HostMount = (ctx) => {
     for (const s of seated()) spawn(s);
     for (const s of seats.values()) pushOwn(s);
     hud.announce("fight", "Fight!", "", "#ffd84d", 1100);
+    sound?.sting("fight");
+    sound?.music("fight");
     pushShared();
     hudDirty = true;
   };
@@ -357,6 +370,8 @@ const mount: HostMount = (ctx) => {
     tuning.slomo = 0;
     for (const s of seats.values()) pushOwn(s);
     pushShared();
+    sound?.music("off");
+    sound?.sting(phase === "match" ? "champ" : "win");
     if (phase === "match") hud.announce("champ", winner!.label, mode === "ffa" ? "Champion" : "Champions", winner!.color, 0);
     else if (winner) hud.announce("win", `${winner.label} wins`, `Round ${round}`, winner.color, 0);
     else hud.announce("win", "Draw", "", "#ffffff", 0);
@@ -387,7 +402,10 @@ const mount: HostMount = (ctx) => {
     if (Math.ceil(left) !== lastWhole) {
       lastWhole = Math.ceil(left);
       pushShared();
-      if (phase === "pick" && teamsSeated().size >= 2 && lastWhole >= 1 && lastWhole <= 3) hud.announce("count", String(lastWhole), "", "#ffd84d", 900);
+      if (phase === "pick" && teamsSeated().size >= 2 && lastWhole >= 1 && lastWhole <= 3) {
+        hud.announce("count", String(lastWhole), "", "#ffd84d", 900);
+        sound?.sting("count", lastWhole);
+      }
     }
     if (left > 0) return;
     if (phase === "pick") startFight();
@@ -428,6 +446,7 @@ const mount: HostMount = (ctx) => {
     ctx.onSettings(() => {
       // the toggles apply at once; the mode from the next warm-up
       applyToggles();
+      sound?.setMusicOn(ctx.settings().music !== false);
       if (phase === "fight") tuning.slomo = ctx.settings().slomo === false ? 0 : 1;
       syncBots();
       if (phase === "pick") fillSeats();
@@ -476,6 +495,7 @@ const mount: HostMount = (ctx) => {
     };
     for (const e of arena.events) {
       if (e.type === "hit") {
+        sound?.hit(e.dmg, e.impact, e.cut, materialOf(e.attacker));
         hitFx(e.x, e.y, e.dmg, e.cut, e.victim.color);
         const a = byMachine.get(e.attacker);
         const v = byMachine.get(e.victim);
@@ -485,6 +505,7 @@ const mount: HostMount = (ctx) => {
         }
         if (v) pushOwn(v);
       } else if (e.type === "disarm") {
+        sound?.disarm();
         fx.burst(e.x, e.y, 24, 360, "#cfe3ff", 2);
         fx.text(e.x, e.y - 20, "DISARMED", "#cfe3ff", 20);
         fx.shake = Math.min(12, fx.shake + 6);
@@ -494,10 +515,12 @@ const mount: HostMount = (ctx) => {
         if (a?.human) host.send(a.id, { type: "hit", dmg: 0 });
         hudDirty = true;
       } else if (e.type === "pickup") {
+        sound?.pickup();
         const s = byMachine.get(e.m);
         if (s?.human) host.send(s.id, { type: "hit", dmg: 0 });
         hudDirty = true;
       } else if (e.type === "clash") {
+        sound?.clash(e.impact);
         // a grind reports a clash every step: sparks at most every 60 ms (and fewer on the TV)
         if (clashCd > 0) continue;
         clashCd = 0.06;
@@ -510,6 +533,7 @@ const mount: HostMount = (ctx) => {
         const v = byMachine.get(e.victim);
         const by = e.by ? byMachine.get(e.by) : null;
         if (v) hud.feed(by ? { name: by.name, color: by.color } : null, { name: v.name, color: v.color });
+        sound?.ko();
         if (seated().filter((x) => x.m?.alive).length > 1) hud.announce("ko", "K.O.!", "", "#ff3d55", 900);
         if (v?.human) host.send(v.id, { type: "ko" });
         if (v) pushOwn(v);
@@ -594,6 +618,26 @@ const mount: HostMount = (ctx) => {
     perfSince = now;
   };
 
+  // ---- sound per frame -----------------------------------------------------------------------------
+  const stunned = new Set<Machine>();
+  const soundFrame = () => {
+    if (!sound) return;
+    let speed = 0;
+    let swing = 0;
+    let n = 0;
+    for (const m of arena.machines) {
+      if (!m.alive) continue;
+      n++;
+      speed += Math.hypot(m.hull.vx, m.hull.vy);
+      if (m.armed) swing = Math.max(swing, Math.hypot(m.striker.vx, m.striker.vy));
+      if (m.stun > 0 && !stunned.has(m)) {
+        stunned.add(m);
+        sound.stun();
+      } else if (m.stun <= 0) stunned.delete(m);
+    }
+    sound.frame(n ? Math.min(1, speed / n / tuning.speedClip) : 0, Math.min(1, swing / 1000), arena.timewarp);
+  };
+
   // ---- loop --------------------------------------------------------------------------------------
   let acc = 0;
   let last = performance.now();
@@ -623,6 +667,7 @@ const mount: HostMount = (ctx) => {
     }
     if (steps === 6) acc = 0;
     tickPhase(real);
+    soundFrame();
     fx.update(real);
     renderer.draw(arena, Math.min(1, acc / STEP), fx);
     maybeDrawHud();
@@ -630,10 +675,11 @@ const mount: HostMount = (ctx) => {
 
   startPick(FIRST_PICK_S);
   raf = requestAnimationFrame(frame);
-  if (import.meta.env.DEV) (window as unknown as { __rotor: unknown }).__rotor = { host, arena, seats, phase: () => phase };
+  if (import.meta.env.DEV) (window as unknown as { __rotor: unknown }).__rotor = { host, arena, seats, phase: () => phase, sound, audioCtx: audio() };
 
   return {
     dispose() {
+      sound?.dispose();
       cancelAnimationFrame(raf);
       removeEventListener("resize", fit);
       offs.forEach((o) => o());
@@ -642,9 +688,11 @@ const mount: HostMount = (ctx) => {
       root.remove();
     },
     pause() {
+      sound?.pause(true);
       paused = true;
     },
     resume() {
+      sound?.pause(false);
       paused = false;
       last = performance.now();
     },
