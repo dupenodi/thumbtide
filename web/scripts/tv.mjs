@@ -31,10 +31,14 @@ const opts = Object.fromEntries(
 const appinfo = JSON.parse(readFileSync(join(web, "tv/webos/appinfo.json"), "utf8"));
 appinfo.version = JSON.parse(readFileSync(join(web, "package.json"), "utf8")).version;
 
-const bin = (name) => join(web, "node_modules/.bin", name);
-const run = (name, ...a) => spawnSync(bin(name), a, { cwd: web, stdio: "inherit" }).status === 0;
+// On Windows the tools in .bin are .cmd files: they have to run through the shell, with their arguments quoted.
+const win = process.platform === "win32";
+const bin = (name) => join(web, "node_modules/.bin", win ? `${name}.cmd` : name);
+const quote = (a) => (win ? `"${String(a).replace(/"/g, '\\"')}"` : a);
+const spawnBin = (name, a, o) => spawnSync(win ? quote(bin(name)) : bin(name), a.map(quote), { cwd: web, shell: win, ...o });
+const run = (name, ...a) => spawnBin(name, a, { stdio: "inherit" }).status === 0;
 const capture = (name, ...a) => {
-  const r = spawnSync(bin(name), a, { cwd: web, encoding: "utf8" });
+  const r = spawnBin(name, a, { encoding: "utf8" });
   return { ok: r.status === 0, text: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 };
 const fail = (msg) => {
@@ -45,10 +49,14 @@ const fail = (msg) => {
 /** The TV to use: TV_DEVICE, or the first one set up with ares-setup-device that isn't an emulator. */
 function device() {
   let list = [];
-  try {
-    list = JSON.parse(readFileSync(join(homedir(), ".webos/tv/novacom-devices.json"), "utf8"));
-  } catch {
-    /* none set up yet */
+  // ares keeps its device list in ~/.webos, or in %APPDATA%\.webos on Windows
+  for (const dir of [homedir(), process.env.APPDATA].filter(Boolean)) {
+    try {
+      list = JSON.parse(readFileSync(join(dir, ".webos/tv/novacom-devices.json"), "utf8"));
+      break;
+    } catch {
+      /* not here */
+    }
   }
   const name = process.env.TV_DEVICE;
   const d = name ? list.find((x) => x.name === name) : list.find((x) => x.host !== "127.0.0.1" && x.profile === "tv");
@@ -92,7 +100,7 @@ const env = {
   VITE_JOIN_URL: process.env.VITE_JOIN_URL || `http://${ip}:5173/join/`,
 };
 console.log(`Building the TV app\n  relay  ${env.VITE_RELAY_URL}\n  phones ${env.VITE_JOIN_URL}\n`);
-if (spawnSync(bin("vite"), ["build", "--mode", "tv"], { cwd: web, env, stdio: "inherit" }).status !== 0) fail("Build failed.");
+if (spawnBin("vite", ["build", "--mode", "tv"], { env, stdio: "inherit" }).status !== 0) fail("Build failed.");
 
 // one plain script instead of a module: webOS can refuse modules (and crossorigin fetches) from file://
 const htmlPath = join(appDir, "index.html");

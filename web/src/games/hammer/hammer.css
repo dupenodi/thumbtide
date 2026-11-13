@@ -1,0 +1,772 @@
+/* Rotor Brawl. Phone: .hmc-*  TV: .hm-*
+   TV rules avoid color-mix, :has, aspect-ratio and flex gap (the LG TV app can run Chrome 79). */
+
+@font-face {
+  font-family: "Russo One";
+  src: url("./fonts/RussoOne-latin.woff2") format("woff2");
+  font-display: block;
+}
+
+/* ================================================================= TV */
+.hm-root {
+  position: absolute;
+  inset: 0;
+  background: #0b0d18;
+  overflow: hidden;
+  color: #fff;
+  font-family: "Russo One", system-ui, sans-serif;
+}
+
+.hm-canvas {
+  position: absolute;
+  display: block;
+}
+
+.hm-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ---- player cards */
+.hm-side {
+  position: absolute;
+  top: 2.4vh;
+  display: flex;
+}
+
+.hm-left {
+  left: 1.6vw;
+}
+
+.hm-right {
+  right: 1.6vw;
+  flex-direction: row-reverse;
+}
+
+.hm-card {
+  position: relative;
+  width: 20vw;
+  margin: 0 0.8vw;
+}
+
+.hm-plate {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 4.6vh;
+  padding: 0 1vw 0 0.6vw;
+  background: var(--c);
+  transform: skewX(-14deg);
+  box-shadow: 0 0.5vh 0 rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.hm-plate::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.28), rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.35));
+}
+
+.hm-plate > * {
+  position: relative;
+  z-index: 1;
+  transform: skewX(14deg);
+}
+
+.hm-p {
+  padding: 0.3vh 0.6vw;
+  margin-right: 0.8vw;
+  background: #0b0d18;
+  color: var(--c);
+  font-size: 2vh;
+}
+
+.hm-name {
+  flex: 1;
+  font-size: 2.5vh;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0.25vh 0 rgba(0, 0, 0, 0.45);
+}
+
+.hm-ico svg {
+  display: block;
+  width: 3.4vh;
+  height: 3.4vh;
+  color: #fff;
+  filter: drop-shadow(0 0.2vh 0 rgba(0, 0, 0, 0.5));
+}
+
+.hm-bar {
+  position: relative;
+  height: 2.3vh;
+  margin-top: 0.7vh;
+  background: rgba(8, 10, 20, 0.8);
+  border: 0.25vh solid rgba(255, 255, 255, 0.9);
+  transform: skewX(-14deg);
+  overflow: hidden;
+}
+
+.hm-bar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  transform-origin: left center;
+}
+
+.hm-chip {
+  background: #fff;
+  transition: transform 0.55s ease-in 0.35s;
+}
+
+.hm-hp {
+  background: linear-gradient(#b8ffc6, #36d266 55%, #1e9c49);
+  transition: transform 0.1s;
+}
+
+.hm-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 9.4%, rgba(0, 0, 0, 0.45) 9.4%, rgba(0, 0, 0, 0.45) 10%);
+}
+
+.hm-card.low .hm-hp {
+  background: linear-gradient(#ffc0c6, #ff3d55 55%, #b3112a);
+  animation: hm-blink 0.5s steps(2) infinite;
+}
+
+.hm-card.flip .hm-plate,
+.hm-card.flip .hm-bar {
+  transform: skewX(14deg);
+}
+
+.hm-card.flip .hm-plate {
+  flex-direction: row-reverse;
+  padding: 0 0.6vw 0 1vw;
+}
+
+.hm-card.flip .hm-plate > * {
+  transform: skewX(-14deg);
+}
+
+.hm-card.flip .hm-p {
+  margin: 0 0 0 0.8vw;
+}
+
+.hm-card.flip .hm-name {
+  text-align: right;
+}
+
+.hm-card.flip .hm-bar i {
+  transform-origin: right center;
+}
+
+.hm-pips {
+  margin-top: 0.8vh;
+  height: 1.6vh;
+  padding-left: 0.4vw;
+}
+
+.hm-card.flip .hm-pips {
+  text-align: right;
+  padding: 0 0.4vw 0 0;
+}
+
+.hm-pips i {
+  display: inline-block;
+  width: 1.2vh;
+  height: 1.2vh;
+  margin: 0 0.45vh;
+  border: 0.22vh solid rgba(255, 255, 255, 0.75);
+  transform: rotate(45deg);
+}
+
+.hm-pips i.on {
+  background: var(--c);
+  border-color: #fff;
+  box-shadow: 0 0 1vh var(--c);
+}
+
+.hm-stamp {
+  position: absolute;
+  top: 7.4vh;
+  right: 1vw;
+  font-size: 2.2vh;
+  color: #ff3d55;
+  transform: rotate(-7deg);
+  -webkit-text-stroke: 0.25vh #0b0d18;
+}
+
+.hm-card.flip .hm-stamp {
+  right: auto;
+  left: 1vw;
+  transform: rotate(7deg);
+}
+
+.hm-card.stun .hm-stamp,
+.hm-card.bare .hm-stamp {
+  color: #ffd84d;
+  animation: hm-blink 0.4s steps(2) infinite;
+}
+
+.hm-card.out .hm-plate,
+.hm-card.out .hm-bar,
+.hm-card.out .hm-pips {
+  opacity: 0.35;
+}
+
+@keyframes hm-blink {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ---- announcer */
+.hm-ann {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 30%;
+  text-align: center;
+}
+
+.hm-ann b {
+  position: relative;
+  display: inline-block;
+  font-size: 15vh;
+  font-weight: normal;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: transparent;
+  background: linear-gradient(#ffffff 8%, var(--c) 52%, #a8380e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-stroke: 0.45vh #0b0d18;
+  filter: drop-shadow(0.9vh 1.1vh 0 #0b0d18);
+  transform: skewX(-10deg);
+}
+
+.hm-ann span {
+  display: inline-block;
+  margin-top: 1.6vh;
+  padding: 0.8vh 2vw;
+  font-size: 3vh;
+  text-transform: uppercase;
+  background: rgba(8, 10, 20, 0.7);
+  border-left: 0.6vh solid var(--c);
+  transform: skewX(-10deg);
+}
+
+.hm-ann b + span {
+  display: block;
+  width: max-content;
+  margin: 1.6vh auto 0;
+}
+
+.hm-ann.count b {
+  font-size: 24vh;
+}
+
+.hm-ann.fight b {
+  font-size: 19vh;
+}
+
+.hm-ann.ko {
+  --c: #ff3d55 !important;
+}
+
+.hm-ann.win b,
+.hm-ann.champ b {
+  font-size: 11vh;
+  background: linear-gradient(#ffffff 5%, var(--c) 45%, var(--c) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.hm-ann.go b {
+  animation: hm-slam 0.42s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+
+.hm-ann.go span {
+  animation: hm-rise 0.4s 0.15s ease-out both;
+}
+
+.hm-ann.champ.go b {
+  animation: hm-slam 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both, hm-glow 1.2s 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes hm-slam {
+  from {
+    transform: skewX(-10deg) scale(2.6);
+    opacity: 0;
+  }
+  60% {
+    transform: skewX(-10deg) scale(0.9);
+    opacity: 1;
+  }
+  to {
+    transform: skewX(-10deg) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes hm-rise {
+  from {
+    transform: skewX(-10deg) translateY(2vh);
+    opacity: 0;
+  }
+  to {
+    transform: skewX(-10deg);
+    opacity: 1;
+  }
+}
+
+@keyframes hm-glow {
+  to {
+    transform: skewX(-10deg) scale(1.05);
+  }
+}
+
+/* ---- kill feed */
+.hm-feed {
+  position: absolute;
+  top: 13vh;
+  left: 50%;
+  width: 18vw;
+  margin-left: -9vw;
+  text-align: center;
+}
+
+.hm-kill {
+  margin-bottom: 0.6vh;
+  padding: 0.5vh 0.8vw;
+  font-size: 1.9vh;
+  text-transform: uppercase;
+  background: rgba(8, 10, 20, 0.7);
+  animation: hm-rise 0.3s ease-out both;
+}
+
+.hm-kill i {
+  margin: 0 0.6vw;
+  font-style: normal;
+  color: #c9cee0;
+}
+
+/* ---- warm-up strip */
+.hm-warm {
+  position: absolute;
+  bottom: 4vh;
+  left: 50%;
+  width: 56vw;
+  margin-left: -28vw;
+  text-align: center;
+}
+
+.hm-warm[hidden] {
+  display: none;
+}
+
+.hm-warm b {
+  display: inline-block;
+  padding: 0.8vh 2vw;
+  font-size: 2.6vh;
+  font-weight: normal;
+  text-transform: uppercase;
+  background: rgba(8, 10, 20, 0.72);
+  transform: skewX(-10deg);
+}
+
+.hm-warm i {
+  display: none;
+  height: 0.8vh;
+  margin: 1.2vh auto 0;
+  width: 60%;
+  background: rgba(255, 255, 255, 0.18);
+  transform: skewX(-10deg);
+}
+
+.hm-warm.timed i {
+  display: block;
+}
+
+.hm-warm s {
+  display: block;
+  height: 100%;
+  background: #ffd84d;
+  transition: width 0.2s linear;
+}
+
+/* ---- lite (the TV): no filters, no gradient text, no endless animations */
+.hm-lite .hm-ann b {
+  color: var(--c);
+  background: none;
+  filter: none;
+  text-shadow: 0.9vh 1.1vh 0 #0b0d18;
+}
+
+.hm-lite .hm-ann.win b,
+.hm-lite .hm-ann.champ b {
+  background: none;
+}
+
+.hm-lite .hm-ann.champ.go b {
+  animation: hm-slam 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+
+.hm-lite .hm-ico svg {
+  filter: none;
+}
+
+.hm-lite .hm-card.low .hm-hp,
+.hm-lite .hm-card.stun .hm-stamp,
+.hm-lite .hm-card.bare .hm-stamp {
+  animation: none;
+}
+
+.hm-lite .hm-pips i.on {
+  box-shadow: none;
+}
+
+/* ================================================================= phone */
+.hmc {
+  --c: #7c5cff;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  color: #eef0f8;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 2px, transparent 2px 14px),
+    linear-gradient(#141829, #0b0d18);
+  font: 600 14px/1.2 system-ui, sans-serif;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+.hmc .hd,
+.hmc b,
+.hmc-w h4 {
+  font-family: "Russo One", system-ui, sans-serif;
+  font-weight: normal;
+  text-transform: uppercase;
+}
+
+.hmc-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px max(14px, env(safe-area-inset-right)) 6px max(14px, env(safe-area-inset-left));
+}
+
+.hmc-plate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 14px 0 8px;
+  background: var(--c);
+  transform: skewX(-14deg);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+  max-width: 34vw;
+}
+
+.hmc-plate > * {
+  transform: skewX(14deg);
+}
+
+.hmc-p {
+  padding: 2px 6px;
+  background: #0b0d18;
+  color: var(--c);
+  font-size: 12px;
+}
+
+.hmc-name {
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+.hmc-hp {
+  position: relative;
+  flex: 1;
+  max-width: 260px;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  transform: skewX(-14deg);
+  overflow: hidden;
+}
+
+.hmc-hp i {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: linear-gradient(#b8ffc6, #36d266 55%, #1e9c49);
+  transition: transform 0.15s;
+}
+
+.hmc-hp::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 9.4%, rgba(0, 0, 0, 0.45) 9.4% 10%);
+}
+
+.hmc.low .hmc-hp i {
+  background: linear-gradient(#ffc0c6, #ff3d55 55%, #b3112a);
+}
+
+.hmc-wins {
+  display: flex;
+  gap: 7px;
+}
+
+.hmc-wins i {
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  transform: rotate(45deg);
+}
+
+.hmc-wins i.on {
+  background: var(--c);
+  border-color: #fff;
+}
+
+/* body, phone held upright: cards and status on top, the fixed stick at the bottom right under the right thumb */
+.hmc-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 4px max(12px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}
+
+.hmc-stick {
+  position: relative;
+  order: 2;
+  flex: none;
+  align-self: flex-end;
+  width: 82%;
+  height: 46%;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.06) 1.5px, transparent 1.7px) 0 0 / 24px 24px,
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.3) 70%);
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.hmc-stick.on {
+  border-color: var(--c);
+}
+
+.hmc-stick-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 10px;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.25);
+  pointer-events: none;
+}
+
+.hmc-stick .tt-stick-knob {
+  background: var(--c) !important;
+  box-shadow: 0 0 18px var(--c), inset 0 -4px 0 rgba(0, 0, 0, 0.3) !important;
+}
+
+.hmc-side {
+  position: relative;
+  order: 1;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.hmc-tip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.3);
+  text-align: center;
+}
+
+.hmc-tip[hidden] {
+  display: none;
+}
+
+.hmc-tip b {
+  font-size: 22px;
+}
+
+.hmc-tip span {
+  font-size: 13px;
+}
+
+.hmc-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+.hmc-pick[hidden] {
+  display: none;
+}
+
+.hmc-w {
+  position: relative;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 40px auto 1fr;
+  column-gap: 12px;
+  align-items: center;
+  min-height: 0;
+  padding: 4px 12px;
+  text-align: left;
+  color: #dfe3f0;
+  background: linear-gradient(rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  font: inherit;
+}
+
+.hmc-w svg {
+  width: 38px;
+  height: 38px;
+  color: #c9cee0;
+}
+
+.hmc-w h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.hmc-stats {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: end;
+  gap: 1px 6px;
+  font-size: 10px;
+  color: #8b93ad;
+}
+
+.hmc-stats u {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  text-decoration: none;
+}
+
+.hmc-stats u i {
+  width: 10px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.14);
+  transform: skewX(-14deg);
+}
+
+.hmc-stats u i.on {
+  background: #c9cee0;
+}
+
+.hmc-w.sel {
+  border-color: var(--c);
+  background: linear-gradient(rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04));
+  box-shadow: 0 0 16px rgba(0, 0, 0, 0.5), inset 0 0 0 1px var(--c);
+}
+
+.hmc-w.sel svg,
+.hmc-w.sel .hmc-stats u i.on {
+  color: var(--c);
+  background-color: transparent;
+}
+
+.hmc-w.sel .hmc-stats u i.on {
+  background: var(--c);
+}
+
+.hmc-w.sel::after {
+  content: "Selected";
+  position: absolute;
+  top: -8px;
+  left: 60px;
+  padding: 1px 6px;
+  font: 11px "Russo One", system-ui, sans-serif;
+  text-transform: uppercase;
+  background: var(--c);
+  color: #0b0d18;
+}
+
+.hmc-over {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(8, 10, 20, 0.72);
+  pointer-events: none;
+}
+
+.hmc-over[hidden] {
+  display: none;
+}
+
+.hmc-over b {
+  font-size: 54px;
+  color: var(--oc, #fff);
+  -webkit-text-stroke: 2px #0b0d18;
+  transform: skewX(-10deg);
+  animation: hmc-slam 0.35s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+
+.hmc-over span {
+  font-size: 15px;
+  color: #c9cee0;
+}
+
+@keyframes hmc-slam {
+  from {
+    transform: skewX(-10deg) scale(2);
+    opacity: 0;
+  }
+  to {
+    transform: skewX(-10deg) scale(1);
+    opacity: 1;
+  }
+}
+
+.hmc.ouch {
+  animation: hmc-ouch 0.35s ease-out;
+}
+
+@keyframes hmc-ouch {
+  from {
+    box-shadow: inset 0 0 0 999px rgba(255, 40, 70, 0.35);
+  }
+  to {
+    box-shadow: inset 0 0 0 999px rgba(255, 40, 70, 0);
+  }
+}

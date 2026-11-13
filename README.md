@@ -10,6 +10,7 @@ Games so far:
 | **Wet Paint** | 1–8 | Tiny brushes race to cover an oil-paint canvas in their colour |
 | **Cult** | 5–8 (computers fill empty seats) | Hidden roles: the town votes in leaders while a secret cult tries to take over |
 | **Cascade** | 1–8 | Turn-based chain reactions on a grid, in three looks: Culture, Marbles, Reactor |
+| **Rotor Brawl** | 1–4 (computer players optional) | Flying machines swing heavy weapons on rods and chains. Last one flying wins |
 | **Sandbox** | any | A connection test: steer a dot, tap to pulse |
 
 This guide gets the project running on your computer, then shows how to build a game of your own. Two more docs:
@@ -435,6 +436,22 @@ Settings: look, board size (automatic, five sizes, or a custom size up to 20 × 
 `rules.ts` (unit-tested), `bots.ts`, `host.ts`, `hud.ts`, `audio.ts` + `sounds/`, and `look/` for the three.js scene:
 `stage.ts` (renderer and TV lite mode), `director.ts` (times the chain animation), `bake.ts` (pre-baked textures) and
 one file per look.
+
+### Rotor Brawl (`web/src/games/hammer/`)
+Up to four little flying machines, each with a heavy weapon on a rod or chain: a spiked hammer, a chain ball or a
+sword. The phone is a touchpad. Your finger movement pushes the machine (like a mouse in Hammerfight), so circling
+your thumb whips the weapon round. Damage comes from how hard a hit lands, and blades cut harder when they slide
+across fast. Last machine flying wins the round. A **Stick** button on the phone switches to a joystick.
+
+Each round starts with a warm-up: fly and swing with no damage, and pick a weapon on the phone.
+
+Settings: rounds to win (2, 3 or 5), computer players (0–3).
+
+The physics is a small engine of its own (`engine.ts`, `collide.ts`, `sim.ts`) that follows Hammerfight's model:
+Verlet at 50 Hz, joints corrected by position only (which gives the weapons their whip), impulse controls, quadratic
+drag and a speed limit. `HAMMERFIGHT_PHYSICS.md` records that model; `weapons.ts` has the weapon shapes and masses.
+`/lab/hammer/?bots=3` is a workbench with mouse control and live sliders for every number (only while `pnpm dev`
+runs). `sim.test.ts` covers the engine and the rules.
 
 ---
 
