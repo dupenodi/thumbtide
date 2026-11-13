@@ -51,6 +51,15 @@ export function frameDrawn(now = performance.now()) {
   (drawn ??= []).push(now);
 }
 
+/**
+ * A game drew a frame at a lower rate on purpose (nothing moving, an end screen): the frame rate isn't judged
+ * there, so this frame and the gap before the next counted frame are left out.
+ */
+export function frameIdle() {
+  if (!PERF_BUILD || !target || !drawn) return;
+  if (!Number.isNaN(drawn[drawn.length - 1])) drawn.push(NaN);
+}
+
 /** The frame rate a game should aim for: `fps=60` lifts a TV's 30fps cap (for tests at the 60fps target). */
 export function fpsOverride(): number | null {
   if (!PERF_BUILD) return null;
@@ -60,12 +69,13 @@ export function fpsOverride(): number | null {
 
 function summarise(times: number[]): FrameStats {
   const gaps: number[] = [];
-  for (let i = 1; i < times.length; i++) gaps.push(times[i]! - times[i - 1]!);
+  // NaN marks a stretch the game slowed down on purpose (frameIdle): gaps that touch it don't count
+  for (let i = 1; i < times.length; i++) if (!Number.isNaN(times[i]!) && !Number.isNaN(times[i - 1]!)) gaps.push(times[i]! - times[i - 1]!);
   gaps.sort((a, b) => a - b);
   const pick = (q: number) => (gaps.length ? gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * q))]! : 0);
-  const span = times.length > 1 ? times[times.length - 1]! - times[0]! : 0;
+  const span = gaps.reduce((a, g) => a + g, 0);
   return {
-    fps: span ? Math.round(((times.length - 1) * 10000) / span) / 10 : 0,
+    fps: span ? Math.round((gaps.length * 10000) / span) / 10 : 0,
     p50: Math.round(pick(0.5) * 10) / 10,
     p95: Math.round(pick(0.95) * 10) / 10,
     worst: Math.round(pick(1) * 10) / 10,
