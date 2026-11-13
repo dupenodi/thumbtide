@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Art directions</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+  :root { --bg: #0b0b12; --fg: #f4f3ff; --muted: #8d8ba7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 400 16px/1.5 Inter, system-ui, sans-serif; padding: 40px 16px 80px; }
+  main { max-width: 1400px; margin: 0 auto; }
+  h1 { font: 700 34px/1.1 "Space Grotesk", sans-serif; margin: 0 0 6px; }
+  .lede { color: var(--muted); margin: 0 0 40px; }
+  section { margin: 0 0 64px; }
+  h2 { font: 700 26px/1.1 "Space Grotesk", sans-serif; margin: 0 0 4px; }
+  h2 span { color: var(--muted); font-weight: 500; font-size: 18px; margin-left: 8px; }
+  section > p { color: var(--muted); margin: 0 0 16px; max-width: 70ch; }
+  .row { display: grid; grid-template-columns: 2.25fr 1fr 1fr 1fr; gap: 14px; align-items: start; }
+  figure { margin: 0; }
+  img { width: 100%; display: block; border-radius: 14px; background: #14141f; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  @media (max-width: 900px) { .row { grid-template-columns: 1fr 1fr; } .row figure:first-child { grid-column: 1 / -1; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Three art directions</h1>
+  <p class="lede">The same four Cult Following pieces, same seeds, only the style changes. FLUX.2 Pro.</p>
+
+  <section>
+    <h2>A · Candy Noir <span>glossy collectible toys under one hard light</span></h2>
+    <p>Hard-candy resin and soft-touch vinyl, studio product lighting, black velvet. Matches the candy lettering we already use.</p>
+    <div class="row">
+      <figure><img src="candy-noir/cover.webp" alt="" /><figcaption>Game cover</figcaption></figure>
+      <figure><img src="candy-noir/town-law.webp" alt="" /><figcaption>Town law</figcaption></figure>
+      <figure><img src="candy-noir/cult-law.webp" alt="" /><figcaption>Cult law</figcaption></figure>
+      <figure><img src="candy-noir/prophet.webp" alt="" /><figcaption>The Prophet</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>B · Midnight Gilt <span>gold-foil engraving on black lacquer</span></h2>
+    <p>Fine linework, cross-hatching, art-nouveau ornament, colour only as small enamel inlays. Grown-up and luxe.</p>
+    <div class="row">
+      <figure><img src="midnight-gilt/cover.webp" alt="" /><figcaption>Game cover</figcaption></figure>
+      <figure><img src="midnight-gilt/town-law.webp" alt="" /><figcaption>Town law</figcaption></figure>
+      <figure><img src="midnight-gilt/cult-law.webp" alt="" /><figcaption>Cult law</figcaption></figure>
+      <figure><img src="midnight-gilt/prophet.webp" alt="" /><figcaption>The Prophet</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>C · Gig Poster <span>two-colour screen print</span></h2>
+    <p>Flat bold shapes, halftone dots, misregistered fluorescent ink on black stock. Loud, graphic, a little punk.</p>
+    <div class="row">
+      <figure><img src="gig-poster/cover.webp" alt="" /><figcaption>Game cover</figcaption></figure>
+      <figure><img src="gig-poster/town-law.webp" alt="" /><figcaption>Town law</figcaption></figure>
+      <figure><img src="gig-poster/cult-law.webp" alt="" /><figcaption>Cult law</figcaption></figure>
+      <figure><img src="gig-poster/prophet.webp" alt="" /><figcaption>The Prophet</figcaption></figure>
+    </div>
+  </section>
+</main>
+</body>
+</html>

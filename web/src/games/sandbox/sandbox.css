@@ -1,0 +1,5 @@
+.sbx-top { display: flex; align-items: center; gap: 12px; font-weight: 700; }
+.sbx-name { color: var(--cl); font: 700 20px var(--font-display); }
+.sbx-ping { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.gp-btn.flash { animation: sbx-flash 300ms ease-out; }
+@keyframes sbx-flash { from { box-shadow: 0 0 0 0 var(--cl); } to { box-shadow: 0 0 0 24px transparent; } }

@@ -1,0 +1,23 @@
+# Sandbox: a connection test. Steer a dot, tap to pulse.
+# Syntax and every setting: web/src/games/kit/pad.ts
+
+controller
+  orientation  any
+  send-rate    40hz
+
+stick move
+  label        "Move"
+  travel       40px
+  full-at      80%
+  deadzone     7%
+  curve        0.85
+
+button pulse
+  label        "PULSE"
+  hint         "Send a ripple. Your phone buzzes back."
+  icon         pulse
+  style        primary
+  haptic       18ms
+
+buzz
+  echo         30

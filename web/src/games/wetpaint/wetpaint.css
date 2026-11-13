@@ -1,0 +1,407 @@
+/* ============================================================ Wet Paint: TV */
+.wp {
+  --cream: #f4ecd8;
+  --ink: #2a1d14;
+  --label-shadow: 0 0.25em 0.9em rgba(20, 10, 4, 0.45);
+  --serif: "Fraunces", "Iowan Old Style", Georgia, serif;
+  position: absolute; inset: 0; overflow: hidden; background: #140e0a;
+  font-size: clamp(12px, 1.05vw, 26px);
+}
+.wp-stage { position: absolute; inset: 0; }
+/* final frenzy: the room glows round the edges */
+.wp::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 600ms; z-index: 1;
+  box-shadow: inset 0 0 5vh 1vh #ff3d9a, inset 0 0 12vh 2vh rgba(255, 180, 60, 0.6);
+}
+.wp.frenzy::after { opacity: 1; animation: wp-frenzy 1.2s linear infinite; }
+@keyframes wp-frenzy { to { filter: hue-rotate(360deg); } }
+.wp-hud { position: absolute; inset: 0; pointer-events: none; color: var(--ink); }
+
+.wp-top {
+  position: absolute; top: 1.6vh; left: 1.6vw; right: 1.6vw; z-index: 2;
+  display: flex; align-items: center; gap: 1.4vh;
+}
+.wp-sign {
+  flex: none; font: 800 3vh/1 var(--serif); letter-spacing: -0.01em; color: #c93a24;
+  background: var(--cream); padding: 0.32em 0.6em 0.38em; border-radius: 0.2em;
+  transform: rotate(-2.5deg); box-shadow: var(--label-shadow);
+  border: 0.12em solid #e3d6b8;
+}
+.wp-sign b { color: var(--ink); font-weight: 800; }
+/* the clock: a round candy timer whose ring runs down */
+.wp-clock {
+  position: relative; width: 8.6vh; height: 8.6vh; flex: none; display: grid; place-items: center; margin-top: -0.6vh;
+  border-radius: 50%; background: radial-gradient(circle at 38% 30%, #fffdf6, #f4ecd8 55%, #d9c7a0);
+  box-shadow: 0 0.5vh 1.4vh rgba(20, 10, 4, 0.5), inset 0 -0.5vh 0 rgba(0, 0, 0, 0.12);
+}
+.wp-clock svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.wp-clock .trk { fill: none; stroke: rgba(42, 29, 20, 0.12); stroke-width: 9; }
+.wp-clock .arc { fill: none; stroke: #31d16a; stroke-width: 9; stroke-linecap: round; stroke-dasharray: 100; transition: stroke-dashoffset 300ms linear, stroke 600ms; }
+.wp-clock[data-zone="warm"] .arc { stroke: #ffb81f; }
+.wp-clock[data-zone="hot"] .arc { stroke: #ff3d4a; }
+.wp-time { position: relative; font: 800 2.5vh/1 "Baloo 2", var(--serif); color: var(--ink); font-variant-numeric: tabular-nums; }
+.wp-clock.hurry { animation: wp-throb 1s ease-in-out infinite; }
+.wp-clock.hurry .wp-time { color: #d0170f; }
+@keyframes wp-throb { 50% { transform: scale(1.1); } }
+
+/* the paint race: everyone's share of the canvas, best first, bare canvas last */
+.wp-race {
+  position: relative; flex: 1; min-width: 0; display: flex; gap: 0.35vh; height: 5.4vh; padding: 0.5vh; box-sizing: border-box;
+  border-radius: 2.7vh; background: linear-gradient(180deg, rgba(30, 18, 10, 0.78), rgba(20, 12, 6, 0.6));
+  box-shadow: inset 0 0.35vh 0.7vh rgba(0, 0, 0, 0.45), 0 0.4vh 1.4vh rgba(0, 0, 0, 0.35), 0 0 0 0.25vh rgba(255, 255, 255, 0.08);
+}
+.wp-seg {
+  --c: #888; --cl: #aaa; --cs: #555;
+  /* starts as wide as its label, then shares out the rest of the bar by coverage */
+  position: relative; flex: 0.01 1 auto; min-width: min-content; display: flex; align-items: center; gap: 0.6vh; padding: 0 1.1vh 0 0.4vh;
+  border-radius: 2.2vh; overflow: hidden; color: #fff;
+  background: linear-gradient(180deg, var(--cl) 30%, var(--c) 31%, var(--c) 70%, var(--cs) 100%); /* no color-mix() */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cl) 70%, #fff) 0%, var(--cl) 30%, var(--c) 31%, var(--c) 70%, var(--cs) 100%);
+  box-shadow: inset 0 -0.45vh 0 rgba(0, 0, 0, 0.18);
+  transition: flex-grow 500ms cubic-bezier(0.2, 1, 0.4, 1);
+}
+.wp-seg::after {
+  content: ""; position: absolute; left: 1.2vh; right: 1.2vh; top: 0.35vh; height: 0.9vh; border-radius: 1vh;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0)); pointer-events: none;
+}
+.wp-seg.away { filter: saturate(0.35) brightness(0.8); }
+.wp-seg.gain { animation: wp-gain 480ms cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes wp-gain { 30% { transform: scaleY(1.28); filter: brightness(1.35); } }
+.wp-coin {
+  width: 3.5vh; height: 3.5vh; flex: none; border-radius: 50%; display: grid; place-items: center;
+  font: 800 2vh/1 "Baloo 2", sans-serif; color: #fff; text-shadow: 0 0.15vh 0 rgba(0, 0, 0, 0.4);
+  background: radial-gradient(circle at 35% 30%, var(--cl), var(--c) 60%, var(--cs)); /* no color-mix() */
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--cl) 50%, #fff), var(--c) 60%, var(--cs));
+  box-shadow: 0 0 0 0.28vh rgba(255, 255, 255, 0.9), 0 0.2vh 0.5vh rgba(0, 0, 0, 0.35);
+}
+.wp-pct {
+  font: 800 2.35vh/1 "Baloo 2", sans-serif; white-space: nowrap; font-variant-numeric: tabular-nums;
+  text-shadow: 0 0.15vh 0 rgba(0, 0, 0, 0.45), 0 0 0.6vh rgba(0, 0, 0, 0.3);
+}
+/* the name gives way first (down to nothing) when it's crowded; the coin and the % always stay whole */
+.wp-nm {
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 700 1.75vh/1.2 var(--font); text-shadow: 0 0.15vh 0 rgba(0, 0, 0, 0.4);
+}
+.wp-pct { flex: none; margin-left: auto; }
+.wp-seg.bare {
+  justify-content: flex-end; padding: 0 1.4vh; color: #6b5a3e; min-width: 2vh; flex-shrink: 1;
+  background: repeating-linear-gradient(135deg, #efe5cf 0 0.9vh, #e2d5b8 0.9vh 1.8vh);
+  box-shadow: inset 0 0.3vh 0.5vh rgba(0, 0, 0, 0.18);
+}
+.wp-seg.bare::after { display: none; }
+.wp-bare { font: 700 1.7vh/1 var(--font); white-space: nowrap; }
+.wp-bare b { font: 800 2.2vh/1 "Baloo 2", sans-serif; }
+.wp-seg.bare.narrow .wp-bare { display: none; }
+.wp-crown {
+  position: absolute; left: 0; top: -2.5vh; width: 4vh; height: 2.8vh; pointer-events: none; z-index: 2;
+  transition: transform 450ms cubic-bezier(0.2, 1.3, 0.4, 1); filter: drop-shadow(0 0.3vh 0.3vh rgba(0, 0, 0, 0.4));
+}
+.wp-crown svg { width: 100%; height: 100%; display: block; animation: wp-crown 1.6s ease-in-out infinite; transform-origin: 50% 100%; }
+.wp-crown.hop svg { animation: wp-crown-hop 600ms cubic-bezier(0.2, 1.6, 0.4, 1), wp-crown 1.6s 600ms ease-in-out infinite; }
+@keyframes wp-crown { 50% { transform: translateY(-0.35vh) rotate(-6deg); } }
+@keyframes wp-crown-hop { 0% { transform: translateY(-3vh) scale(1.5) rotate(20deg); } 100% { transform: none; } }
+
+@keyframes wp-blink { 50% { background: #c93a24; } }
+
+/* centre announcements, in candy lettering */
+.wp-banner {
+  position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 3;
+  display: flex; flex-direction: column; align-items: center; gap: 0.3em; font-size: 6em; white-space: nowrap;
+}
+.wp-banner small {
+  font: 700 0.2em/1.2 var(--font); color: #fff; background: rgba(20, 12, 30, 0.72); padding: 0.4em 0.9em; border-radius: 2em;
+  letter-spacing: 0.01em;
+}
+.wp-banner.show .juicy { animation: wp-pop 520ms cubic-bezier(0.2, 1.7, 0.4, 1); }
+.wp-banner.show small { animation: wp-in 400ms 150ms ease-out both; }
+.wp-banner.count { font-size: 11em; }
+.wp-banner.go { font-size: 9em; }
+.wp-banner.title { font-size: 7em; }
+.wp-banner.hurry { font-size: 4.5em; top: 30%; }
+.wp-banner.big { font-size: 7em; }
+.wp-banner.event { font-size: 6.5em; top: 38%; }
+@keyframes wp-pop {
+  0% { transform: scale(0.2) rotate(-10deg); opacity: 0; }
+  55% { transform: scale(1.18) rotate(3deg); opacity: 1; }
+  75% { transform: scale(0.95) rotate(-1deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+/* toasts, bottom left */
+.wp-toasts { position: absolute; left: 2vw; bottom: 2.4vh; display: flex; flex-direction: column-reverse; gap: 0.4em; }
+.wp-toast {
+  background: rgba(244, 236, 216, 0.95); color: var(--ink); font: 500 0.95em/1.2 var(--font); padding: 0.45em 0.75em;
+  border-radius: 0.3em; box-shadow: var(--label-shadow); animation: wp-in 260ms ease-out; transition: opacity 500ms, transform 500ms;
+}
+.wp-toast.out { opacity: 0; transform: translateX(-1em); }
+.wp-toast .pw { padding: 0.05em 0.4em; border-radius: 0.4em; color: #fff; }
+.wp-toast .pw-turbo { background: #2a8be8; } .wp-toast .pw-mega { background: #e09a00; } .wp-toast .pw-bomb { background: #e0401b; }
+.wp-toast .pw-shield { background: #8a45e8; } .wp-toast .pw-rain { background: #e8338a; } .wp-toast .pw-dry { background: #3b8fd6; }
+@keyframes wp-in { from { opacity: 0; transform: translateY(0.6em); } }
+
+/* ---------------------------------------------------------------- the end of a round
+   The painting is hung on the left (the whole stage shrinks into a framed piece), results on the right. */
+.wp-stage { transform-origin: 50% 50%; transition: transform 900ms cubic-bezier(0.3, 0.9, 0.25, 1), border-radius 900ms, box-shadow 900ms; }
+.wp-ended .wp-stage {
+  transform: translateX(-16.5vw) scale(0.64); border-radius: 1.2vh; overflow: hidden;
+  box-shadow: 0 0 0 0.5vh rgba(255, 255, 255, 0.06), 0 4vh 10vh rgba(0, 0, 0, 0.7);
+}
+.wp-top, .fx { transition: opacity 400ms; }
+.wp-ended .wp-top, .wp-ended .fx, .wp-ended .wp-toasts { opacity: 0; pointer-events: none; }
+
+.wp-gallery { position: absolute; inset: 0; pointer-events: none; }
+.wp-res {
+  position: absolute; top: 4vh; bottom: 4vh; right: 3vw; width: 29vw; box-sizing: border-box; pointer-events: auto;
+  display: flex; flex-direction: column; gap: 3vh; padding: 4.5vh 2.4vw 4vh;
+  background: rgba(20, 18, 28, 0.92); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 2.4vh;
+  color: var(--fg); font-family: var(--font); box-shadow: 0 3vh 8vh rgba(0, 0, 0, 0.5);
+  opacity: 0; transform: translateX(4vw); transition: opacity 600ms 250ms, transform 800ms 250ms cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+.wp-gallery.show .wp-res { opacity: 1; transform: none; }
+.wp-res-kicker { margin: 0; font: 600 1.6vh/1 var(--font); color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; }
+.wp-res .coin {
+  flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--c); color: #0b0b12;
+  font: 700 1em/1 var(--font-display); width: 1.9em; height: 1.9em;
+}
+.wp-res-win { display: flex; flex-direction: column; gap: 1.4vh; }
+.wp-res-win h2 { margin: 0; font-size: calc(6.4vh * var(--fit, 1)); line-height: 1.1; transform: rotate(-2deg); transform-origin: left; }
+.wp-res-win p { margin: 0; display: flex; align-items: center; gap: 0.6em; color: var(--muted); font-size: 2vh; }
+.wp-res-win .coin { font-size: 0.8em; }
+/* a museum label for the painting */
+.wp-res-label {
+  margin: 0; padding: 1.6vh 0 0; border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex; flex-direction: column; gap: 0.6vh;
+}
+.wp-res-label i { font: italic 600 2.1vh/1.3 var(--serif); color: #efe6d6; }
+.wp-res-label span { font-size: 1.5vh; color: var(--muted); }
+.wp-res-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.5vh; font-size: 2vh; }
+.wp-res-list li { display: grid; grid-template-columns: 1.4em auto minmax(0, 1fr) 6.2em 3.6em; align-items: center; gap: 0.75em; }
+.wp-res-list .rk { color: var(--muted); font: 600 0.9em/1 var(--font-display); text-align: right; font-variant-numeric: tabular-nums; }
+.wp-res-list .coin { font-size: 0.72em; }
+.wp-res-list .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wp-res-list .nm small { margin-left: 0.6em; font-size: 0.72em; font-weight: 600; color: var(--muted); }
+.wp-res-list .bar { height: 0.55em; border-radius: 1em; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+.wp-res-list .bar i {
+  display: block; height: 100%; width: var(--w); border-radius: inherit; background: var(--c);
+  transform-origin: left; transform: scaleX(0); transition: transform 900ms 700ms cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+.wp-gallery.show .wp-res-list .bar i { transform: none; }
+.wp-res-list b { font: 700 1em/1 var(--font-display); text-align: right; font-variant-numeric: tabular-nums; }
+.wp-res-list li:first-child .nm, .wp-res-list li:first-child b { color: #fff; }
+.wp-res-next { margin: auto 0 0; color: var(--muted); font-size: 1.8vh; }
+.wp-res-next b { color: var(--fg); font-weight: 600; }
+
+/* ============================================================ juice (fx.ts) */
+.fx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
+.fx-token { position: absolute; left: 0; top: 0; width: 0; height: 0; will-change: transform; }
+.fx-candy, .fx-sparkles { position: absolute; left: 0; top: 0; width: 7.2vh; height: 7.2vh; margin: -3.6vh 0 0 -3.6vh; }
+.fx-candy { animation: fx-bob 1.4s ease-in-out infinite; filter: drop-shadow(0 0.5vh 0.6vh rgba(0, 0, 0, 0.35)); }
+.fx-candy .candy { width: 100%; height: 100%; display: block; animation: fx-wobble 2.6s ease-in-out infinite; }
+.fx-token.falling .fx-candy { animation: fx-spin 0.6s linear infinite; }
+.fx-token.expiring .fx-candy { animation: fx-bob 1.4s ease-in-out infinite, fx-blink 0.35s steps(2) infinite; }
+.fx-token.taken .fx-candy { animation: fx-taken 420ms ease-out forwards; }
+.fx-token.gone .fx-candy { animation: fx-fizzle 480ms ease-in forwards; }
+.fx-token.taken .fx-sparkles, .fx-token.gone .fx-sparkles { display: none; }
+.fx-sparkles { animation: fx-orbit 3s linear infinite; }
+.fx-sparkles i {
+  position: absolute; width: 1.3vh; height: 1.3vh; left: 50%; top: 50%; margin: -0.65vh;
+  background: radial-gradient(circle, #fff 0 30%, transparent 32%), conic-gradient(from 45deg, transparent 0 10%, #fff 12% 13%, transparent 15% 35%, #fff 37% 38%, transparent 40% 60%, #fff 62% 63%, transparent 65% 85%, #fff 87% 88%, transparent 90%);
+  animation: fx-twinkle 1.1s ease-in-out infinite;
+}
+.fx-sparkles i:nth-child(1) { transform: translate(5vh, 0); }
+.fx-sparkles i:nth-child(2) { transform: translate(0, 4.4vh); animation-delay: 0.3s; }
+.fx-sparkles i:nth-child(3) { transform: translate(-5vh, 0); animation-delay: 0.6s; }
+.fx-sparkles i:nth-child(4) { transform: translate(0, -4.4vh); animation-delay: 0.9s; }
+@keyframes fx-bob { 50% { transform: translateY(-0.9vh); } }
+@keyframes fx-wobble { 0%, 100% { transform: rotate(-8deg) scale(1); } 50% { transform: rotate(8deg) scale(1.06, 0.96); } }
+@keyframes fx-spin { to { transform: rotate(360deg); } }
+@keyframes fx-blink { 50% { opacity: 0.25; } }
+@keyframes fx-orbit { to { transform: rotate(360deg); } }
+@keyframes fx-twinkle { 0%, 100% { opacity: 0.2; scale: 0.6; } 50% { opacity: 1; scale: 1.2; } }
+@keyframes fx-taken { 0% { transform: scale(1); } 35% { transform: scale(1.7) rotate(12deg); opacity: 1; } 100% { transform: scale(2.4) rotate(20deg); opacity: 0; } }
+@keyframes fx-fizzle { to { transform: scale(0.1) rotate(-90deg); opacity: 0; filter: grayscale(1); } }
+
+/* callouts */
+.fx-pop { position: absolute; transform: translate(-50%, -100%); font-size: 4.4vh; animation: fx-pop 1.45s cubic-bezier(0.2, 1.6, 0.3, 1) forwards; }
+.fx-pop.s { font-size: 3vh; }
+.fx-pop.l { font-size: 6.4vh; }
+.fx-pop.xl { font-size: 9.5vh; }
+@keyframes fx-pop {
+  0% { transform: translate(-50%, -100%) scale(0.2) rotate(calc(var(--tilt) - 14deg)); opacity: 0; }
+  16% { transform: translate(-50%, -100%) scale(1.25) rotate(calc(var(--tilt) + 4deg)); opacity: 1; }
+  28% { transform: translate(-50%, -100%) scale(1) rotate(var(--tilt)); }
+  72% { transform: translate(-50%, -120%) scale(1) rotate(var(--tilt)); opacity: 1; }
+  100% { transform: translate(-50%, -190%) scale(0.85) rotate(var(--tilt)); opacity: 0; }
+}
+
+/* confetti */
+.fx-bit { position: absolute; width: 1.2vh; height: 1.2vh; margin: -0.6vh; background: var(--c); animation: fx-fly 900ms cubic-bezier(0.15, 0.8, 0.3, 1) forwards; }
+.fx-bit.dot { border-radius: 50%; box-shadow: inset -0.2vh -0.2vh 0 rgba(0, 0, 0, 0.18), inset 0.2vh 0.2vh 0 rgba(255, 255, 255, 0.5); }
+.fx-bit.bar { width: 0.6vh; height: 1.8vh; border-radius: 0.3vh; }
+.fx-bit.drop { border-radius: 50% 50% 50% 0; }
+.fx-bit.star { clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); width: 1.8vh; height: 1.8vh; margin: -0.9vh; }
+@keyframes fx-fly {
+  0% { transform: translate(0, 0) scale(0.4) rotate(0); opacity: 1; }
+  20% { opacity: 1; transform: translate(calc(var(--dx) * 0.4), calc(var(--dy) * 0.4)) scale(1.2) rotate(calc(var(--r) * 0.3)); }
+  100% { transform: translate(var(--dx), calc(var(--dy) + 6vh)) scale(0.5) rotate(var(--r)); opacity: 0; }
+}
+.fx-ring {
+  position: absolute; width: 2vh; height: 2vh; margin: -1vh; border-radius: 50%; border: 0.7vh solid var(--c);
+  animation: fx-ring 650ms ease-out forwards;
+}
+@keyframes fx-ring { from { transform: scale(0.5, 0.35); opacity: 1; } to { transform: scale(calc(14 * var(--s)), calc(9 * var(--s))); opacity: 0; border-width: 0.1vh; } }
+
+/* shield bubble */
+.fx-bubble {
+  position: absolute; left: 0; top: 0; width: 0; height: 0; will-change: transform;
+}
+.fx-bubble::before {
+  content: ""; position: absolute; width: 12vh; height: 10vh; left: -6vh; top: -6.5vh; border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.85) 0 6%, rgba(255, 255, 255, 0) 16%),
+              radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0) 55%, rgba(190, 140, 255, 0.35) 70%, rgba(120, 220, 255, 0.55) 82%, rgba(255, 140, 220, 0.6) 92%, rgba(255, 255, 255, 0) 100%);
+  animation: fx-jelly 1.1s ease-in-out infinite;
+}
+.fx-bubble.ending::before { animation: fx-jelly 1.1s ease-in-out infinite, fx-blink 0.25s steps(2) infinite; }
+.fx-bubble.pop::before { animation: fx-taken 300ms ease-out forwards; }
+@keyframes fx-jelly { 50% { transform: scale(1.06, 0.94); } }
+
+/* turpentine: hazard stripe, then the rag */
+.fx-band { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.fx-band polygon { fill: rgba(180, 225, 255, 0.16); stroke: rgba(255, 255, 255, 0.85); stroke-width: 3; stroke-dasharray: 14 10; animation: fx-march 0.6s linear infinite; }
+.fx-band.warn polygon { fill: rgba(255, 90, 60, 0.22); stroke: #ffd84d; animation: fx-march 0.4s linear infinite, fx-warn 0.5s steps(2) infinite; }
+@keyframes fx-march { to { stroke-dashoffset: -24; } }
+@keyframes fx-warn { 50% { fill: rgba(255, 216, 77, 0.3); } }
+.fx-rag { position: absolute; left: 0; top: 0; height: 10vh; will-change: transform; filter: drop-shadow(0 1vh 1vh rgba(0, 0, 0, 0.45)); }
+.fx-rag svg { width: 100%; height: 100%; display: block; animation: fx-scrub 0.18s ease-in-out infinite alternate; }
+@keyframes fx-scrub { from { transform: translateY(-0.4vh) skewX(-4deg); } to { transform: translateY(0.4vh) skewX(4deg); } }
+
+/* ============================================================ Wet Paint: phone */
+.wpc {
+  --c: #d8402b; --cl: #f2643f;
+  position: absolute; inset: 0;
+  background: radial-gradient(120% 60% at 50% 0%, color-mix(in srgb, var(--c) 24%, transparent), transparent 70%), var(--bg);
+}
+.wpc .gp-top { display: flex; flex-direction: column; gap: 8px; }
+.wpc-head { display: flex; align-items: baseline; gap: 10px; }
+.wpc-name { font: 700 20px var(--font-display); color: var(--cl); }
+.wpc-paint { color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wpc-time { margin-left: auto; font: 700 18px var(--font-display); font-variant-numeric: tabular-nums; }
+.wpc-pct { font: 800 20px "Baloo 2", var(--font-display); color: var(--cl); font-variant-numeric: tabular-nums; }
+.wpc-meter { position: relative; height: 24px; border-radius: 12px; background: var(--bg-2); overflow: hidden; border: 2px solid var(--bg-3); }
+.wpc-meter i {
+  position: absolute; inset: 0 auto 0 0; width: 100%; border-radius: 10px; transition: width 120ms linear;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cl) 70%, #fff), var(--cl) 45%, var(--c));
+}
+.wpc-meter span { position: absolute; inset: 0; display: grid; place-items: center; font: 800 13px "Baloo 2", var(--font); letter-spacing: 0.06em; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+.wpc-meter.low { animation: wp-blink 0.6s steps(2) infinite; }
+.wpc-meter.dried { border-color: #9fe6ff; }
+.wpc-meter.dried i { background: repeating-linear-gradient(135deg, #e6f7ff 0 8px, #b8ecff 8px 16px); }
+.wpc-meter.dried span { color: #0b3a63; text-shadow: none; }
+.wpc-meter.frenzy i { background: linear-gradient(90deg, #ff5f6d, #ffc371, #7cf29a, #3ec5ff, #c18cff); background-size: 200% 100%; animation: wpc-rainbow 1s linear infinite; }
+@keyframes wpc-rainbow { to { background-position: -200% 0; } }
+/* portrait only: a big blob of your colour with your share of the canvas */
+.wpc-hero { display: none; }
+@media (orientation: portrait) {
+  .wpc-hero { display: grid; place-items: center; flex: 1; min-height: 0; }
+  .wpc-hero-blob {
+    width: min(42vw, 26vh); aspect-ratio: 1.08; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--cl) 55%, #fff), var(--cl) 40%, var(--c) 75%);
+    border-radius: 46% 54% 42% 58% / 52% 44% 56% 48%; color: #fff;
+    box-shadow: inset -10px -12px 0 rgba(0, 0, 0, 0.16), inset 10px 10px 0 rgba(255, 255, 255, 0.2), 0 10px 30px rgba(0, 0, 0, 0.35);
+    animation: wpc-breathe 3s ease-in-out infinite;
+  }
+  .wpc-hero-pct { font: 800 min(13vw, 8vh)/1 "Baloo 2", var(--font-display); text-shadow: 0 3px 0 rgba(0, 0, 0, 0.22); font-variant-numeric: tabular-nums; }
+  .wpc-hero-blob small { font-weight: 700; font-size: 12px; opacity: 0.85; }
+  .wpc-hero[data-rank="1"] .wpc-hero-blob::before {
+    content: ""; width: 44px; height: 30px; margin-top: -40px; margin-bottom: 4px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 44'%3E%3Cpath d='M4 40 L8 10 L22 24 L32 4 L42 24 L56 10 L60 40 Z' fill='%23ffd23f' stroke='%237a4300' stroke-width='4' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+}
+.wpc .gp-btn[data-id="dash"]::after {
+  content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); border-radius: inherit;
+  transform-origin: bottom; transform: scaleY(var(--cd, 0)); transition: transform 120ms linear;
+}
+.wpc .gp-btn.off { filter: grayscale(0.6) brightness(0.65); }
+.wpc .gp-btn.bomb {
+  --b1: #ffc04d; --b2: #e0201b; animation: wpc-throb 0.7s ease-in-out infinite;
+}
+@keyframes wpc-throb { 50% { filter: brightness(1.2); transform: scale(1.03); } }
+
+.wpc-over {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center; gap: 14px;
+  text-align: center; padding: 20px; background: rgba(11, 11, 18, 0.94); z-index: 5; overflow-y: auto; touch-action: pan-y;
+}
+.wpc-over h2 { margin: 0; font: 800 32px "Baloo 2", var(--font-display); line-height: 1; }
+.wpc-over p { margin: 0; color: var(--muted); font-weight: 600; }
+/* the count-in: the info strip says who you are and counts you down; the controls stay live underneath */
+.wpc-ready { display: none; align-items: center; gap: 10px; min-height: 28px; }
+.wpc-warmup .wpc-head { display: none; }
+.wpc-warmup .wpc-ready { display: flex; }
+.wpc-ready-blob {
+  width: 30px; height: 27px; flex: none; background: var(--c); border-radius: 46% 54% 42% 58% / 52% 44% 56% 48%;
+  box-shadow: inset -4px -5px 0 rgba(0,0,0,0.18), inset 4px 4px 0 rgba(255,255,255,0.25);
+  animation: wpc-breathe 2.4s ease-in-out infinite;
+}
+.wpc-ready-txt { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.wpc-ready-txt small { color: var(--muted); font-weight: 600; font-size: 14px; }
+.wpc-ready-txt b { font: 800 22px/1 "Baloo 2", var(--font-display); color: var(--cl); white-space: nowrap; }
+.wpc-count { margin-left: auto; font: 800 30px/1 "Baloo 2", var(--font-display); color: #fff; font-variant-numeric: tabular-nums; }
+.wpc-count.tick { animation: wpc-tick 900ms cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes wpc-tick { from { transform: scale(1.8); opacity: 0; } 30% { opacity: 1; } }
+.wpc-warmup .wpc-meter i { opacity: 0.55; }
+@media (orientation: portrait) { .wpc-count { display: none; } } /* the big blob counts down instead */
+@keyframes wpc-breathe { 50% { transform: scale(1.06) rotate(4deg); border-radius: 54% 46% 58% 42% / 44% 56% 44% 56%; } }
+/* overlays that let touches through to the controls underneath, so a held stick stays held */
+.wpc-over.wpc-passthru { pointer-events: none; }
+.wpc-splatted { background: color-mix(in srgb, var(--c) 28%, rgba(11, 11, 18, 0.7)); }
+.wpc-rank-chip {
+  font: 800 14px "Baloo 2", var(--font); padding: 2px 8px; border-radius: 10px; background: var(--bg-3); color: var(--fg);
+}
+.wpc-rank-chip:empty { display: none; }
+.wpc-rank-chip[data-rank="1"] { background: linear-gradient(180deg, #ffe680, #f0b425); color: #4a2a00; }
+.wpc-rank-chip[data-rank="2"] { background: linear-gradient(180deg, #f2f4f8, #b9c0cc); color: #2a2f3a; }
+.wpc-rank-chip[data-rank="3"] { background: linear-gradient(180deg, #ffc9a0, #d6834a); color: #3e1c05; }
+.wpc-stun { font-size: 64px; transform: rotate(-6deg); animation: wp-pop 500ms cubic-bezier(0.2, 1.7, 0.4, 1); }
+/* the end of a round: you, then the standings */
+.wpc-end-over { background: var(--bg); justify-content: safe center; }
+.wpc-end { width: 100%; max-width: 760px; display: grid; gap: 22px; align-items: center; text-align: left; }
+.wpc-end-me { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.wpc-crown { width: 44px; margin-bottom: 2px; animation: wpc-pop-in 520ms cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes wpc-pop-in { from { transform: scale(0.4); opacity: 0; } }
+.wpc-crown svg { display: block; width: 100%; }
+.wpc-end-me h2 { margin: 0 0 4px; font-size: 40px; line-height: 1.1; transform: rotate(-2deg); transform-origin: left; }
+.wpc-end-me > p { margin: 0; color: var(--muted); font-size: 15px; font-weight: 500; }
+.wpc-wait { margin-top: 14px !important; }
+.wpc-wait b { color: var(--fg); font-weight: 600; }
+.wpc-actions { display: flex; gap: 10px; width: 100%; margin-top: 16px; }
+.wpc-btn {
+  flex: 1; height: 52px; border: 0; border-radius: 14px; font: 700 16px var(--font); color: var(--fg); background: var(--bg-3);
+  transition: transform 100ms;
+}
+.wpc-btn.primary { flex: 1.4; color: #fff; background: linear-gradient(135deg, #ff5d73, #ffb84d); }
+.wpc-btn.pressed { transform: scale(0.97); }
+.wpc-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.wpc-results li {
+  display: grid; grid-template-columns: 18px 14px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 12px; font-size: 15px;
+}
+.wpc-results li.wpc-me { background: rgba(255, 255, 255, 0.07); }
+.wpc-results .rk { color: var(--muted); font: 600 13px var(--font-display); text-align: right; }
+.wpc-results .sw { width: 12px; height: 12px; border-radius: 50%; background: var(--sc); }
+.wpc-results .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wpc-results b { font: 700 15px var(--font-display); font-variant-numeric: tabular-nums; }
+@media (orientation: landscape) {
+  .wpc-end { grid-template-columns: 1fr 1fr; gap: 32px; }
+  .wpc-results li { padding: 6px 12px; }
+}
+@media (orientation: landscape) and (max-height: 500px) { .wpc-over { gap: 8px; padding: 12px 24px; } }
+.wpc-pops { position: absolute; left: 0; right: 0; top: 30%; display: grid; place-items: center; pointer-events: none; z-index: 6; }
+.wpc-pop { grid-area: 1 / 1; font-size: 44px; animation: fx-pop-phone 1.35s cubic-bezier(0.2, 1.6, 0.3, 1) forwards; }
+@keyframes fx-pop-phone {
+  0% { transform: scale(0.2) rotate(-14deg); opacity: 0; }
+  18% { transform: scale(1.2) rotate(4deg); opacity: 1; }
+  30% { transform: scale(1) rotate(-2deg); }
+  75% { transform: translateY(-10px); opacity: 1; }
+  100% { transform: translateY(-60px) scale(0.9); opacity: 0; }
+}

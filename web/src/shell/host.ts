@@ -1,0 +1,209 @@
+/**
+ * TV / big-screen shell. Owns the room, decides who the VIP is (the player whose phone drives menus),
+ * mounts whichever game is active, and carries out host commands: pause, restart, settings, kick, lock.
+ */
+import { Host, local, type HostPlayer } from "@thumbtide/sdk";
+import { startParam } from "./tv.ts"; // first: the LG TV app's remote, screen saver and fallbacks
+import "../style.css";
+import { RELAY_URL } from "../config.ts";
+import { gameById } from "../games/registry.ts";
+import { defaultSettings, isSys, type GameHandle, type Settings, type ShellState } from "../games/types.ts";
+import { shell } from "./host-state.ts";
+import { createPauseMenu } from "./pause-menu.ts";
+import { audio, blip, soundHint } from "./sound.ts";
+
+const root = document.getElementById("app")!;
+const banner = document.getElementById("banner")!;
+
+const host = new Host({ server: RELAY_URL, game: "lobby", maxPlayers: 8 });
+shell.host = host;
+
+// sound is on from the start wherever the browser allows it, and from the first key press or click otherwise
+audio();
+soundHint(document.body);
+
+// ------------------------------------------------------------------ settings, remembered on this TV
+const SETTINGS_KEY = "thumbtide:settings";
+const saved: Record<string, Settings> = (() => {
+  try {
+    return JSON.parse(local.get(SETTINGS_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+})();
+function settingsFor(game: string): Settings {
+  const def = gameById(game);
+  const merged = { ...defaultSettings(def?.settings), ...(saved[game] ?? {}) };
+  // ?bots=3, ?look=reactor… on the TV page (or the TV app's launch options) win: handy for testing
+  for (const d of def?.settings ?? []) {
+    const v = startParam(d.key);
+    const opt = v === null ? undefined : d.options.find((o) => String(o.value) === v);
+    if (d.key === "bots" && v !== null) merged.bots = Math.max(0, Math.min(7, Number(v) || 0));
+    else if (opt) merged[d.key] = opt.value;
+  }
+  return merged;
+}
+const settingsListeners = new Set<(s: Settings) => void>();
+
+// ------------------------------------------------------------------ state every phone sees
+const state: ShellState = { vip: null, game: "lobby", paused: false, canPause: false, settings: {}, locked: false, selected: null, players: [] };
+shell.state = state;
+
+function publish() {
+  state.vip = shell.vip;
+  state.players = host.list.map((p) => ({ id: p.id, name: p.name, connected: p.connected }));
+  state.settings = settingsFor(state.selected ?? state.game);
+  host.broadcast({ $sys: "shell", state });
+  shell.emit();
+  pauseMenu.render();
+}
+const tell = (p: HostPlayer) => host.send(p.id, { $sys: "shell", state });
+
+// ------------------------------------------------------------------ mounting games
+let handle: GameHandle | null = null;
+let mounted = "";
+let mountSeq = 0;
+
+async function mount(id: string) {
+  const def = gameById(id) ?? gameById("lobby")!;
+  const seq = ++mountSeq;
+  handle?.dispose();
+  handle = null;
+  settingsListeners.clear();
+  root.replaceChildren();
+  mounted = def.id;
+  if (host.config.game !== def.id) host.setGame(def.id);
+  if (def.id === "lobby" && host.config.locked) host.lock(false);
+  // Clear the previous game's sticky state so phones don't render stale screens.
+  host.setShared(null);
+  for (const p of host.players.values()) host.setOwn(p.id, null);
+  Object.assign(state, { game: def.id, paused: false, canPause: false, selected: null, locked: def.id === "lobby" ? false : state.locked });
+  pauseMenu.close();
+  publish();
+
+  const mod = await def.host();
+  if (seq !== mountSeq) return; // another switch happened while loading
+  const result = mod.default({
+    host,
+    root,
+    exit: () => void mount("lobby"),
+    settings: () => settingsFor(def.id),
+    onSettings(fn) {
+      settingsListeners.add(fn);
+      return () => settingsListeners.delete(fn);
+    },
+  });
+  handle = typeof result === "function" ? { dispose: result } : result;
+  state.canPause = !!(handle.pause && handle.resume);
+  publish();
+}
+shell.mount = mount;
+
+// ------------------------------------------------------------------ host commands
+function pause() {
+  if (!handle?.pause || state.paused) return;
+  handle.pause();
+  state.paused = true;
+  publish();
+}
+function resume() {
+  if (!handle?.resume || !state.paused) return;
+  handle.resume();
+  state.paused = false;
+  publish();
+}
+function restart() {
+  if (handle?.restart) {
+    handle.restart();
+    if (state.paused) handle.resume?.();
+    state.paused = false;
+    publish();
+  } else void mount(mounted);
+}
+
+const pauseMenu = createPauseMenu({
+  isLobby: () => mounted === "lobby",
+  state: () => state,
+  resume,
+  pause,
+  restart,
+  lobby: () => void mount("lobby"),
+});
+
+// --------------------------------------------------------------- VIP
+// The first connected player (by join order) controls menus from their phone.
+function refreshVip() {
+  shell.vip = host.list.find((p) => p.connected)?.id ?? null;
+  publish(); // also carries the player list, so send it on every change
+}
+
+host.on("join", () => refreshVip());
+host.on("rejoin", (p) => {
+  refreshVip();
+  tell(p);
+});
+host.on("drop", () => refreshVip());
+host.on("leave", () => refreshVip());
+
+host.on("message", (p, data) => {
+  if (!isSys(data) || p.id !== shell.vip) return;
+  switch (data.$sys) {
+    case "start":
+      if (gameById(data.game)) {
+        blip("start");
+        void mount(data.game);
+      }
+      break;
+    case "exit":
+      void mount("lobby");
+      break;
+    case "pause":
+      pause();
+      break;
+    case "resume":
+      resume();
+      break;
+    case "restart":
+      restart();
+      break;
+    case "select":
+      state.selected = data.game && gameById(data.game) ? data.game : null;
+      publish();
+      break;
+    case "lock":
+      if (mounted !== "lobby") {
+        host.lock(!!data.locked);
+        state.locked = !!data.locked;
+        publish();
+      }
+      break;
+    case "kick":
+      if (data.id !== p.id) host.kick(data.id);
+      break;
+    case "setting": {
+      const def = gameById(data.game)?.settings?.find((s) => s.key === data.key);
+      if (!def || !def.options.some((o) => o.value === data.value)) break;
+      saved[data.game] = { ...(saved[data.game] ?? {}), [data.key]: data.value };
+      local.set(SETTINGS_KEY, JSON.stringify(saved));
+      publish();
+      if (data.game === mounted) for (const fn of settingsListeners) fn(settingsFor(mounted));
+      break;
+    }
+  }
+});
+
+// -------------------------------------------------------- lifecycle
+host.on("room", ({ resumed }) => {
+  // Page refresh → resume whatever game the room was on (fresh state).
+  // Brand-new room → lobby. Network blip → nothing to do.
+  if (resumed && mounted) return;
+  // ?game=<id> opens straight into a game (handy for testing and TV-app deep links).
+  const direct = startParam("game");
+  void mount(resumed ? host.config.game : direct && gameById(direct) ? direct : "lobby");
+  refreshVip();
+});
+
+host.on("status", (s) => {
+  banner.hidden = s === "open";
+  banner.textContent = s === "closed" ? "Disconnected" : "Reconnecting to server…";
+});

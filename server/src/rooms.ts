@@ -1,0 +1,325 @@
+/**
+ * Room logic, independent of the socket library. A `Conn` is anything that can
+ * send a string and be closed, so this can be ported to other runtimes
+ * (e.g. Cloudflare Durable Objects) without changes.
+ */
+import { randomBytes } from "node:crypto";
+import {
+  CLOSE_CODES,
+  LIMITS,
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
+  type ControllerToServer,
+  type HostToServer,
+  type PlayerInfo,
+  type RemoveReason,
+  type RoomConfig,
+  type ServerToController,
+  type ServerToHost,
+  type Target,
+} from "@thumbtide/protocol";
+
+export interface Conn {
+  send(data: string): void;
+  close(code: number, reason: string): void;
+  /** Bytes queued but not yet sent; used to drop droppable traffic under load. */
+  bufferedAmount(): number;
+}
+
+const DROPPABLE_BUFFER_LIMIT = 256 * 1024;
+
+export interface ManagerOptions {
+  maxRooms?: number;
+  playerGraceMs?: number;
+  hostGraceMs?: number;
+}
+
+interface Player {
+  info: PlayerInfo;
+  token: string;
+  conn: Conn | null;
+  graceTimer: ReturnType<typeof setTimeout> | null;
+  ownState: unknown;
+}
+
+const token = () => randomBytes(18).toString("base64url");
+const shortId = () => randomBytes(4).toString("hex");
+
+function sendHost(conn: Conn, msg: ServerToHost) {
+  conn.send(JSON.stringify(msg));
+}
+function sendCtl(conn: Conn, msg: ServerToController) {
+  conn.send(JSON.stringify(msg));
+}
+
+export class Room {
+  host: Conn | null = null;
+  hostToken = token();
+  config: RoomConfig = { game: "lobby", maxPlayers: 8, locked: false };
+  players = new Map<string, Player>();
+  sharedState: unknown = null;
+  private nextIndex = 0;
+  private hostGraceTimer: ReturnType<typeof setTimeout> | null = null;
+  closed = false;
+
+  constructor(
+    readonly code: string,
+    private readonly mgr: RoomManager,
+  ) {}
+
+  // ---------------------------------------------------------------- host
+
+  attachHost(conn: Conn, resumed: boolean) {
+    if (this.host && this.host !== conn) {
+      this.host.close(CLOSE_CODES.replaced, "replaced by a newer host connection");
+    }
+    this.host = conn;
+    if (this.hostGraceTimer) clearTimeout(this.hostGraceTimer);
+    this.hostGraceTimer = null;
+
+    sendHost(conn, {
+      t: "welcome",
+      room: this.code,
+      token: this.hostToken,
+      config: this.config,
+      players: [...this.players.values()].map((p) => p.info),
+      resumed,
+    });
+    if (resumed) this.broadcastCtl({ t: "host", connected: true });
+  }
+
+  detachHost(conn: Conn) {
+    if (this.host !== conn) return;
+    this.host = null;
+    this.broadcastCtl({ t: "host", connected: false });
+    this.hostGraceTimer = setTimeout(() => this.close("host-timeout"), this.mgr.hostGraceMs);
+  }
+
+  onHostMessage(msg: HostToServer) {
+    switch (msg.t) {
+      case "msg": {
+        const out = JSON.stringify({ t: "msg", d: msg.d } satisfies ServerToController);
+        for (const p of this.resolve(msg.to)) p.conn?.send(out);
+        break;
+      }
+      case "state": {
+        if (msg.to === undefined) {
+          this.sharedState = msg.d;
+          this.broadcastCtl({ t: "state", scope: "shared", d: msg.d });
+        } else {
+          const out = JSON.stringify({ t: "state", scope: "own", d: msg.d } satisfies ServerToController);
+          for (const p of this.resolve(msg.to)) {
+            p.ownState = msg.d;
+            p.conn?.send(out);
+          }
+        }
+        break;
+      }
+      case "config": {
+        const d = msg.d ?? {};
+        if (typeof d.game === "string" && d.game.length <= 64) this.config.game = d.game;
+        if (typeof d.locked === "boolean") this.config.locked = d.locked;
+        if (typeof d.maxPlayers === "number" && Number.isFinite(d.maxPlayers)) {
+          this.config.maxPlayers = Math.max(1, Math.min(LIMITS.maxPlayers, Math.floor(d.maxPlayers)));
+        }
+        this.broadcastCtl({ t: "config", config: this.config });
+        break;
+      }
+      case "kick": {
+        const p = this.players.get(msg.id);
+        if (p) this.removePlayer(p, "kicked");
+        break;
+      }
+      case "close":
+        this.close("host-closed");
+        break;
+      case "ping":
+        if (this.host) sendHost(this.host, { t: "pong", ts: msg.ts });
+        break;
+    }
+  }
+
+  // ---------------------------------------------------------- controller
+
+  /** Returns the player, or a close code if the join was refused. */
+  joinController(conn: Conn, name: string, playerToken: string | null): Player | number {
+    // Reconnect with a known token → take over the existing slot.
+    if (playerToken) {
+      for (const p of this.players.values()) {
+        if (p.token !== playerToken) continue;
+        if (p.conn && p.conn !== conn) p.conn.close(CLOSE_CODES.replaced, "replaced by a newer connection");
+        if (p.graceTimer) clearTimeout(p.graceTimer);
+        p.graceTimer = null;
+        p.conn = conn;
+        p.info.connected = true;
+        this.welcomeCtl(p, true);
+        if (this.host) sendHost(this.host, { t: "rejoin", p: p.info });
+        return p;
+      }
+      // Unknown/expired token: fall through and join as a new player.
+    }
+
+    if (this.config.locked) return CLOSE_CODES.roomLocked;
+    if (this.players.size >= this.config.maxPlayers) return CLOSE_CODES.roomFull;
+
+    const p: Player = {
+      info: { id: shortId(), name: this.uniqueName(name), index: this.nextIndex++, connected: true },
+      token: token(),
+      conn,
+      graceTimer: null,
+      ownState: null,
+    };
+    this.players.set(p.info.id, p);
+    this.welcomeCtl(p, false);
+    if (this.host) sendHost(this.host, { t: "join", p: p.info });
+    return p;
+  }
+
+  detachController(p: Player, conn: Conn) {
+    if (p.conn !== conn) return; // an old socket closing after a reconnect
+    p.conn = null;
+    p.info.connected = false;
+    if (!this.players.has(p.info.id)) return;
+    if (this.host) sendHost(this.host, { t: "drop", id: p.info.id });
+    p.graceTimer = setTimeout(() => this.removePlayer(p, "timeout"), this.mgr.playerGraceMs);
+  }
+
+  onControllerMessage(p: Player, msg: ControllerToServer) {
+    switch (msg.t) {
+      case "msg":
+        if (this.host) sendHost(this.host, { t: "msg", from: p.info.id, d: msg.d });
+        break;
+      case "in":
+        // Continuous input is latest-wins, so it's safe to drop under backpressure.
+        if (this.host && this.host.bufferedAmount() < DROPPABLE_BUFFER_LIMIT) {
+          sendHost(this.host, { t: "in", from: p.info.id, d: msg.d });
+        }
+        break;
+      case "leave":
+        this.removePlayer(p, "left");
+        break;
+      case "ping":
+        if (p.conn) sendCtl(p.conn, { t: "pong", ts: msg.ts });
+        break;
+    }
+  }
+
+  // ------------------------------------------------------------- helpers
+
+  private welcomeCtl(p: Player, resumed: boolean) {
+    if (!p.conn) return;
+    sendCtl(p.conn, {
+      t: "welcome",
+      room: this.code,
+      token: p.token,
+      you: p.info,
+      config: this.config,
+      hostConnected: this.host !== null,
+      shared: this.sharedState,
+      own: p.ownState,
+      resumed,
+    });
+  }
+
+  private removePlayer(p: Player, reason: RemoveReason) {
+    if (!this.players.delete(p.info.id)) return;
+    if (p.graceTimer) clearTimeout(p.graceTimer);
+    p.graceTimer = null;
+    if (p.conn) {
+      if (reason === "kicked") {
+        sendCtl(p.conn, { t: "closed", reason: "kicked" });
+        p.conn.close(CLOSE_CODES.kicked, "kicked");
+      } else {
+        p.conn.close(CLOSE_CODES.left, "left");
+      }
+      p.conn = null;
+    }
+    if (this.host) sendHost(this.host, { t: "remove", id: p.info.id, reason });
+  }
+
+  private resolve(to: Target): Player[] {
+    if (to === undefined) return [...this.players.values()];
+    const ids = Array.isArray(to) ? to : [to];
+    const out: Player[] = [];
+    for (const id of ids) {
+      const p = typeof id === "string" ? this.players.get(id) : undefined;
+      if (p) out.push(p);
+    }
+    return out;
+  }
+
+  private broadcastCtl(msg: ServerToController) {
+    const out = JSON.stringify(msg);
+    for (const p of this.players.values()) p.conn?.send(out);
+  }
+
+  private uniqueName(raw: string): string {
+    const base =
+      raw.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, LIMITS.maxNameLength) ||
+      `Player ${this.nextIndex + 1}`;
+    const taken = new Set([...this.players.values()].map((p) => p.info.name.toLowerCase()));
+    if (!taken.has(base.toLowerCase())) return base;
+    for (let n = 2; ; n++) {
+      const candidate = `${base.slice(0, LIMITS.maxNameLength - 3)} ${n}`;
+      if (!taken.has(candidate.toLowerCase())) return candidate;
+    }
+  }
+
+  close(reason: "host-closed" | "host-timeout") {
+    if (this.closed) return;
+    this.closed = true;
+    if (this.hostGraceTimer) clearTimeout(this.hostGraceTimer);
+    for (const p of this.players.values()) {
+      if (p.graceTimer) clearTimeout(p.graceTimer);
+      if (p.conn) {
+        sendCtl(p.conn, { t: "closed", reason });
+        p.conn.close(CLOSE_CODES.roomClosed, reason);
+      }
+    }
+    this.players.clear();
+    this.host?.close(CLOSE_CODES.roomClosed, reason);
+    this.host = null;
+    this.mgr.delete(this);
+  }
+}
+
+export class RoomManager {
+  readonly rooms = new Map<string, Room>();
+  private byHostToken = new Map<string, Room>();
+  readonly maxRooms: number;
+  readonly playerGraceMs: number;
+  readonly hostGraceMs: number;
+
+  constructor(opts: ManagerOptions = {}) {
+    this.maxRooms = opts.maxRooms ?? 5000;
+    this.playerGraceMs = opts.playerGraceMs ?? LIMITS.playerGraceMs;
+    this.hostGraceMs = opts.hostGraceMs ?? LIMITS.hostGraceMs;
+  }
+
+  create(): Room | null {
+    if (this.rooms.size >= this.maxRooms) return null;
+    let code: string;
+    do {
+      code = "";
+      const bytes = randomBytes(ROOM_CODE_LENGTH);
+      for (const b of bytes) code += ROOM_CODE_ALPHABET[b % ROOM_CODE_ALPHABET.length];
+    } while (this.rooms.has(code));
+    const room = new Room(code, this);
+    this.rooms.set(code, room);
+    this.byHostToken.set(room.hostToken, room);
+    return room;
+  }
+
+  get(code: string) {
+    return this.rooms.get(code);
+  }
+
+  byToken(hostToken: string) {
+    return this.byHostToken.get(hostToken);
+  }
+
+  delete(room: Room) {
+    this.rooms.delete(room.code);
+    this.byHostToken.delete(room.hostToken);
+  }
+}

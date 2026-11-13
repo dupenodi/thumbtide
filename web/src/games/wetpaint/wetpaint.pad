@@ -1,0 +1,49 @@
+# Wet Paint: the phone controller and how it feels.
+# Save this file and phones pick up the change. Syntax and every setting: web/src/games/kit/pad.ts
+
+controller
+  orientation  landscape     # landscape | portrait | any
+  send-rate    40hz          # stick updates per second (10–60)
+
+stick move
+  label        "Steer"       # shown faintly until the first touch
+  mode         floating      # floating: the stick starts wherever your thumb lands | fixed
+  follow       yes           # the stick slides after your thumb, so it never runs out of travel
+  travel       40px          # thumb travel from centre to rim
+  full-at      80%           # full speed this far out: no hunting for the rim
+  deadzone     7%            # ignore tiny wobbles around the centre
+  curve        0.85          # 1 = linear; lower = livelier with a small push
+  directions   any           # any | 8 | 4
+  haptic       8ms           # tap when your thumb lands
+  rim-haptic   0ms           # tap when you hit full speed (0 = off)
+
+button splat
+  label        "SPLAT!"
+  hint         "Lob a glob. Knocks over anyone it lands on."
+  icon         splat
+  style        primary
+  haptic       22ms
+  fires        press         # press | release | repeat <ms>
+
+button dash
+  label        "DASH"
+  hint         "Ram a rival and steal their paint."
+  icon         dash
+  haptic       14ms
+  fires        press
+
+buzz                         # ms on, off, on…
+  hit          60 40 120     # a splat landed on you
+  bonked       40 30 40      # someone rammed you
+  pickup       15 40 15      # paint pot or candy
+  power        20 30 20 30 60
+  dried        80 40 80
+  blocked      20
+  nope         10 40 10      # pressed SPLAT! without enough paint
+  count        15            # 3, 2, 1…
+  go           70
+
+tune                         # how the brush moves (read by the game)
+  speed        29            # cells per second at full tilt
+  accel        20            # how fast it gets up to speed and stops (higher = snappier)
+  turn         18            # how fast it turns to face where it's going

@@ -1,0 +1,12 @@
+packages:
+  - packages/*
+  - server
+  - web
+
+allowBuilds:
+  esbuild: true
+  # LG webOS CLI: its postinstall only fixes file permissions
+  "@webos-tools/cli": true
+  # optional native speedups for ssh2; it works without them
+  cpu-features: false
+  ssh2: false
