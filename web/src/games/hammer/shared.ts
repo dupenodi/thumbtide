@@ -2,6 +2,9 @@ import type { WeaponKind } from "./weapons.ts";
 
 export type Phase = "pick" | "fight" | "result" | "match";
 
+/** ffa: everyone for themselves. teams: Red (P1, P3) against Blue (P2, P4). pve: all players against the CPU. */
+export type Mode = "ffa" | "teams" | "pve";
+
 /**
  * Phone input. Touchpad (k 0): running totals of finger movement in CSS px since the controller started, so no
  * movement is lost when updates merge or drop; the TV turns the change between totals into thrust.
@@ -24,9 +27,12 @@ export interface HammerGame {
     round: number;
     /** Whole seconds left in this phase (pick, result, match). */
     left: number;
-    /** Round or match winner's name and player id, or null for a draw. */
+    mode: Mode;
+    /** Round or match winner's name ("Red team", "CPU"…) and, in free-for-all, player id; null for a draw. */
     winner: string | null;
     winnerId: string | null;
+    /** The winning team number, or null for a draw. */
+    winnerTeam: number | null;
     winnerColor: string | null;
     winsToMatch: number;
   };
@@ -34,6 +40,9 @@ export interface HammerGame {
     color: string;
     /** Seat number shown as P1–P4, or −1 while waiting. */
     slot: number;
+    /** Team number, and its name in team modes ("Red", "Blue", "Players"), or "" in free-for-all. */
+    team: number;
+    teamName: string;
     weapon: WeaponKind;
     hp: number;
     alive: boolean;

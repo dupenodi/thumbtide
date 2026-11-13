@@ -107,7 +107,7 @@ const mount: ControllerMount = (ctx) => {
     const own = ctl.own;
     const sh = ctl.shared;
     el.style.setProperty("--c", own?.color ?? "#7c5cff");
-    (el.querySelector(".hmc-p") as HTMLElement).textContent = own && own.slot >= 0 ? `P${own.slot + 1}` : "—";
+    (el.querySelector(".hmc-p") as HTMLElement).textContent = own && own.slot >= 0 ? (own.teamName ? `${own.teamName.toUpperCase()} · P${own.slot + 1}` : `P${own.slot + 1}`) : "—";
     (el.querySelector(".hmc-name") as HTMLElement).textContent = ctl.me?.name ?? "";
     const hp = Math.max(0, own?.hp ?? 100);
     (el.querySelector(".hmc-hp i") as HTMLElement).style.transform = `scaleX(${hp / 100})`;
@@ -119,11 +119,12 @@ const mount: ControllerMount = (ctx) => {
     const phase = sh?.phase ?? "pick";
     pick.hidden = phase !== "pick";
     tip.hidden = phase === "pick";
-    const me = ctl.me?.id;
+    // a win for my team counts as my win
+    const won = !!sh && !!own && (sh.mode === "ffa" ? sh.winnerId === ctl.me?.id : sh.winnerTeam === own.team);
     if (own && !own.seated) showOver("Wait", "You're in from the next round");
     else if (phase === "fight" && own && !own.alive) showOver("K.O.", "Next round soon", "#ff3d55");
-    else if (phase === "result") showOver(sh?.winnerId === me ? "You win!" : sh?.winner ? `${sh.winner} wins` : "Draw", "Next round soon", sh?.winnerColor ?? "#fff");
-    else if (phase === "match") showOver(sh?.winnerId === me ? "Champion!" : `${sh?.winner ?? "Match"} wins`, "New match soon", sh?.winnerColor ?? "#fff");
+    else if (phase === "result") showOver(won ? (sh?.mode === "ffa" ? "You win!" : "Your team wins!") : sh?.winner ? `${sh.winner} wins` : "Draw", "Next round soon", sh?.winnerColor ?? "#fff");
+    else if (phase === "match") showOver(won ? "Champion!" : `${sh?.winner ?? "Match"} wins`, "New match soon", sh?.winnerColor ?? "#fff");
     else showOver("", "");
   };
 

@@ -42,6 +42,8 @@ export interface Tag {
 
 export interface Machine {
   id: number;
+  /** Team number: machines with the same team are allies (free-for-all gives each machine its own). */
+  team: number;
   name: string;
   color: string;
   weapon: WeaponKind;
@@ -103,12 +105,15 @@ export class Arena {
   private dtPrev = STEP;
   private loose: Loose[] = [];
   private lastDisarm = -10;
+  /** Not in Hammerfight: the game turns this on late in a round; the health_low rule stops and hits simply subtract. */
+  suddenDeath = false;
 
   constructor(public tuning: Tuning) {}
 
-  add(o: { id: number; name: string; color: string; weapon: WeaponKind; x: number; y: number }): Machine {
+  add(o: { id: number; team?: number; name: string; color: string; weapon: WeaponKind; x: number; y: number }): Machine {
     const m = {
       ...o,
+      team: o.team ?? o.id,
       parts: [],
       part: new Map(),
       joints: [],
@@ -183,6 +188,10 @@ export class Arena {
     }
     for (const m of this.machines) {
       m.flash = Math.max(0, m.flash - STEP);
+      // Teammates pass through each other unless team collision is on.
+      const t = tn.teamCollision >= 1 ? -1 : m.team;
+      m.hull.team = t;
+      for (const b of m.parts) b.team = t;
       if (m.alive) {
         this.drive(m, dt, K);
         // Shock wears off (base tick 0x411af0): stun −= (R + 1) · dt · 0.5.
@@ -305,6 +314,10 @@ export class Arena {
   /** Damage (0x410340) and shock. */
   private hurt(victim: Machine, vBody: Body, by: Tag, byBody: Body, impact: number, c: ContactReport): void {
     if (!victim.alive) return;
+    // Damage off (the warm-up): no damage and no stun either.
+    if (this.tuning.damage <= 0) return;
+    // Friendly fire off: teammates' hits only push.
+    if (by.m !== victim && by.m.team === victim.team && this.tuning.teamDamage < 1) return;
     const owned = this.owned(by);
     // Unowned blunt things (a wreck, a loose chain) count for 10 % against a machine.
     const effect = !owned && by.sharpness <= 1 ? COLLISION_EFFECT : 1;
@@ -330,9 +343,12 @@ export class Arena {
     if (dmg <= 0) return;
 
     // health_low rule: below 12 only a lethal hit counts; the first lethal hit leaves 12, the next one kills.
+    // In sudden death (ours, to end long rounds) every hit simply subtracts.
     const before = victim.hp;
     const low = MACHINE.healthLow;
-    if (victim.hp - dmg > 0) {
+    if (this.suddenDeath) {
+      victim.hp = Math.max(0, victim.hp - dmg);
+    } else if (victim.hp - dmg > 0) {
       if (victim.hp > low) victim.hp -= dmg;
     } else if (victim.hp !== low) {
       victim.hp = low;
@@ -356,6 +372,7 @@ export class Arena {
   private clash(aBody: Body, ta: Tag, bBody: Body, tb: Tag, impact: number, c: ContactReport): void {
     if (this.tuning.disarm < 1 || this.t - this.lastDisarm < 1) return;
     if (!this.owned(ta) || !this.owned(tb)) return;
+    if (ta.m.team === tb.m.team && this.tuning.teamDamage < 1) return;
     const sa = Math.hypot(aBody.vx, aBody.vy);
     const sb = Math.hypot(bBody.vx, bBody.vy);
     const threshold = (m: Machine) => (25 * recovery(m) + 75) * (m.hp <= MACHINE.healthLow ? 0.25 : 1);

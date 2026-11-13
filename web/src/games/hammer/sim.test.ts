@@ -201,6 +201,36 @@ test("the chain mace stays close to its rest length when whipped hard", () => {
   assert.ok(worst < 3, `a chain joint stretched ${worst.toFixed(1)} px`);
 });
 
+test("teams: friendly fire off protects teammates, on hurts them; collision off lets them pass through", () => {
+  const run = (o: { teamDamage: number; teamCollision: number; sameTeam: boolean }) => {
+    const ar = arena();
+    ar.tuning.slomo = 0;
+    ar.tuning.teamDamage = o.teamDamage;
+    ar.tuning.teamCollision = o.teamCollision;
+    ar.tuning.hover = 1; // no sinking, so any speed comes from the hit
+    const a = ar.add({ id: 0, team: 0, name: "a", color: "#f00", weapon: "hammer", x: 300, y: 200 });
+    const b = ar.add({ id: 1, team: o.sameTeam ? 0 : 1, name: "b", color: "#00f", weapon: "hammer", x: 385, y: 200 });
+    for (let i = 0; i < 5; i++) ar.step();
+    a.striker.setVelocity(700, -140, 0, 0.02);
+    let dmg = 0;
+    let touched = false;
+    for (let i = 0; i < 30; i++) {
+      ar.step();
+      for (const e of ar.events) if (e.type === "hit" && e.victim === b) dmg += e.dmg;
+      ar.events.length = 0;
+      if (Math.abs(b.hull.vx) > 20) touched = true;
+    }
+    return { dmg, stun: b.stun, touched };
+  };
+  const off = run({ teamDamage: 0, teamCollision: 1, sameTeam: true });
+  assert.equal(off.dmg, 0, "friendly fire off still did damage");
+  assert.equal(off.stun, 0, "friendly fire off still stunned");
+  assert.ok(off.touched, "the teammate was not even pushed");
+  assert.ok(run({ teamDamage: 1, teamCollision: 1, sameTeam: true }).dmg > 0, "friendly fire on did no damage");
+  assert.ok(run({ teamDamage: 0, teamCollision: 1, sameTeam: false }).dmg > 0, "an enemy took no damage");
+  assert.ok(!run({ teamDamage: 0, teamCollision: 0, sameTeam: true }).touched, "teammates collided with collision off");
+});
+
 test("every weapon builds, hangs below its machine and keeps its joints together when whipped", () => {
   for (const weapon of WEAPON_KINDS) {
     const ar = arena();

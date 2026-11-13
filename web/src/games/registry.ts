@@ -157,6 +157,16 @@ export const GAMES: GameDef[] = [
     controls: parsePad(hammerPad, "hammer.pad"),
     settings: [
       {
+        key: "mode",
+        label: "Mode",
+        options: [
+          { value: "ffa", label: "Free for all" },
+          { value: "teams", label: "Teams 2v2" },
+          { value: "pve", label: "Co-op vs CPU" },
+        ],
+        default: "ffa",
+      },
+      {
         key: "wins",
         label: "Rounds to win",
         options: [2, 3, 5].map((n) => ({ value: n, label: String(n) })),
@@ -169,6 +179,9 @@ export const GAMES: GameDef[] = [
         default: 0,
         applies: "now",
       },
+      { key: "slomo", label: "Slow motion on big hits", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: true, applies: "now" },
+      { key: "teamCollision", label: "Teammates collide", options: [{ value: true, label: "Yes" }, { value: false, label: "No" }], default: true, applies: "now" },
+      { key: "teamDamage", label: "Friendly fire", options: [{ value: false, label: "Off" }, { value: true, label: "On" }], default: false, applies: "now" },
     ],
     host: () => import("./hammer/host.ts"),
     controller: () => import("./hammer/controller.ts"),

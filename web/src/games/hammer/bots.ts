@@ -61,7 +61,7 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot): void {
   let enemy: Machine | null = null;
   let best = Infinity;
   for (const o of arena.machines) {
-    if (o === m || !o.alive) continue;
+    if (o === m || !o.alive || o.team === m.team) continue; // only enemies
     const d = Math.hypot(o.hull.x - m.hull.x, o.hull.y - m.hull.y);
     if (d < best) {
       best = d;

@@ -40,6 +40,8 @@ export class Body {
   spinDamp = 300000;
   /** Bodies with the same group never collide. */
   group = -1;
+  /** Bodies with the same team (>= 0) never collide either; the game sets it only when teammates should pass through. */
+  team = -1;
   dead = false;
   data: unknown = null;
 

@@ -159,6 +159,7 @@ export function collideAll(bodies: Body[], dt: number, onContact?: (c: ContactRe
     for (let j = i + 1; j < n; j++) {
       const B = bodies[j]!;
       if (A.group >= 0 && A.group === B.group) continue;
+      if (A.team >= 0 && A.team === B.team) continue;
       if (A.invMass === 0 && B.invMass === 0) continue;
 
       // Relative sweep this step.

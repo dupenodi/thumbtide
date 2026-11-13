@@ -12,7 +12,7 @@ import "./hammer.css";
 import { loadGameFont } from "./font.ts";
 import { Hud, type SeatView } from "./hud.ts";
 import { Fx, Renderer } from "./render.ts";
-import type { HammerGame, Phase } from "./shared.ts";
+import type { HammerGame, Mode, Phase } from "./shared.ts";
 import { Arena, type Machine, STEP, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
 import { MACHINE, WEAPON_KINDS, type WeaponKind } from "./weapons.ts";
@@ -26,12 +26,23 @@ const SPAWNS: [number, number][] = [
 ];
 /** Computer players: colours away from the first human colours, and never white (white is the hit flash). */
 const BOT_COLORS = ["#c18cff", "#ff9f43", "#2de2c9", "#a3e048"];
+/** Team modes: Red is P1 + P3 (the left HUD side), Blue is P2 + P4; each member gets a shade of the team colour. */
+const TEAMS = [
+  { name: "Red", color: "#ff4d5e", shades: ["#ff5d73", "#ff9f43"] },
+  { name: "Blue", color: "#3ec5ff", shades: ["#3ec5ff", "#7c8cff"] },
+];
+const PVE_TEAMS = [
+  { name: "Players", color: "#7cf29a" },
+  { name: "CPU", color: "#c18cff" },
+];
 const PICK_S = 8;
 const FIRST_PICK_S = 12;
 const RESULT_S = 4;
 const MATCH_S = 7;
 /** Real seconds after the last KO before the round is called (let the wreck fall). */
 const CALL_S = 1.2;
+/** Seconds of fight before sudden death: the health_low rule stops, so long rounds end. */
+const SUDDEN_DEATH_S = 60;
 
 interface Seat {
   id: string;
@@ -116,8 +127,34 @@ const mount: HostMount = (ctx) => {
   const bots = () => [...seats.values()].filter((s) => !s.human);
   const seated = () => [...seats.values()].filter((s) => s.slot >= 0).sort((a, b) => a.slot - b.slot);
 
+  // ---- modes and teams ---------------------------------------------------------------------------
+  const settingMode = (): Mode => {
+    const m = String(ctx.settings().mode);
+    return m === "teams" || m === "pve" ? m : "ffa";
+  };
+  /** The mode of the current round (a change in Settings applies from the next warm-up). */
+  let mode: Mode = settingMode();
+  const teamOf = (s: Seat): number => (mode === "teams" ? s.slot % 2 : mode === "pve" ? (s.human ? 0 : 1) : s.slot);
+  const teamName = (t: number): string => (mode === "teams" ? TEAMS[t]!.name : mode === "pve" ? PVE_TEAMS[t]!.name : "");
+  const teamColor = (t: number): string => (mode === "teams" ? TEAMS[t]!.color : PVE_TEAMS[t]!.color);
+  const colorOf = (s: Seat): string => (mode === "teams" ? TEAMS[s.slot % 2]!.shades[s.slot >= 2 ? 1 : 0]! : s.color);
+  /** Computer players wanted: the setting, but at least one enemy in co-op. */
+  const botsWanted = () => {
+    const n = Number(ctx.settings().bots) || 0;
+    return mode === "pve" ? Math.max(1, n) : n;
+  };
+  const teamsAlive = () => new Set(seated().filter((s) => s.m?.alive).map(teamOf));
+  const teamsSeated = () => new Set(seated().map(teamOf));
+  const applyToggles = () => {
+    const st = ctx.settings();
+    tuning.teamCollision = st.teamCollision === false ? 0 : 1;
+    tuning.teamDamage = st.teamDamage === true ? 1 : 0;
+  };
+
   const syncBots = () => {
-    const want = Math.max(0, Math.min(Number(ctx.settings().bots) || 0, MAX_SEATS - Math.min(MAX_SEATS, humans().length)));
+    // co-op keeps a seat for at least one enemy
+    const room = MAX_SEATS - Math.min(mode === "pve" ? MAX_SEATS - 1 : MAX_SEATS, humans().length);
+    const want = Math.max(0, Math.min(botsWanted(), room));
     const have = bots();
     for (let i = have.length; i < want; i++) {
       const id = `bot:${++botSerial}`;
@@ -157,9 +194,11 @@ const mount: HostMount = (ctx) => {
     if (s.m) {
       arena.respawn(s.m, x, y, s.weapon);
     } else {
-      s.m = arena.add({ id: ++machineSerial, name: s.name, color: s.color, weapon: s.weapon, x, y });
+      s.m = arena.add({ id: ++machineSerial, name: s.name, color: colorOf(s), weapon: s.weapon, x, y });
       byMachine.set(s.m, s);
     }
+    s.m.team = teamOf(s);
+    s.m.color = colorOf(s);
     fx.trails.delete(s.m);
     if (s.bot) {
       s.bot.homeX = x;
@@ -181,9 +220,11 @@ const mount: HostMount = (ctx) => {
       spawn(s);
       pushOwn(s);
     }
-    // humans waiting while bots are seated: swap the last bot out
+    // humans waiting while bots are seated: swap the last bot out (co-op keeps its last enemy)
     for (const h of humans().filter((s) => s.slot < 0)) {
-      const b = seated().filter((s) => !s.human).pop();
+      const seatedBots = seated().filter((s) => !s.human);
+      if (mode === "pve" && seatedBots.length <= 1) break;
+      const b = seatedBots.pop();
       if (!b) break;
       h.slot = b.slot;
       unseat(b);
@@ -212,7 +253,8 @@ const mount: HostMount = (ctx) => {
   /** Real seconds in the current phase. */
   let phaseFor = 0;
   let lastWhole = -1;
-  let winner: Seat | null = null;
+  /** The last round's winner: a player (free-for-all) or a team. */
+  let winner: { label: string; color: string; id: string | null; team: number } | null = null;
   let callAt = -1;
   let paused = false;
   let hudDirty = true;
@@ -221,8 +263,10 @@ const mount: HostMount = (ctx) => {
   const pushOwn = (s: Seat) => {
     if (!s.human || !host.players.has(s.id)) return;
     host.setOwn(s.id, {
-      color: s.color,
+      color: colorOf(s),
       slot: s.slot,
+      team: teamOf(s),
+      teamName: mode === "ffa" ? "" : teamName(teamOf(s)),
       weapon: s.weapon,
       hp: s.m ? Math.round(s.m.hp) : MACHINE.health,
       alive: !!s.m && s.m.alive,
@@ -235,8 +279,10 @@ const mount: HostMount = (ctx) => {
       phase,
       round,
       left: Math.max(0, Math.ceil(left)),
-      winner: winner?.name ?? null,
+      mode,
+      winner: winner?.label ?? null,
       winnerId: winner?.id ?? null,
+      winnerTeam: winner?.team ?? null,
       winnerColor: winner?.color ?? null,
       winsToMatch: winsToMatch(),
     });
@@ -245,6 +291,14 @@ const mount: HostMount = (ctx) => {
   // ---- phases ------------------------------------------------------------------------------------
   const startPick = (seconds = PICK_S) => {
     phase = "pick";
+    arena.suddenDeath = false;
+    const nextMode = settingMode();
+    if (nextMode !== mode) {
+      // a new mode starts a new match
+      mode = nextMode;
+      for (const x of seats.values()) x.wins = 0;
+      round = 0;
+    }
     round++;
     left = seconds;
     pickTotal = seconds;
@@ -255,6 +309,7 @@ const mount: HostMount = (ctx) => {
     callAt = -1;
     tuning.damage = 0; // warm-up: fly and swing, no damage
     tuning.slomo = 0;
+    applyToggles();
     for (const s of bots()) s.weapon = randomWeapon();
     syncBots();
     fillSeats();
@@ -262,16 +317,18 @@ const mount: HostMount = (ctx) => {
     for (const s of seats.values()) pushOwn(s);
     pushShared();
     hud.clearFeed();
-    if (seated().length >= 2) hud.announce("round", `Round ${round}`, "Pick your weapon", "#ffd84d", 1800);
+    if (teamsSeated().size >= 2) hud.announce("round", `Round ${round}`, mode === "ffa" ? "Pick your weapon" : mode === "teams" ? "Red vs Blue" : "Players vs CPU", "#ffd84d", 1800);
     else hud.clearAnnounce();
     hudDirty = true;
   };
 
   const startFight = () => {
     phase = "fight";
+    arena.suddenDeath = false;
     phaseFor = 0;
     tuning.damage = DEFAULT_TUNING.damage;
-    tuning.slomo = DEFAULT_TUNING.slomo;
+    tuning.slomo = ctx.settings().slomo === false ? 0 : 1;
+    applyToggles();
     for (const s of seated()) spawn(s);
     for (const s of seats.values()) pushOwn(s);
     hud.announce("fight", "Fight!", "", "#ffd84d", 1100);
@@ -280,20 +337,28 @@ const mount: HostMount = (ctx) => {
   };
 
   const endRound = () => {
-    const alive = seated().filter((s) => s.m?.alive);
-    winner = alive.length === 1 ? alive[0]! : null;
-    if (winner) {
-      winner.wins++;
-      if (winner.human) host.send(winner.id, { type: "win" });
+    const alive = teamsAlive();
+    const team = alive.size === 1 ? [...alive][0]! : null;
+    const winners = team === null ? [] : seated().filter((s) => teamOf(s) === team);
+    for (const w of winners) {
+      w.wins++;
+      if (w.human) host.send(w.id, { type: "win" });
     }
-    phase = winner && winner.wins >= winsToMatch() ? "match" : "result";
+    const solo = mode === "ffa" ? winners[0] : undefined;
+    winner =
+      team === null
+        ? null
+        : solo
+          ? { label: solo.name, color: colorOf(solo), id: solo.id, team }
+          : { label: mode === "teams" ? `${teamName(team)} team` : teamName(team), color: teamColor(team), id: null, team };
+    phase = winners.some((w) => w.wins >= winsToMatch()) ? "match" : "result";
     phaseFor = 0;
     left = phase === "match" ? MATCH_S : RESULT_S;
     tuning.slomo = 0;
     for (const s of seats.values()) pushOwn(s);
     pushShared();
-    if (phase === "match") hud.announce("champ", winner!.name, "Champion", winner!.color, 0);
-    else if (winner) hud.announce("win", `${winner.name} wins`, `Round ${round}`, winner.color, 0);
+    if (phase === "match") hud.announce("champ", winner!.label, mode === "ffa" ? "Champion" : "Champions", winner!.color, 0);
+    else if (winner) hud.announce("win", `${winner.label} wins`, `Round ${round}`, winner.color, 0);
     else hud.announce("win", "Draw", "", "#ffffff", 0);
     hudDirty = true;
   };
@@ -301,8 +366,12 @@ const mount: HostMount = (ctx) => {
   const tickPhase = (real: number) => {
     phaseFor += real;
     if (phase === "fight") {
-      const alive = seated().filter((s) => s.m?.alive).length;
-      if (alive <= 1 && callAt < 0) callAt = CALL_S;
+      // the round ends when one team (or one machine) is left flying
+      if (teamsAlive().size <= 1 && callAt < 0) callAt = CALL_S;
+      if (!arena.suddenDeath && phaseFor >= SUDDEN_DEATH_S && callAt < 0) {
+        arena.suddenDeath = true;
+        hud.announce("ko", "Sudden death", "Every hit counts", "#ff3d55", 1800);
+      }
       if (callAt >= 0) {
         callAt -= real;
         if (callAt <= 0) endRound();
@@ -310,7 +379,7 @@ const mount: HostMount = (ctx) => {
       return;
     }
     // Practice until there are two machines to fight.
-    if (phase === "pick" && seated().length < 2) {
+    if (phase === "pick" && teamsSeated().size < 2) {
       left = pickTotal;
     } else {
       left -= real;
@@ -318,7 +387,7 @@ const mount: HostMount = (ctx) => {
     if (Math.ceil(left) !== lastWhole) {
       lastWhole = Math.ceil(left);
       pushShared();
-      if (phase === "pick" && seated().length >= 2 && lastWhole >= 1 && lastWhole <= 3) hud.announce("count", String(lastWhole), "", "#ffd84d", 900);
+      if (phase === "pick" && teamsSeated().size >= 2 && lastWhole >= 1 && lastWhole <= 3) hud.announce("count", String(lastWhole), "", "#ffd84d", 900);
     }
     if (left > 0) return;
     if (phase === "pick") startFight();
@@ -357,6 +426,9 @@ const mount: HostMount = (ctx) => {
       hudDirty = true;
     }),
     ctx.onSettings(() => {
+      // the toggles apply at once; the mode from the next warm-up
+      applyToggles();
+      if (phase === "fight") tuning.slomo = ctx.settings().slomo === false ? 0 : 1;
       syncBots();
       if (phase === "pick") fillSeats();
       pushShared();
@@ -475,7 +547,7 @@ const mount: HostMount = (ctx) => {
     const views: SeatView[] = seated().map((s) => ({
       id: s.id,
       name: s.name,
-      color: s.color,
+      color: colorOf(s),
       slot: s.slot,
       weapon: s.m?.weapon ?? s.weapon,
       hp: s.m ? s.m.hp : MACHINE.health,
@@ -487,7 +559,7 @@ const mount: HostMount = (ctx) => {
     }));
     hud.update(views, winsToMatch());
     if (phase === "pick") {
-      const waiting = seated().length < 2;
+      const waiting = teamsSeated().size < 2;
       hud.warmup(
         waiting ? "Warm-up · waiting for a second player (or add computer players in Settings)" : "Warm-up · pick your weapon on your phone",
         waiting ? null : left / pickTotal,

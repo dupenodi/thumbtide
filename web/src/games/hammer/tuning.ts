@@ -24,6 +24,10 @@ export interface Tuning {
   slomo: number;
   /** Weapon clashes can knock the slower weapon off its machine (0x420ca0). 1 = on. */
   disarm: number;
+  /** Teams: machines of the same team collide (1) or pass through each other (0). */
+  teamCollision: number;
+  /** Teams: hits on teammates hurt and stun (1) or do nothing (0). */
+  teamDamage: number;
   /** Not in Hammerfight: lift that cancels this share of the weapon's weight (0 = original: the weapon drags the machine down). */
   hover: number;
   /** Not in Hammerfight: freeze on a hit, ms per 10 damage. */
@@ -46,6 +50,8 @@ export const DEFAULT_TUNING: Tuning = {
   damage: 0.1,
   slomo: 1,
   disarm: 1,
+  teamCollision: 1,
+  teamDamage: 0,
   hover: 0,
   hitstop: 0,
   limit: 70,
@@ -72,6 +78,8 @@ export const TUNING_FIELDS: TuningField[] = [
   { key: "damage", label: "Damage factor", min: 0, max: 0.5, step: 0.005 },
   { key: "slomo", label: "Slow motion (0/1)", min: 0, max: 1, step: 1 },
   { key: "disarm", label: "Disarm on clash (0/1)", min: 0, max: 1, step: 1 },
+  { key: "teamCollision", label: "Teammates collide (0/1)", min: 0, max: 1, step: 1 },
+  { key: "teamDamage", label: "Friendly fire (0/1)", min: 0, max: 1, step: 1 },
   { key: "hover", label: "Hover assist (0 = original)", min: 0, max: 1, step: 0.05 },
   { key: "hitstop", label: "Hit-stop (ms/10hp)", min: 0, max: 80, step: 1 },
   { key: "limit", label: "Limit past frame (px)", min: 0, max: 200, step: 5 },
