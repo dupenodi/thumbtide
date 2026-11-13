@@ -82,6 +82,7 @@ Run these from the repo root.
 | `pnpm typecheck` | TypeScript check across the whole repo |
 | `pnpm build` | Production build of the site into `web/dist` |
 | `pnpm tv` | Builds the TV page as an LG TV app and installs it (see [LG TV app](#lg-tv-app-optional)) |
+| `pnpm perf` | Frame-rate tests against the LG TV, in a sandbox or on the TV (see [Performance](#performance)) |
 | `pnpm --filter @thumbtide/web art <game>` | Generates poster art with Replicate (see [Art](#art)) |
 
 ### Shortcuts for testing on the TV page
@@ -444,6 +445,7 @@ The TV page can be installed on an LG TV (webOS) as an app, so you don't need a 
 pnpm tv                    # build it, install it on the TV and open it
 pnpm tv --build            # only build the .ipk into web/dist-tv
 pnpm tv --perf=cascade     # open straight into a game with computer players and print the TV's frame rate
+                           # (add --fps=60 to lift the TV's 30fps cap)
 ```
 
 - **First time:** install the *Developer Mode* app from the TV's app store, sign in with an LG developer account, turn
@@ -458,6 +460,23 @@ pnpm tv --perf=cascade     # open straight into a game with computer players and
   (see Deploy).
 - Developer Mode runs out after about 50 hours. Extend it in the Developer Mode app.
 - Avoid leaving DevTools (`pnpm tv --inspect`) attached for long: an entry-level TV once froze during a session.
+
+### Performance
+
+The aim is a steady 60 fps on an entry-level LG TV. `tools/perf` holds the tools; they are never part of the TV app
+(the in-page frame monitor exists only in builds with `VITE_PERF=1`, and other builds fail if it leaks in).
+
+```sh
+pnpm perf                  # every game in a sandbox: Chrome here, slowed down to the TV's measured speed
+pnpm perf cascade --look=reactor
+pnpm perf --tv             # the same scenarios on the real TV (needs the TV set up as above)
+pnpm perf capture          # everything from the TV in one pass, into tools/perf/captures/<time>/
+pnpm perf probe --tv       # measure a TV's hardware and save its profile
+```
+
+The sandbox is for quick before/after comparisons: it shows higher frame rates than the TV, because it can't
+reproduce the TV's memory pressure, 4K compositing or graphics chip. Only `--tv` and `capture` prove 60 fps.
+`.claude/skills/tv-perf/SKILL.md` has the details, the TV's measured hardware and the gotchas.
 
 ### Art
 
