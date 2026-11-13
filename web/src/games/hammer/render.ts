@@ -31,10 +31,13 @@ export class Fx {
   sparks: Spark[] = [];
   floats: Float[] = [];
   shake = 0;
+  /** At most this many sparks live at once (each is a separate stroke; a long grind could add hundreds). */
+  constructor(readonly maxSparks = 240) {}
   /** Recent striker tip positions per machine, for the swing trail. */
   trails = new Map<Machine, { x: number; y: number }[]>();
 
   burst(x: number, y: number, n: number, speed: number, color: string, w = 2): void {
+    n = Math.min(n, this.maxSparks - this.sparks.length);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const s = speed * (0.3 + Math.random() * 0.7);
@@ -44,24 +47,35 @@ export class Fx {
   }
 
   text(x: number, y: number, text: string, color: string, size: number): void {
-    this.floats.push({ x, y, text, life: 0.9, color, size });
+    if (this.floats.length >= 12) this.floats.shift();
+    this.floats.push({ x, y, text, life: 0.9, color, size: Math.round(size) });
   }
 
   update(dt: number): void {
     this.shake *= Math.exp(-dt * 14);
-    for (const s of this.sparks) {
+    if (this.shake < 0.05) this.shake = 0; // still, exactly
+    // in place, swap-remove: no new arrays every frame
+    const sp = this.sparks;
+    for (let i = sp.length - 1; i >= 0; i--) {
+      const s = sp[i]!;
       s.life -= dt;
+      if (s.life <= 0) {
+        sp[i] = sp[sp.length - 1]!;
+        sp.pop();
+        continue;
+      }
       s.x += s.vx * dt;
       s.y += s.vy * dt;
       s.vx *= 1 - dt * 4;
       s.vy = s.vy * (1 - dt * 4) + 300 * dt;
     }
-    this.sparks = this.sparks.filter((s) => s.life > 0);
-    for (const f of this.floats) {
+    const fl = this.floats;
+    for (let i = fl.length - 1; i >= 0; i--) {
+      const f = fl[i]!;
       f.life -= dt;
       f.y -= 40 * dt;
+      if (f.life <= 0) fl.splice(i, 1); // few, and their order is their stacking
     }
-    this.floats = this.floats.filter((f) => f.life > 0);
   }
 }
 
@@ -101,7 +115,8 @@ export class Renderer {
 
     for (const m of arena.machines) this.trail(m, alpha, fx);
     for (const m of arena.machines) this.weapon(m, alpha);
-    for (const m of arena.machines) this.machine(arena, m, alpha);
+    // a wreck that has faded out (or left play) draws nothing: skip its paths entirely
+    for (const m of arena.machines) if (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m))) this.machine(arena, m, alpha);
 
     ctx.lineCap = "round";
     for (const p of fx.sparks) {
@@ -116,9 +131,11 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
     ctx.textAlign = "center";
+    let font = "";
     for (const f of fx.floats) {
       ctx.globalAlpha = Math.min(1, f.life * 2);
-      ctx.font = `${f.size}px "Russo One", system-ui, sans-serif`;
+      const want = `${f.size}px "Russo One", system-ui, sans-serif`;
+      if (want !== font) ctx.font = font = want; // setting a font parses it
       ctx.lineWidth = 4;
       ctx.strokeStyle = "rgba(10,12,20,0.85)";
       ctx.strokeText(f.text, f.x, f.y);
@@ -152,6 +169,11 @@ export class Renderer {
   }
 
   private trail(m: Machine, alpha: number, fx: Fx): void {
+    // no weapon, no trail (after a pickup, `striker` still points at the weapon the taker now holds)
+    if (!m.alive || !m.armed) {
+      fx.trails.delete(m);
+      return;
+    }
     const b = m.striker;
     const [x, y, a] = lerpBody(b, alpha);
     let maxX = 0;
