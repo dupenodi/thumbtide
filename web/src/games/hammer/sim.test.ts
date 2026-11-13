@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { Body, joint, World } from "./engine.ts";
 import { Arena, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
-import { MACHINE, WEAPON_KINDS } from "./weapons.ts";
+import { MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
 const arena = () => new Arena({ ...DEFAULT_TUNING });
 
@@ -199,4 +199,59 @@ test("the chain mace stays close to its rest length when whipped hard", () => {
     }
   }
   assert.ok(worst < 3, `a chain joint stretched ${worst.toFixed(1)} px`);
+});
+
+test("every weapon builds, hangs below its machine and keeps its joints together when whipped", () => {
+  for (const weapon of WEAPON_KINDS) {
+    const ar = arena();
+    ar.tuning.limit = 1e5;
+    const m = ar.add({ id: 0, name: "a", color: "#f00", weapon, x: 480, y: 270 });
+    for (let i = 0; i < 40; i++) ar.step();
+    assert.ok(m.striker.y > m.hull.y + 10, `${weapon}: weapon not below`);
+    let worst = 0;
+    for (let i = 0; i < 300; i++) {
+      const t = i * 0.02;
+      ar.pushRaw(m, Math.cos(t * 9) * 150, Math.sin(t * 9) * 150);
+      ar.step();
+      for (const j of m.joints) {
+        const [ax, ay] = j.a.worldPoint(j.sax, j.say);
+        const [bx, by] = j.b.worldPoint(j.sbx, j.sby);
+        worst = Math.max(worst, Math.hypot(bx - ax, by - ay) - j.radius);
+      }
+    }
+    assert.ok(Number.isFinite(m.hull.x) && Number.isFinite(m.striker.x), `${weapon}: blew up`);
+    assert.ok(worst < 3, `${weapon}: a joint stretched ${worst.toFixed(1)} px`);
+  }
+});
+
+test("tiers: heavier weapons in a class have a heavier striking part, and the same swing hits harder", () => {
+  // the part that hits (the silver mace's chain is shorter, so its total is lighter, but its head is heavier)
+  const mass = (k: WeaponKind) => {
+    const ar = arena();
+    const m = ar.add({ id: 0, name: "a", color: "#f00", weapon: k, x: 300, y: 200 });
+    return m.striker.mass;
+  };
+  for (const cls of ["hammer", "axe", "mace", "sword"] as const) {
+    const ks = WEAPON_KINDS.filter((k) => WEAPONS[k].cls === cls).sort((a, b) => WEAPONS[a].tier - WEAPONS[b].tier);
+    assert.equal(ks.length, 3, cls);
+    if (cls !== "sword") assert.ok(mass(ks[0]!) < mass(ks[1]!) && mass(ks[1]!) < mass(ks[2]!), `${cls} masses not in tier order`);
+  }
+  // one hammer head thrown at 700 px/s into a hull
+  const hit = (k: WeaponKind) => {
+    const ar = arena();
+    ar.tuning.slomo = 0;
+    const a = ar.add({ id: 0, name: "a", color: "#f00", weapon: k, x: 300, y: 200 });
+    const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 392, y: 200 });
+    for (let i = 0; i < 5; i++) ar.step();
+    a.striker.setVelocity(700, -140, 0, 0.02);
+    let dmg = 0;
+    for (let i = 0; i < 30; i++) {
+      ar.step();
+      for (const e of ar.events) if (e.type === "hit" && e.victim === b) dmg += e.dmg;
+      ar.events.length = 0;
+    }
+    return dmg;
+  };
+  const [mallet, hammer, maul] = [hit("mallet"), hit("hammer"), hit("maul")];
+  assert.ok(mallet < hammer && hammer < maul, `mallet ${mallet}, hammer ${hammer}, maul ${maul}`);
 });

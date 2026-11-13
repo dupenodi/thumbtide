@@ -3,7 +3,7 @@
 
 import type { Body } from "./engine.ts";
 import { type Arena, lerpBody, type Machine, type Tag, VIEW_H, VIEW_W } from "./sim.ts";
-import { MACHINE } from "./weapons.ts";
+import { MACHINE, type Material, WEAPONS } from "./weapons.ts";
 
 interface Spark {
   x: number;
@@ -205,112 +205,153 @@ export class Renderer {
   private weapon(m: Machine, alpha: number): void {
     const ctx = this.ctx;
     const [hx, hy] = lerpBody(m.hull, alpha);
+    const spec = WEAPONS[m.weapon];
 
-    // chain line: hull → links → handle back end
-    if (m.weapon === "chainball" && m.parts.length) {
-      ctx.strokeStyle = "#9aa1ae";
+    // Ropes and chains: a line between the anchors of every rope joint (the hull one only while armed).
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    for (const j of spec.joints) {
+      if (j.type === 2) continue;
+      if (j.a === "hull" && !m.armed) continue;
+      const a = j.a === "hull" ? m.hull : m.part.get(j.a);
+      const b = m.part.get(j.b);
+      if (!a || !b) continue;
+      const [ax, ay] = worldAt(a, j.sax ?? 0, j.say ?? 0, alpha);
+      const [bx, by] = worldAt(b, j.sbx ?? 0, j.sby ?? 0, alpha);
+      const mat = (b.data as Tag).spec?.material ?? "iron";
+      ctx.strokeStyle = mat === "wood" ? "#a07a50" : mat === "silver" ? "#cfd6e4" : "#9aa1ae";
       ctx.lineWidth = 2.5;
-      ctx.lineJoin = "round";
       ctx.beginPath();
-      let first = true;
-      if (m.armed) {
-        ctx.moveTo(hx, hy);
-        first = false;
-      }
-      for (const b of m.parts) {
-        const spec = (b.data as Tag).spec!;
-        if (spec.look !== "link") continue;
-        const [x, y] = lerpBody(b, alpha);
-        if (first) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-        first = false;
-      }
-      const handle = m.part.get("handle");
-      if (handle) {
-        const [x, y, a] = lerpBody(handle, alpha);
-        ctx.lineTo(x - Math.cos(a) * 12, y - Math.sin(a) * 12);
-      }
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
       ctx.stroke();
     }
 
     for (const b of m.parts) {
-      const spec = (b.data as Tag).spec!;
+      const part = (b.data as Tag).spec!;
       const [bx, by, ba] = lerpBody(b, alpha);
-      if (m.armed && (spec.look === "hammer" || spec.look === "blade")) {
-        // the rod from the machine to the weapon's back end
+      if (m.armed && part.rod) {
+        // the shaft from the machine to the part's back end
         let minX = 0;
         for (let i = 0; i < b.count; i++) minX = Math.min(minX, b.lx[i]!);
-        ctx.strokeStyle = "#8a6a4a";
+        ctx.strokeStyle = part.material === "silver" ? "#b9c0cc" : "#8a6a4a";
         ctx.lineWidth = 4;
-        ctx.lineCap = "round";
         ctx.beginPath();
         ctx.moveTo(hx, hy);
         ctx.lineTo(bx + Math.cos(ba) * minX, by + Math.sin(ba) * minX);
         ctx.stroke();
       }
+      const pal = PALETTE[part.material];
+      let minX = 0;
+      let maxX = 0;
+      let maxY = 0;
+      for (let i = 0; i < b.count; i++) {
+        minX = Math.min(minX, b.lx[i]!);
+        maxX = Math.max(maxX, b.lx[i]!);
+        maxY = Math.max(maxY, Math.abs(b.ly[i]!));
+      }
       this.enter(b, alpha);
-      if (spec.look === "hammer") {
-        const ha = 8.5;
-        const hc = 14.5;
+      if (part.look === "hammer") {
+        // spikes on both striking faces and the top, sized to the head
         ctx.fillStyle = "#c9ced8";
+        const step = Math.max(4, maxX * 0.6);
         for (const sgn of [-1, 1]) {
-          for (const off of [-5, 0, 5]) {
+          for (const off of [-step, 0, step]) {
             ctx.beginPath();
-            ctx.moveTo(off - 3, sgn * hc);
-            ctx.lineTo(off, sgn * (hc + 7));
-            ctx.lineTo(off + 3, sgn * hc);
+            ctx.moveTo(off - 3, sgn * maxY);
+            ctx.lineTo(off, sgn * (maxY + 7));
+            ctx.lineTo(off + 3, sgn * maxY);
             ctx.fill();
           }
         }
         ctx.beginPath();
-        ctx.moveTo(ha, -4);
-        ctx.lineTo(ha + 8, 0);
-        ctx.lineTo(ha, 4);
+        ctx.moveTo(maxX, -4);
+        ctx.lineTo(maxX + 8, 0);
+        ctx.lineTo(maxX, 4);
         ctx.fill();
-        ctx.fillStyle = "#5b616e";
-        ctx.strokeStyle = "#3a3f4b";
+        this.solid(b, pal);
+      } else if (part.look === "mallet") {
+        this.solid(b, pal);
+        // two dark bands round the wooden head
+        ctx.fillStyle = pal.stroke;
+        ctx.fillRect(minX, -maxY * 0.62, maxX - minX, 2.5);
+        ctx.fillRect(minX, maxY * 0.62 - 2.5, maxX - minX, 2.5);
+      } else if (part.look === "axe") {
+        this.solid(b, pal);
+        // the cutting edge (the side with local y < 0) shines
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(minX - 2, -maxY - 2, maxX - minX + 4, maxY + 2);
+        ctx.clip();
+        ctx.strokeStyle = "#eef3fb";
         ctx.lineWidth = 2;
         this.mesh(b);
-        ctx.fill();
         ctx.stroke();
-      } else if (spec.look === "blade") {
-        ctx.fillStyle = "#e6eaf2";
-        ctx.strokeStyle = "#7d8494";
-        ctx.lineWidth = 1.5;
-        this.mesh(b);
-        ctx.fill();
+        ctx.restore();
+      } else if (part.look === "blade") {
+        this.solid(b, pal, 1.5);
+        ctx.strokeStyle = "rgba(90,100,120,0.55)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(minX + 3, 0);
+        ctx.lineTo(maxX - 6, 0);
         ctx.stroke();
         ctx.fillStyle = "#b8893e";
-        ctx.fillRect(-21, -12, 4, 24);
-      } else if (spec.look === "link") {
-        ctx.strokeStyle = "#6c7280";
+        ctx.fillRect(minX - 3, -maxY - 3, 4, maxY * 2 + 6);
+      } else if (part.look === "link") {
+        ctx.strokeStyle = pal.fill;
         ctx.lineWidth = 2;
         ctx.strokeRect(-5, -3, 10, 6);
-      } else if (spec.look === "handle") {
-        ctx.fillStyle = "#8a6a4a";
+      } else if (part.look === "handle") {
+        ctx.fillStyle = pal.fill;
         this.mesh(b);
         ctx.fill();
       } else {
-        ctx.fillStyle = "#c9ced8";
-        for (let i = 0; i < 8; i++) {
-          const t = (i / 8) * Math.PI * 2 + Math.PI / 8;
-          ctx.beginPath();
-          ctx.moveTo(Math.cos(t - 0.25) * 12, Math.sin(t - 0.25) * 12);
-          ctx.lineTo(Math.cos(t) * 19, Math.sin(t) * 19);
-          ctx.lineTo(Math.cos(t + 0.25) * 12, Math.sin(t + 0.25) * 12);
+        const r = Math.max(maxX, maxY);
+        if (part.material !== "wood") {
+          ctx.fillStyle = part.material === "silver" ? "#eef2fa" : "#c9ced8";
+          for (let i = 0; i < 8; i++) {
+            const t = (i / 8) * Math.PI * 2 + Math.PI / 8;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(t - 0.25) * r * 0.92, Math.sin(t - 0.25) * r * 0.92);
+            ctx.lineTo(Math.cos(t) * (r + 6), Math.sin(t) * (r + 6));
+            ctx.lineTo(Math.cos(t + 0.25) * r * 0.92, Math.sin(t + 0.25) * r * 0.92);
+            ctx.fill();
+          }
+        }
+        if (part.material === "stone") {
+          if (!this.ballGrad) {
+            this.ballGrad = ctx.createRadialGradient(-4, -4, 2, 0, 0, 13);
+            this.ballGrad.addColorStop(0, "#7d8494");
+            this.ballGrad.addColorStop(1, "#2f333d");
+          }
+          ctx.fillStyle = this.ballGrad;
+          this.mesh(b);
           ctx.fill();
+        } else {
+          this.solid(b, pal);
+          if (part.material === "wood") {
+            ctx.strokeStyle = pal.stroke;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2);
+            ctx.stroke();
+          }
         }
-        if (!this.ballGrad) {
-          this.ballGrad = ctx.createRadialGradient(-4, -4, 2, 0, 0, 13);
-          this.ballGrad.addColorStop(0, "#7d8494");
-          this.ballGrad.addColorStop(1, "#2f333d");
-        }
-        ctx.fillStyle = this.ballGrad;
-        this.mesh(b);
-        ctx.fill();
       }
       ctx.restore();
     }
+  }
+
+  /** Fill and outline a body's mesh in a material. */
+  private solid(b: Body, pal: { fill: string; stroke: string }, width = 2): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = pal.fill;
+    ctx.strokeStyle = pal.stroke;
+    ctx.lineWidth = width;
+    this.mesh(b);
+    ctx.fill();
+    ctx.stroke();
   }
 
   private machine(arena: Arena, m: Machine, alpha: number): void {
@@ -491,6 +532,22 @@ function paintBackdrop(w: number, h: number, s: number): HTMLCanvasElement {
   g.fillStyle = v;
   g.fillRect(0, 0, w, h);
   return c;
+}
+
+const PALETTE: Record<Material, { fill: string; stroke: string }> = {
+  wood: { fill: "#9b6b3d", stroke: "#5e3d22" },
+  iron: { fill: "#5b616e", stroke: "#3a3f4b" },
+  stone: { fill: "#6c7280", stroke: "#3a3f4b" },
+  silver: { fill: "#d6dce8", stroke: "#8d95a6" },
+  steel: { fill: "#e6eaf2", stroke: "#7d8494" },
+};
+
+/** A point in a body's local frame, in world px, blended between steps. */
+function worldAt(b: Body, lx: number, ly: number, alpha: number): [number, number] {
+  const [x, y, a] = lerpBody(b, alpha);
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return [x + lx * c - ly * s, y + lx * s + ly * c];
 }
 
 function star(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {

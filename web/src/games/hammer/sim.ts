@@ -35,6 +35,8 @@ export interface Tag {
   /** m_bladeable_d, and m_bladeable_u for the other edge (katar: 0.6). */
   bladeable: number;
   bladeableU: number;
+  /** m_sharpness_u side (equal to sharpness when the weapon is the same on both sides). */
+  sharpnessU: number;
   spec: PartSpec | null;
 }
 
@@ -310,16 +312,21 @@ export class Arena {
     // Shock: big hits switch the victim's engine off for a moment.
     if (impact > 30) victim.stun = Math.min(1, victim.stun + SHOCK_VALUE * EXTRA_SHOCK * impact * 0.5 * effect);
 
-    // Blades: which edge touched (the katar's back edge cuts at 0.6), and how fast it slid across.
+    // Two-sided weapons (0x512ff0…): which side touched decides the sharpness and the blade (an axe's back is blunt,
+    // the katar's back edge cuts at 0.6). Then blades cut harder the faster they slide across.
     let bladeable = by.bladeable;
-    if (by.bladeableU !== by.bladeable) {
+    let sharpness = by.sharpness;
+    if (by.bladeableU !== by.bladeable || by.sharpnessU !== by.sharpness) {
       const s = Math.sin(byBody.a);
       const co = Math.cos(byBody.a);
       const ly = -(c.x - byBody.x) * s + (c.y - byBody.y) * co;
-      if (ly > 0) bladeable = by.bladeableU;
+      if (ly > 0) {
+        bladeable = by.bladeableU;
+        sharpness = by.sharpnessU;
+      }
     }
     const cut = cutFactor(byBody, bladeable, c.nx, c.ny);
-    const dmg = Math.floor(this.tuning.damage * by.sharpness * cut * impact * effect);
+    const dmg = Math.floor(this.tuning.damage * sharpness * cut * impact * effect);
     if (dmg <= 0) return;
 
     // health_low rule: below 12 only a lethal hit counts; the first lethal hit leaves 12, the next one kills.
@@ -458,7 +465,7 @@ export class Arena {
     hull.gravity = false;
     hull.spinDamp = MACHINE.spinDamp;
     hull.group = m.id;
-    hull.data = { m, hull: true, striker: false, sharpness: 1, bladeable: 0, bladeableU: 0, spec: null } satisfies Tag;
+    hull.data = { m, hull: true, striker: false, sharpness: 1, bladeable: 0, bladeableU: 0, sharpnessU: 1, spec: null } satisfies Tag;
     this.world.add(hull);
     m.hull = hull;
   }
@@ -472,7 +479,7 @@ export class Arena {
     m.part = new Map();
     for (const p of spec.parts) {
       // Hanging straight down: local +x (away from the machine) points along world +y.
-      const b = new Body(p.mesh, p.density).place(x, y + p.hang, Math.PI / 2);
+      const b = new Body(p.mesh, p.density).place(x, y + p.hang, p.angle ?? Math.PI / 2);
       b.group = m.id;
       b.data = {
         m,
@@ -481,6 +488,7 @@ export class Arena {
         sharpness: p.sharpness,
         bladeable: p.bladeable,
         bladeableU: p.bladeableU ?? p.bladeable,
+        sharpnessU: p.sharpnessU ?? p.sharpness,
         spec: p,
       } satisfies Tag;
       this.world.add(b);

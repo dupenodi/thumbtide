@@ -47,7 +47,7 @@ app.innerHTML = `
   <div class="hl-stage"><canvas class="hl-canvas"></canvas></div>
   <div class="hl-hud">
     <div><b>Hammer lab</b> · <span data-weapon></span></div>
-    <div class="hl-keys">click: capture mouse · 1/2/3 weapon · R reset · Space slow-mo · P pause · H panel</div>
+    <div class="hl-keys">click: capture mouse · [ ] weapon (1–4 class) · R reset · Space slow-mo · P pause · H panel</div>
   </div>
   <div class="hl-lock">Click to capture the mouse</div>
   <aside class="hl-panel"></aside>
@@ -115,8 +115,15 @@ let paused = false;
 window.addEventListener("keydown", (e) => {
   if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "SELECT") return;
   const k = e.key.toLowerCase();
-  if (k === "1" || k === "2" || k === "3") {
-    playerWeapon = (["hammer", "chainball", "sword"] as const)[Number(k) - 1]!;
+  // [ / ] cycle through all weapons; 1–4 jump to the first of each class (hammer, axe, mace, sword)
+  const idx = WEAPON_KINDS.indexOf(playerWeapon);
+  const pick =
+    k === "]" ? WEAPON_KINDS[(idx + 1) % WEAPON_KINDS.length]
+    : k === "[" ? WEAPON_KINDS[(idx + WEAPON_KINDS.length - 1) % WEAPON_KINDS.length]
+    : "1234".includes(k) && k ? WEAPON_KINDS[(Number(k) - 1) * 3]
+    : undefined;
+  if (pick) {
+    playerWeapon = pick;
     weaponLabel.textContent = WEAPON_LABEL[playerWeapon];
     respawnAt.delete(player);
     respawn(player);

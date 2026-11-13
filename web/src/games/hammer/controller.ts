@@ -7,7 +7,7 @@ import { joystick } from "@thumbtide/sdk/ui";
 import { gameById } from "../registry.ts";
 import type { ControllerMount } from "../types.ts";
 import "./hammer.css";
-import { WEAPON_ICON, WEAPON_STATS } from "./icons.ts";
+import { WEAPON_ICON, WEAPON_STATS, WEAPON_TINT } from "./icons.ts";
 import type { HammerGame } from "./shared.ts";
 import { WEAPON_KINDS, WEAPON_LABEL, type WeaponKind } from "./weapons.ts";
 
@@ -32,7 +32,7 @@ const mount: ControllerMount = (ctx) => {
         <div class="hmc-tip"><b>Fly in circles</b><span>to swing your weapon</span></div>
         <div class="hmc-pick" hidden>${WEAPON_KINDS.map((w) => {
           const st = WEAPON_STATS[w];
-          return `<button type="button" class="hmc-w" data-w="${w}">${WEAPON_ICON[w]}<h4>${WEAPON_LABEL[w]}</h4>
+          return `<button type="button" class="hmc-w" data-w="${w}" style="--t:${WEAPON_TINT[w]}">${WEAPON_ICON[w]}<h4>${WEAPON_LABEL[w]}</h4>
             <div class="hmc-stats"><span>Weight</span><u>${bars(st.weight)}</u><span>Reach</span><u>${bars(st.reach)}</u><span>Cut</span><u>${bars(st.cut)}</u></div></button>`;
         }).join("")}</div>
         <div class="hmc-over" hidden><b></b><span></span></div>
