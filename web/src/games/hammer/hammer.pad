@@ -1,9 +1,9 @@
 # Rotor Brawl: fly a little machine and swing a heavy weapon.
-# The phone is held upright: a fixed joystick at the bottom right (right thumb) flies the machine; flying in circles swings the weapon.
+# A fixed joystick flies the machine (upright: centred, 3/4 down; sideways: on the left); flying in circles swings the weapon.
 # Syntax and every setting: web/src/games/kit/pad.ts
 
 controller
-  orientation  portrait
+  orientation  any
   send-rate    60hz
 
 stick fly

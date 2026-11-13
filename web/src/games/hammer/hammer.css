@@ -556,12 +556,12 @@
   padding: 4px max(12px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
 }
 
+/* upright: the stick zone fills the lower part, so the fixed stick sits centred, about 3/4 down the screen */
 .hmc-stick {
   position: relative;
   order: 2;
   flex: none;
-  align-self: flex-end;
-  width: 82%;
+  align-self: stretch;
   height: 46%;
   border-radius: 16px;
   background:
@@ -601,6 +601,23 @@
   flex-direction: column;
   justify-content: center;
   min-width: 0;
+}
+
+/* sideways: the stick on the left, cards and status on the right */
+@media (orientation: landscape) {
+  .hmc-body {
+    flex-direction: row;
+  }
+
+  .hmc-stick {
+    order: 0;
+    width: 44%;
+    height: auto;
+  }
+
+  .hmc-side {
+    order: 1;
+  }
 }
 
 .hmc-tip {

@@ -1,4 +1,4 @@
-// Phone controller for Rotor Brawl, held upright: a fixed joystick at the bottom right (right thumb) flies the machine (Hammerfight's gamepad model,
+// Phone controller for Rotor Brawl, upright or sideways: a fixed joystick (upright: centred, 3/4 down; sideways: left) flies the machine (Hammerfight's gamepad model,
 // stick³ per frame), so flying in circles swings the weapon. Above it go the weapon cards between rounds
 // and the K.O. / win screens.
 
@@ -48,21 +48,39 @@ const mount: ControllerMount = (ctx) => {
   // ---- the stick ---------------------------------------------------------------------------------
   const session = Math.floor(Math.random() * 1e9);
   const s = spec.stick!;
-  const stickOff = joystick(zone, {
-    mode: "fixed",
-    follow: false,
-    radius: s.travel,
-    deadzone: s.deadzone,
-    fullAt: s.fullAt,
-    curve: s.curve,
-    directions: s.directions,
-    hapticTouch: s.haptic,
-    hapticRim: s.rimHaptic,
-    onMove: (v) => {
-      zone.classList.toggle("on", v.active);
-      ctl.input({ s: session, k: 1, x: v.x, y: v.y });
-    },
-  });
+  const makeStick = () =>
+    joystick(zone, {
+      mode: "fixed",
+      follow: false,
+      radius: s.travel,
+      deadzone: s.deadzone,
+      fullAt: s.fullAt,
+      curve: s.curve,
+      directions: s.directions,
+      hapticTouch: s.haptic,
+      hapticRim: s.rimHaptic,
+      onMove: (v) => {
+        zone.classList.toggle("on", v.active);
+        ctl.input({ s: session, k: 1, x: v.x, y: v.y });
+      },
+    });
+  let stickOff = makeStick();
+  // The fixed stick centres itself once, so build it again when the phone turns (the zone changes shape).
+  let zoneSize = `${zone.clientWidth}x${zone.clientHeight}`;
+  let resizeTimer = 0;
+  const onResize = () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => {
+      const size = `${zone.clientWidth}x${zone.clientHeight}`;
+      if (size === zoneSize) return;
+      zoneSize = size;
+      stickOff();
+      zone.querySelector(".tt-stick")?.remove();
+      ctl.input({ s: session, k: 1, x: 0, y: 0 });
+      stickOff = makeStick();
+    }, 150);
+  };
+  window.addEventListener("resize", onResize);
 
   for (const b of pick.querySelectorAll<HTMLButtonElement>(".hmc-w")) {
     b.addEventListener("click", () => {
@@ -123,6 +141,8 @@ const mount: ControllerMount = (ctx) => {
 
   return () => {
     offs.forEach((o) => o());
+    window.removeEventListener("resize", onResize);
+    clearTimeout(resizeTimer);
     stickOff();
     ctl.input({ s: session, k: 1, x: 0, y: 0 });
     el.remove();
