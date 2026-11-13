@@ -7,6 +7,7 @@ import { joystick } from "@thumbtide/sdk/ui";
 import { gameById } from "../registry.ts";
 import type { ControllerMount } from "../types.ts";
 import "./hammer.css";
+import { loadGameFont } from "./font.ts";
 import { WEAPON_ICON, WEAPON_STATS, WEAPON_TINT } from "./icons.ts";
 import type { HammerGame } from "./shared.ts";
 import { WEAPON_KINDS, WEAPON_LABEL, type WeaponKind } from "./weapons.ts";
@@ -14,6 +15,7 @@ import { WEAPON_KINDS, WEAPON_LABEL, type WeaponKind } from "./weapons.ts";
 const bars = (n: number) => Array.from({ length: 5 }, (_, i) => `<i${i < n ? ' class="on"' : ""}></i>`).join("");
 
 const mount: ControllerMount = (ctx) => {
+  loadGameFont();
   const ctl = ctx.ctl as Controller<HammerGame>;
   const spec = gameById("hammer")!.controls!;
   ctl.setInputRate(spec.sendRate);

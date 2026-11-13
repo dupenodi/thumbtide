@@ -1,11 +1,7 @@
 /* Rotor Brawl. Phone: .hmc-*  TV: .hm-*
    TV rules avoid color-mix, :has, aspect-ratio and flex gap (the LG TV app can run Chrome 79). */
 
-@font-face {
-  font-family: "Russo One";
-  src: url("./fonts/RussoOne-latin.woff2") format("woff2");
-  font-display: block;
-}
+/* "Russo One" is loaded by font.ts (a CSS-relative url breaks in the single-script TV build). */
 
 /* ================================================================= TV */
 .hm-root {

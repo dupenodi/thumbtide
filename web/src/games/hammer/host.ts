@@ -9,6 +9,7 @@ import { gameById } from "../registry.ts";
 import { isSys, type HostMount } from "../types.ts";
 import { type Bot, driveBot, makeBot } from "./bots.ts";
 import "./hammer.css";
+import { loadGameFont } from "./font.ts";
 import { Hud, type SeatView } from "./hud.ts";
 import { Fx, Renderer } from "./render.ts";
 import type { HammerGame, Phase } from "./shared.ts";
@@ -51,6 +52,7 @@ interface Seat {
 }
 
 const mount: HostMount = (ctx) => {
+  loadGameFont();
   const host = ctx.host as Host<HammerGame>;
   const spec = gameById("hammer")!.controls!;
   const gain = spec.tune.gain ?? 6;
