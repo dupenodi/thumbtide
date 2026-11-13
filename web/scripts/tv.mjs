@@ -4,7 +4,7 @@
 //   pnpm tv            build it, install it on the TV and open it
 //   pnpm tv --build    only build the .ipk (into web/dist-tv)
 //   pnpm tv --inspect  DevTools for the app while it runs on the TV
-//   pnpm tv --perf=cascade [--look=reactor --bots=3 …]
+//   pnpm tv --perf=cascade [--look=reactor --bots=3 --fps=60 …]
 //                      open straight into a game with computer players and print its frame rate here
 //
 // The app holds the TV page only. It still connects to the relay, and phones still open the join page from a
@@ -12,15 +12,13 @@
 // VITE_RELAY_URL (wss://…) and VITE_JOIN_URL (https://…/join/).
 // TV_DEVICE picks the TV, by its name in `pnpm --filter @thumbtide/web exec ares-setup-device -l`. The default is the first real TV.
 
-import { spawnSync } from "node:child_process";
 import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { connect } from "node:net";
-import { homedir, networkInterfaces } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { buildTvPage } from "./lib/tv-build.mjs";
+import { capture, device, deviceInfo, fail, lanIp, run, web } from "./lib/webos.mjs";
 
-const web = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(web, "dist-tv");
 const appDir = join(out, "app");
 const args = new Set(process.argv.slice(2));
@@ -30,46 +28,6 @@ const opts = Object.fromEntries(
 );
 const appinfo = JSON.parse(readFileSync(join(web, "tv/webos/appinfo.json"), "utf8"));
 appinfo.version = JSON.parse(readFileSync(join(web, "package.json"), "utf8")).version;
-
-const bin = (name) => join(web, "node_modules/.bin", name);
-const run = (name, ...a) => spawnSync(bin(name), a, { cwd: web, stdio: "inherit" }).status === 0;
-const capture = (name, ...a) => {
-  const r = spawnSync(bin(name), a, { cwd: web, encoding: "utf8" });
-  return { ok: r.status === 0, text: `${r.stdout ?? ""}${r.stderr ?? ""}` };
-};
-const fail = (msg) => {
-  console.error(`\n${msg}\n`);
-  process.exit(1);
-};
-
-/** The TV to use: TV_DEVICE, or the first one set up with ares-setup-device that isn't an emulator. */
-function device() {
-  let list = [];
-  try {
-    list = JSON.parse(readFileSync(join(homedir(), ".webos/tv/novacom-devices.json"), "utf8"));
-  } catch {
-    /* none set up yet */
-  }
-  const name = process.env.TV_DEVICE;
-  const d = name ? list.find((x) => x.name === name) : list.find((x) => x.host !== "127.0.0.1" && x.profile === "tv");
-  if (!d) {
-    fail(
-      `No TV set up yet. On the TV, open the Developer Mode app and turn on Key Server, then:\n` +
-        `  pnpm --filter @thumbtide/web exec ares-setup-device -a tv -i "host=<TV IP>" -i "port=9922" -i "username=prisoner"\n` +
-        `  pnpm --filter @thumbtide/web exec ares-novacom -d tv --getkey      (type the passphrase the TV shows)`,
-    );
-  }
-  return d;
-}
-
-function lanIp() {
-  for (const list of Object.values(networkInterfaces())) {
-    for (const a of list ?? []) {
-      if (a.family === "IPv4" && !a.internal && !a.address.startsWith("169.254.")) return a.address;
-    }
-  }
-  fail("This computer isn't on a network the TV can reach.");
-}
 
 const listening = (port) =>
   new Promise((res) => {
@@ -87,20 +45,11 @@ if (args.has("--inspect")) {
 // ------------------------------------------------------------------ build
 const ip = process.env.VITE_RELAY_URL && process.env.VITE_JOIN_URL ? null : lanIp();
 const env = {
-  ...process.env,
   VITE_RELAY_URL: process.env.VITE_RELAY_URL || `ws://${ip}:8787`,
   VITE_JOIN_URL: process.env.VITE_JOIN_URL || `http://${ip}:5173/join/`,
 };
 console.log(`Building the TV app\n  relay  ${env.VITE_RELAY_URL}\n  phones ${env.VITE_JOIN_URL}\n`);
-if (spawnSync(bin("vite"), ["build", "--mode", "tv"], { cwd: web, env, stdio: "inherit" }).status !== 0) fail("Build failed.");
-
-// one plain script instead of a module: webOS can refuse modules (and crossorigin fetches) from file://
-const htmlPath = join(appDir, "index.html");
-const html = readFileSync(htmlPath, "utf8")
-  .replace(/<script type="module" crossorigin src="(\.\/[^"]+)"><\/script>/g, '<script defer src="$1"></script>')
-  .replace(/ crossorigin( href="\.\/)/g, "$1");
-if (html.includes('type="module"')) fail("The TV build still has a module script; see web/dist-tv/app/index.html.");
-writeFileSync(htmlPath, html);
+if (!buildTvPage(web, { outDir: "dist-tv/app", env })) fail("Build failed.");
 
 for (const f of ["icon.png", "largeIcon.png"]) cpSync(join(web, "tv/webos", f), join(appDir, f));
 writeFileSync(join(appDir, "appinfo.json"), `${JSON.stringify(appinfo, null, 2)}\n`);
@@ -112,19 +61,9 @@ if (args.has("--build")) process.exit(0);
 
 // ------------------------------------------------------------------ install + open
 const tv = device();
-const sys = capture("ares-device", "-i", "-d", tv.name);
-if (!sys.ok) {
-  fail(
-    `Can't reach the TV "${tv.name}" at ${tv.host}.\n` +
-      `  · Is it on, on the same Wi-Fi as this computer, with the Developer Mode app showing Dev Mode Status ON?\n` +
-      `  · If the TV's IP changed (the Developer Mode app shows it):\n` +
-      `      pnpm --filter @thumbtide/web exec ares-setup-device -m ${tv.name} -i "host=<new IP>"\n` +
-      `  · If the dev session ran out, extend it in the Developer Mode app.\n\n${sys.text.trim()}`,
-  );
-}
-const field = (k) => sys.text.match(new RegExp(`${k}\\s*:\\s*(\\S+)`))?.[1];
-const sdk = field("sdkVersion");
-console.log(`TV: ${field("modelName") ?? "LG TV"}, webOS SDK ${sdk ?? "?"}`);
+const info = deviceInfo(tv);
+const sdk = info.sdkVersion;
+console.log(`TV: ${info.modelName ?? "LG TV"}, webOS SDK ${sdk ?? "?"}`);
 // webOS 6 is SDK 6.x (Chromium 79); older TVs miss parts of the layout
 if (sdk && Number(sdk.split(".")[0]) < 6) console.warn("This TV is older than webOS 6, so some screens may look off.");
 
@@ -149,9 +88,10 @@ async function perf(tv) {
     req.on("end", () => {
       res.end();
       try {
-        const { fps, worst, scale, ...rest } = JSON.parse(body);
+        const { fps, worst, p95, scale, ...rest } = JSON.parse(body);
+        const res = typeof scale === "number" ? ` · ${Math.round(scale * 100)}% resolution` : "";
         const extra = Object.entries(rest).map(([k, v]) => `${k} ${v}`).join(" · ");
-        console.log(`${new Date().toLocaleTimeString()}  ${fps} fps · slowest frame ${worst}ms · ${Math.round(scale * 100)}% resolution · ${extra}`);
+        console.log(`${new Date().toLocaleTimeString()}  ${fps} fps · 95% of frames under ${p95}ms · slowest ${worst}ms${res} · ${extra}`);
       } catch {
         /* not a report */
       }
