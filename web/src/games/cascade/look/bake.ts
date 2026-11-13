@@ -26,6 +26,10 @@ export const AREA_UV = /* glsl */ `vec2 areaUv(vec2 p, vec4 a) { return (p - a.x
  * Draws a texture over `area` once, at `perUnit` texels to a unit. `head` holds GLSL functions; `body` reads
  * `vec2 p` (ground x, z) and sets gl_FragColor.
  */
+// Bake shaders stay compiled for the next board (a new board size bakes again; compiling costs ~60 ms on a TV).
+const bakeMats = new Map<string, THREE.ShaderMaterial>();
+let bakeQuad: THREE.Mesh | null = null;
+
 export function bakeGround(
   renderer: THREE.WebGLRenderer,
   area: Area,
@@ -43,22 +47,37 @@ export function bakeGround(
     minFilter: THREE.LinearMipmapLinearFilter,
     magFilter: THREE.LinearFilter,
   });
-  const mat = new THREE.ShaderMaterial({
-    uniforms: { ...uniforms, uFrom: { value: new THREE.Vector2(area.x0, area.z0) }, uTo: { value: new THREE.Vector2(area.x1, area.z1) } },
-    vertexShader: VS,
-    fragmentShader: `uniform vec2 uFrom;\nuniform vec2 uTo;\nvarying vec2 vUv;\n${head}\nvoid main() {\n  vec2 p = mix(uFrom, uTo, vUv);\n  ${body}\n}`,
-    depthTest: false,
-    depthWrite: false,
-  });
-  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
-  quad.frustumCulled = false;
+  const fragmentShader = `uniform vec2 uFrom;\nuniform vec2 uTo;\nvarying vec2 vUv;\n${head}\nvoid main() {\n  vec2 p = mix(uFrom, uTo, vUv);\n  ${body}\n}`;
+  let mat = bakeMats.get(fragmentShader);
+  if (!mat) {
+    mat = new THREE.ShaderMaterial({
+      uniforms: { ...uniforms, uFrom: { value: new THREE.Vector2() }, uTo: { value: new THREE.Vector2() } },
+      vertexShader: VS,
+      fragmentShader,
+      depthTest: false,
+      depthWrite: false,
+    });
+    bakeMats.set(fragmentShader, mat);
+  } else {
+    // same shader, so the same uniform names: update the values in place (three.js keeps the uniforms object)
+    for (const [k, u] of Object.entries(uniforms)) {
+      if (mat.uniforms[k]) mat.uniforms[k]!.value = u.value;
+      else mat.uniforms[k] = u;
+    }
+  }
+  (mat.uniforms.uFrom!.value as THREE.Vector2).set(area.x0, area.z0);
+  (mat.uniforms.uTo!.value as THREE.Vector2).set(area.x1, area.z1);
+  if (!bakeQuad) {
+    bakeQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+    bakeQuad.frustumCulled = false;
+  }
+  bakeQuad.material = mat;
   const scene = new THREE.Scene();
-  scene.add(quad);
+  scene.add(bakeQuad);
   const before = renderer.getRenderTarget();
   renderer.setRenderTarget(target);
   renderer.render(scene, new THREE.Camera());
   renderer.setRenderTarget(before);
-  quad.geometry.dispose();
-  mat.dispose();
+  scene.remove(bakeQuad);
   return target;
 }

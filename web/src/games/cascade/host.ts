@@ -4,7 +4,7 @@
 import type { Host } from "@thumbtide/sdk";
 import { shell } from "../../shell/host-state.ts";
 import { audio } from "../../shell/sound.ts";
-import { fpsOverride, frameDrawn, setPerfExtras } from "../../shell/perf.ts";
+import { fpsOverride, frameDrawn, frameIdle, setPerfExtras } from "../../shell/perf.ts";
 import { isWebOS, startParam } from "../../shell/tv.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount, type Settings } from "../types.ts";
@@ -13,7 +13,7 @@ import { botMove } from "./bots.ts";
 import { createHud } from "./hud.ts";
 import { CultureLook } from "./look/culture.ts";
 import { Director } from "./look/director.ts";
-import type { Look } from "./look/look.ts";
+import { CHEER_S, type Look } from "./look/look.ts";
 import { MarblesLook } from "./look/marbles.ts";
 import { ReactorLook } from "./look/reactor.ts";
 import { Stage } from "./look/stage.ts";
@@ -47,7 +47,11 @@ const mount: HostMount = (ctx) => {
   // TVs have phone-class graphics chips: no antialiasing, 30fps (fps=60 lifts the cap, for tests at the target)
   const lite = params.get("quality") === "low" || (isWebOS && params.get("quality") !== "high");
   const fps = fpsOverride() ?? (lite ? 30 : 60);
-  const minFrameMs = fps < 60 ? 1000 / fps - 4 : 0;
+  // Frame rate by state: full while anything moves; lower once the board has been still for a moment (pieces
+  // only idle); lowest on the end screen once the cheer is over. A TV's graphics chip and fans get the rest.
+  const calmFps = Math.min(fps, Math.max(20, fps / 2));
+  const restFps = Math.min(fps, 15);
+  const QUIET_MS = 1500;
 
   ctx.root.innerHTML = `<div class="cz"><div class="cz-stage"></div><div class="cz-hud-root"></div></div>`;
   const wrap = ctx.root.firstElementChild as HTMLElement;
@@ -88,6 +92,10 @@ const mount: HostMount = (ctx) => {
   /** A computer's turn: wait, walk the cursor to `target`, then play it. */
   let plan: { target: number; wait: number } | null = null;
   const sentOwn = new Map<string, string>();
+  /** ms since anything moved (the cursor, a piece, a new turn); and ms on the end screen. */
+  let quietFor = 0;
+  let endFor = 0;
+  const stir = () => (quietFor = 0);
 
   const colorOf = (i: number) => look.info.colors[i % look.info.colors.length]!;
   const seatOf = (id: string) => seats.findIndex((s) => s.id === id && !s.bot);
@@ -101,6 +109,9 @@ const mount: HostMount = (ctx) => {
   /** `again`: deal the same round over (nobody has moved yet, or the host restarted it). */
   function deal(again = false) {
     director.stop();
+    hud.chainReset();
+    stir();
+    endFor = 0;
     pending = null;
     const people = host.list.slice(0, 8).map((p) => ({ id: p.id, name: p.name, bot: false }));
     const want = Math.max(0, Number(ctx.settings().bots) || 0);
@@ -151,6 +162,7 @@ const mount: HostMount = (ctx) => {
 
   // ------------------------------------------------------------------ turns
   function startTurn() {
+    stir();
     const s = game.turn;
     turnLeft = turnMs;
     lastTick = 0;
@@ -176,6 +188,7 @@ const mount: HostMount = (ctx) => {
     const next = y * w + x;
     if (next === cursor[s]) return;
     cursor[s] = next;
+    stir();
     sfx?.step();
     showCursor();
   }
@@ -184,6 +197,7 @@ const mount: HostMount = (ctx) => {
     if (game.canPlay(cursor[s]!)) return play(cursor[s]!);
     sfx?.nope();
     look.nope();
+    stir();
     tell(s, "nope");
   }
 
@@ -286,7 +300,10 @@ const mount: HostMount = (ctx) => {
   // ------------------------------------------------------------------ the clock
   function update(dt: number) {
     const ms = dt * 1000;
+    if (busy) stir();
+    else quietFor += ms;
     if (phase === "end") {
+      endFor += ms;
       if (endIn > 0 && (endIn -= ms) <= 0) publish();
       return;
     }
@@ -324,20 +341,31 @@ const mount: HostMount = (ctx) => {
     }
   }
 
+  /** The frame rate for the current state. */
+  function rate() {
+    if (busy || startIn > 0) return fps;
+    if (phase === "end") return endFor > T.endCard + CHEER_S * 1000 ? restFps : fps;
+    return quietFor > QUIET_MS ? calmFps : fps;
+  }
+
   let raf = 0;
   let last = performance.now();
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    if (now - last < minFrameMs) return;
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const r = rate();
+    if (r < 60 && now - last < 1000 / r - 4) return;
+    // a slower state takes longer steps (the turn timer stays true); a long stall is still clamped
+    const dt = Math.min(Math.max(0.05, 1.6 / r), (now - last) / 1000);
     last = now;
     if (paused) return;
-    frameDrawn(now);
+    const slowed = r < fps;
+    if (slowed) frameIdle();
+    else frameDrawn(now);
     const t0 = performance.now();
     update(dt);
     look.update(dt, stage.camera);
     director.update(dt);
-    stage.render(dt);
+    stage.render(dt, !slowed); // frames slowed on purpose don't count against the resolution
     stage.work(performance.now() - t0);
   }
 
@@ -353,6 +381,7 @@ const mount: HostMount = (ctx) => {
     hud.setLook(id);
     sfx?.setLook(id);
     sentOwn.clear();
+    stir();
     syncLook();
     // a move that was playing jumps to its end
     if (busy && pending) director.cancel();
@@ -416,7 +445,9 @@ const mount: HostMount = (ctx) => {
   // perf=… (pnpm perf, pnpm tv --perf): the frame monitor adds these to each report
   const offPerf = setPerfExtras(() => {
     const { fps: _fps, worst: _worst, ...s } = stage.perf();
-    return { look: lookId, board: `${game.w}x${game.h}`, pieces: game.board.count.reduce((a, b) => a + b, 0), chain: busy, ...s };
+    const r = rate();
+    const mode = r === fps ? "full" : phase === "end" ? "rest" : "calm";
+    return { look: lookId, board: `${game.w}x${game.h}`, pieces: game.board.count.reduce((a, b) => a + b, 0), chain: busy, mode, ...s };
   });
   // dev only: poke at the game from the browser console
   if (import.meta.env.DEV) {

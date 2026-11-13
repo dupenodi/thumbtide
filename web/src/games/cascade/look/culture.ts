@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { AREA_UV, areaUniform, bakeGround, type Area } from "./bake.ts";
 import { NOISE, SDF, WORLD_VS } from "./glsl.ts";
-import { FLY, PieceLook, damp, easeInOut, hash, smooth, upload, type CameraSpec, type LookInfo, type Piece } from "./look.ts";
+import { CHEER_S, FLY, PieceLook, damp, easeInOut, hash, smooth, upload, type CameraSpec, type LookInfo, type Piece } from "./look.ts";
 
 const PAD = 0.42; // agar beyond the outer cells
 const CORNER = 0.34;
@@ -566,7 +566,7 @@ export class CultureLook extends PieceLook {
         const cur = col.lobe.getComponent(d);
         col.lobe.setComponent(d, cur + (want - cur) * damp(20, dt));
       }
-      col.wob += ((crit || this.winner >= 0 ? 1 : 0) - col.wob) * damp(5, dt);
+      col.wob += ((crit || (this.winner >= 0 && this.winT < CHEER_S) ? 1 : 0) - col.wob) * damp(5, dt);
       col.infectT = Math.min(1, col.infectT + dt / 0.5);
 
       const i = shown++;
