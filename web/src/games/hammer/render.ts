@@ -207,33 +207,40 @@ export class Renderer {
     const [hx, hy] = lerpBody(m.hull, alpha);
     const spec = WEAPONS[m.weapon];
 
-    // Ropes and chains: a line between the anchors of every rope joint (the hull one only while armed).
+    // Ropes and chains: a line between the anchors of every rope joint (the hull one only while armed). One path per
+    // colour, so a whole chain is a single stroke. Type 0 joints (the dual sets' spacers) are not drawn.
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
-    for (const j of spec.joints) {
-      if (j.type === 2) continue;
-      if (j.a === "hull" && !m.armed) continue;
-      const a = j.a === "hull" ? m.hull : m.part.get(j.a);
-      const b = m.part.get(j.b);
-      if (!a || !b) continue;
-      const [ax, ay] = worldAt(a, j.sax ?? 0, j.say ?? 0, alpha);
-      const [bx, by] = worldAt(b, j.sbx ?? 0, j.sby ?? 0, alpha);
-      const mat = (b.data as Tag).spec?.material ?? "iron";
-      ctx.strokeStyle = mat === "wood" ? "#a07a50" : mat === "silver" ? "#cfd6e4" : "#9aa1ae";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(bx, by);
-      ctx.stroke();
+    ctx.lineWidth = 2.5;
+    for (const color of ROPE_COLORS) {
+      let any = false;
+      for (const j of spec.joints) {
+        if (j.type === 2 || j.type === 0) continue;
+        if (j.a === "hull" && !m.armed) continue;
+        const a = j.a === "hull" ? m.hull : m.part.get(j.a);
+        const b = m.part.get(j.b);
+        if (!a || !b || ropeColor((b.data as Tag).spec?.material ?? "iron") !== color) continue;
+        if (!any) {
+          ctx.beginPath();
+          any = true;
+        }
+        worldAt(a, j.sax ?? 0, j.say ?? 0, alpha);
+        ctx.moveTo(scratch[0], scratch[1]);
+        worldAt(b, j.sbx ?? 0, j.sby ?? 0, alpha);
+        ctx.lineTo(scratch[0], scratch[1]);
+      }
+      if (any) {
+        ctx.strokeStyle = color;
+        ctx.stroke();
+      }
     }
 
     for (const b of m.parts) {
       const part = (b.data as Tag).spec!;
       const [bx, by, ba] = lerpBody(b, alpha);
+      const { minX, maxX, maxY } = bounds(b);
       if (m.armed && part.rod) {
         // the shaft from the machine to the part's back end
-        let minX = 0;
-        for (let i = 0; i < b.count; i++) minX = Math.min(minX, b.lx[i]!);
         ctx.strokeStyle = part.material === "silver" ? "#b9c0cc" : "#8a6a4a";
         ctx.lineWidth = 4;
         ctx.beginPath();
@@ -242,14 +249,6 @@ export class Renderer {
         ctx.stroke();
       }
       const pal = PALETTE[part.material];
-      let minX = 0;
-      let maxX = 0;
-      let maxY = 0;
-      for (let i = 0; i < b.count; i++) {
-        minX = Math.min(minX, b.lx[i]!);
-        maxX = Math.max(maxX, b.lx[i]!);
-        maxY = Math.max(maxY, Math.abs(b.ly[i]!));
-      }
       this.enter(b, alpha);
       if (part.look === "hammer") {
         // spikes on both striking faces and the top, sized to the head
@@ -278,16 +277,17 @@ export class Renderer {
         ctx.fillRect(minX, maxY * 0.62 - 2.5, maxX - minX, 2.5);
       } else if (part.look === "axe") {
         this.solid(b, pal);
-        // the cutting edge (the side with local y < 0) shines
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(minX - 2, -maxY - 2, maxX - minX + 4, maxY + 2);
-        ctx.clip();
+        // the cutting edge (the mesh edges on the local y < 0 side) shines; a stroke, no clipping
         ctx.strokeStyle = "#eef3fb";
         ctx.lineWidth = 2;
-        this.mesh(b);
+        ctx.beginPath();
+        for (let i = 0; i < b.count; i++) {
+          const k = (i + 1) % b.count;
+          if (b.ly[i]! > 0.5 || b.ly[k]! > 0.5) continue;
+          ctx.moveTo(b.lx[i]!, b.ly[i]!);
+          ctx.lineTo(b.lx[k]!, b.ly[k]!);
+        }
         ctx.stroke();
-        ctx.restore();
       } else if (part.look === "blade") {
         this.solid(b, pal, 1.5);
         ctx.strokeStyle = "rgba(90,100,120,0.55)";
@@ -542,12 +542,35 @@ const PALETTE: Record<Material, { fill: string; stroke: string }> = {
   steel: { fill: "#e6eaf2", stroke: "#7d8494" },
 };
 
-/** A point in a body's local frame, in world px, blended between steps. */
-function worldAt(b: Body, lx: number, ly: number, alpha: number): [number, number] {
+/** Output of worldAt (read it before the next call). */
+const scratch: [number, number] = [0, 0];
+
+/** A point in a body's local frame, in world px, blended between steps; written to `scratch`. */
+function worldAt(b: Body, lx: number, ly: number, alpha: number): void {
   const [x, y, a] = lerpBody(b, alpha);
   const c = Math.cos(a);
   const s = Math.sin(a);
-  return [x + lx * c - ly * s, y + lx * s + ly * c];
+  scratch[0] = x + lx * c - ly * s;
+  scratch[1] = y + lx * s + ly * c;
+}
+
+const ROPE_COLORS = ["#a07a50", "#cfd6e4", "#9aa1ae"];
+const ropeColor = (m: Material) => (m === "wood" ? ROPE_COLORS[0]! : m === "silver" ? ROPE_COLORS[1]! : ROPE_COLORS[2]!);
+
+/** A body's local mesh bounds; they never change, so they are worked out once. */
+const boundsCache = new WeakMap<Body, { minX: number; maxX: number; maxY: number }>();
+function bounds(b: Body): { minX: number; maxX: number; maxY: number } {
+  let r = boundsCache.get(b);
+  if (!r) {
+    r = { minX: 0, maxX: 0, maxY: 0 };
+    for (let i = 0; i < b.count; i++) {
+      r.minX = Math.min(r.minX, b.lx[i]!);
+      r.maxX = Math.max(r.maxX, b.lx[i]!);
+      r.maxY = Math.max(r.maxY, Math.abs(b.ly[i]!));
+    }
+    boundsCache.set(b, r);
+  }
+  return r;
 }
 
 function star(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {

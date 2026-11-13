@@ -261,11 +261,17 @@ test("tiers: heavier weapons in a class have a heavier striking part, and the sa
     const m = ar.add({ id: 0, name: "a", color: "#f00", weapon: k, x: 300, y: 200 });
     return m.striker.mass;
   };
-  for (const cls of ["hammer", "axe", "mace", "sword"] as const) {
-    const ks = WEAPON_KINDS.filter((k) => WEAPONS[k].cls === cls).sort((a, b) => WEAPONS[a].tier - WEAPONS[b].tier);
-    assert.equal(ks.length, 3, cls);
-    if (cls !== "sword") assert.ok(mass(ks[0]!) < mass(ks[1]!) && mass(ks[1]!) < mass(ks[2]!), `${cls} masses not in tier order`);
+  // each class's light → heavy trio
+  const trios: WeaponKind[][] = [
+    ["mallet", "hammer", "maul"],
+    ["bagor", "axe", "berdish"],
+    ["flail", "chainball", "silvermace"],
+  ];
+  for (const [a, b, c] of trios) {
+    assert.ok(WEAPONS[a!].tier < WEAPONS[b!].tier && WEAPONS[b!].tier < WEAPONS[c!].tier, `${a} ${b} ${c}: tiers`);
+    assert.ok(mass(a!) < mass(b!) && mass(b!) < mass(c!), `${a} ${b} ${c}: masses not in tier order`);
   }
+  assert.ok(WEAPON_KINDS.every((k) => WEAPONS[k]), "every kind has data");
   // one hammer head thrown at 700 px/s into a hull
   const hit = (k: WeaponKind) => {
     const ar = arena();

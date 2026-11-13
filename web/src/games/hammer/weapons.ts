@@ -8,7 +8,7 @@
 // made from the original shapes with other densities and sharpness, and are marked OURS below. So are the rod lengths
 // of the berdish and the kathib (their files hold the blade only).
 
-export type WeaponClass = "hammer" | "axe" | "mace" | "sword";
+export type WeaponClass = "hammer" | "axe" | "mace" | "sword" | "dual";
 export type Material = "wood" | "iron" | "stone" | "silver" | "steel";
 
 export type WeaponKind =
@@ -23,10 +23,26 @@ export type WeaponKind =
   | "silvermace"
   | "kathib"
   | "sword"
-  | "hisaian";
+  | "hisaian"
+  | "claw"
+  | "severn"
+  | "innata"
+  | "broadblade"
+  | "saian"
+  | "silverblade"
+  | "palash"
+  | "twin"
+  | "tribune";
 
 /** In card order: one row per class, light → heavy. */
-export const WEAPON_KINDS: WeaponKind[] = ["mallet", "hammer", "maul", "bagor", "axe", "berdish", "flail", "chainball", "silvermace", "kathib", "sword", "hisaian"];
+/** In card order: grouped by class, light → heavy. */
+export const WEAPON_KINDS: WeaponKind[] = [
+  "mallet", "hammer", "maul",
+  "bagor", "axe", "berdish",
+  "flail", "chainball", "silvermace",
+  "kathib", "claw", "sword", "severn", "innata", "broadblade", "saian", "silverblade", "palash", "hisaian",
+  "twin", "tribune",
+];
 
 /** The convex hull of a polygon (x,y pairs). Collisions need convex shapes; one original axe head is hook-shaped. */
 function hull(v: number[]): number[] {
@@ -331,6 +347,139 @@ const list: WeaponSpec[] = [
       material: "steel",
     },
   }),
+  // ---- more swords from Objects/Weapons (blade only: their rod lengths are OURS unless noted)
+  // blade_claw.seria: density 35, sharpness 6 (the sharpest edge in the game); rod 37 from double_01.seria
+  rodWeapon("claw", "sword", {
+    tier: 1,
+    label: "Claw",
+    blurb: "Tiny hooked blade. Sharpest edge.",
+    rod: 37,
+    sby: 3,
+    part: { mesh: hull([-18.564, 2.757, 18.564, -7.772, 10.964, 2.551, -17.685, 7.772]), density: 35, sharpness: 6, bladeable: 1, bladeableU: 0.6, look: "blade", material: "steel" },
+  }),
+  // blade_severn.seria: 55 × 13, density 30, sharpness 3.5; rod 42 OURS
+  rodWeapon("severn", "sword", {
+    tier: 2,
+    label: "Severn",
+    blurb: "Long, thin and light.",
+    rod: 42,
+    part: { mesh: hull([-27.429, 6.658, -26.361, -6.658, 27.429, -6.488, 15.865, 5.002]), density: 30, sharpness: 3.5, bladeable: 1, look: "blade", material: "steel" },
+  }),
+  // blade_innata.seria: 60 × 13, density 30, sharpness 4.5; rod 44 OURS
+  rodWeapon("innata", "sword", {
+    tier: 2,
+    label: "Innata",
+    blurb: "The longest blade. Very sharp.",
+    rod: 44,
+    part: { mesh: hull([-29.841, 6.314, 5.79, 5.547, 22.692, 0.322, 29.841, -6.314, -29.154, 0.628]), density: 30, sharpness: 4.5, bladeable: 1, look: "blade", material: "steel" },
+  }),
+  // pishal.seria broad_blade: 44 × 17, density 42, sharpness 2.7, rod 43.2 (without the pishal's mortar)
+  rodWeapon("broadblade", "sword", {
+    tier: 2,
+    label: "Broad blade",
+    blurb: "Straight and heavy. Cuts both ways.",
+    rod: 43.2,
+    part: { mesh: box(21.997, 8.499), density: 42, sharpness: 2.7, bladeable: 1, look: "blade", material: "steel" },
+  }),
+  // blade_saian.seria: m_fDensity 0 with m_fDensity2 40 (we use 40), sharpness 4; rod 40 OURS
+  rodWeapon("saian", "sword", {
+    tier: 2,
+    label: "Saian",
+    blurb: "Curved and keen.",
+    rod: 40,
+    part: { mesh: hull([-21.997, 8.483, -6.36, 7.952, 7.488, 2.186, 23.323, -7.424, 11.263, -12.723, -21.534, 1.791]), density: 40, sharpness: 4, bladeable: 1, look: "blade", material: "steel" },
+  }),
+  // blade_silver.seria: 57 × 21, density 45, sharpness 3.5; rod 44 OURS
+  rodWeapon("silverblade", "sword", {
+    tier: 3,
+    label: "Silver blade",
+    blurb: "A noble's sword. Long and heavy.",
+    rod: 44,
+    part: { mesh: hull([-26.878, -0.3, -26.975, 8.339, -6.806, 7.605, 15.369, -0.788, 29.887, -11.186, 9.739, -12.372]), density: 45, sharpness: 3.5, bladeable: 1, look: "blade", material: "silver" },
+  }),
+  // blade_palash.seria / double_01.seria: density 45, sharpness 3 (back 0.5), bladeable_u 0.5; rod 35 from double_01
+  rodWeapon("palash", "sword", {
+    tier: 3,
+    label: "Palash",
+    blurb: "Broad sabre. Shatters shields.",
+    rod: 35,
+    sby: 3,
+    part: {
+      mesh: hull([-25.08, 12.54, -5.13, 11.97, 13.11, 6.27, 26.22, -5.13, 18.24, -12.54, -26.22, 2.85]),
+      density: 45,
+      sharpness: 3,
+      sharpnessU: 1.5,
+      bladeable: 1,
+      bladeableU: 0.5,
+      look: "blade",
+      material: "steel",
+    },
+  }),
+
+  // ---- dual sets: two weapons on rods, and a long rigid joint between them that pushes them to opposite sides
+  // double_01.seria: PC → palash (rod 35, shiftB_y 3), PC → claw (rod 36.95, shiftB_y 3, density 15.38 here),
+  // palash ↔ claw type 0, radius 101.08, necess 1
+  {
+    kind: "twin",
+    cls: "dual",
+    tier: 2,
+    label: "Twin blades",
+    blurb: "A sabre and a claw on opposite sides.",
+    striker: "head",
+    parts: [
+      {
+        key: "head",
+        mesh: hull([-25.08, 12.54, -5.13, 11.97, 13.11, 6.27, 26.22, -5.13, 18.24, -12.54, -26.22, 2.85]),
+        density: 45,
+        sharpness: 3,
+        sharpnessU: 1.5,
+        bladeable: 1,
+        bladeableU: 0.5,
+        hang: 35,
+        look: "blade",
+        material: "steel",
+        rod: true,
+      },
+      { key: "back", mesh: hull([-18.564, 2.757, 18.564, -7.772, 10.964, 2.551, -17.685, 7.772]), density: 15.3818, sharpness: 6, bladeable: 1, bladeableU: 0.6, hang: -36.953, angle: -Math.PI / 2, look: "blade", material: "steel", rod: true },
+    ],
+    joints: [
+      { a: "hull", b: "head", type: 2, radius: 35, sby: 3, necess: 5 },
+      { a: "hull", b: "back", type: 2, radius: 36.953, sby: 3, necess: 5 },
+      { a: "head", b: "back", type: 0, radius: 101.084, say: 3, sby: 3, necess: 1 },
+    ],
+  },
+  // tribun.seria: PC → axe_posolski (rod 58.8; density 70, sharpness 3.1, blade 0.5 with the u-side 0, spikeable),
+  // PC → tribun blade (rod 25; density 5.1, sharpness 5, back 0.3, bladeable_u 0), axe ↔ blade type 0, radius 117.35
+  {
+    kind: "tribune",
+    cls: "dual",
+    tier: 3,
+    label: "Tribune",
+    blurb: "Envoy's axe with a blade behind.",
+    striker: "head",
+    parts: [
+      { key: "head", mesh: box(5.999, 19.997), density: 70, sharpness: 3.1, bladeable: 0.5, bladeableU: 0, hang: 58.8221, look: "axe", material: "iron", rod: true },
+      {
+        key: "back",
+        mesh: hull([-24.167, -10.214, -22.925, 8.868, 24.136, 10.214, 24.167, -8.866]),
+        density: 5.10288,
+        sharpness: 5,
+        sharpnessU: 1.5,
+        bladeable: 1,
+        bladeableU: 0,
+        hang: -25,
+        angle: -Math.PI / 2,
+        look: "blade",
+        material: "steel",
+        rod: true,
+      },
+    ],
+    joints: [
+      { a: "hull", b: "head", type: 2, radius: 58.8221, necess: 5 },
+      { a: "hull", b: "back", type: 2, radius: 25, necess: 5 },
+      { a: "head", b: "back", type: 0, radius: 117.351, necess: 1 },
+    ],
+  },
 ];
 
 export const WEAPONS = Object.fromEntries(list.map((w) => [w.kind, w])) as Record<WeaponKind, WeaponSpec>;
