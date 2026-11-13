@@ -6,4 +6,6 @@ interface ImportMetaEnv {
   readonly VITE_RELAY_URL?: string;
   /** The page phones open from the QR code, e.g. https://thumbtide.com/join/. Defaults to /join/ next to the TV page. */
   readonly VITE_JOIN_URL?: string;
+  /** "1" in builds for performance tests (tools/perf): keeps the frame monitor and the fps= start option. */
+  readonly VITE_PERF?: string;
 }

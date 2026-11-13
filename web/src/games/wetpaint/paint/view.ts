@@ -66,6 +66,10 @@ export class PaintView {
   private maxScale: number;
   private minScale: number;
   private renderScale: number;
+  /** The current resolution scale (CSS pixels to drawn pixels). */
+  get resolution() {
+    return this.renderScale;
+  }
   /** The frame time the loop aims for (33ms when it's capped at 30fps on a TV). */
   targetMs = 1000 / 60;
   private slowFor = 0;

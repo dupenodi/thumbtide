@@ -47,6 +47,8 @@ const ip = process.env.VITE_RELAY_URL && process.env.VITE_JOIN_URL ? null : lanI
 const env = {
   VITE_RELAY_URL: process.env.VITE_RELAY_URL || `ws://${ip}:8787`,
   VITE_JOIN_URL: process.env.VITE_JOIN_URL || `http://${ip}:5173/join/`,
+  // --perf needs the frame monitor, which only test builds have
+  ...(opts.perf ? { VITE_PERF: "1" } : {}),
 };
 console.log(`Building the TV app\n  relay  ${env.VITE_RELAY_URL}\n  phones ${env.VITE_JOIN_URL}\n`);
 if (!buildTvPage(web, { outDir: "dist-tv/app", env })) fail("Build failed.");
