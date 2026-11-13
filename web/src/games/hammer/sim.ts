@@ -10,6 +10,8 @@ import { MACHINE, type PartSpec, WEAPONS, type WeaponKind } from "./weapons.ts";
 /** The fixed camera frame, px. 16:9. */
 export const VIEW_W = 960;
 export const VIEW_H = 540;
+/** px below the frame after which a falling wreck or weapon leaves play (the soft limit no longer holds it). */
+const OUT_OF_PLAY = 300;
 /** Real seconds per step. Hammerfight runs physics once per frame at GFX_FRAMERATE = 50. */
 export const STEP = 0.02;
 
@@ -94,6 +96,8 @@ export class Arena {
   /** CORE_TIMEWRAP: 1 = normal, 0.3 at the start of slow motion. */
   timewarp = 1;
   private slomoTimer = 0;
+  /** Wrecks that fell far below the frame: out of the physics until they respawn (they can't come back). */
+  readonly parked = new Set<Machine>();
   private dtPrev = STEP;
   private loose: Loose[] = [];
   private lastDisarm = -10;
@@ -127,6 +131,7 @@ export class Arena {
   remove(m: Machine): void {
     this.destroy(m);
     this.world.remove(m.hull);
+    this.parked.delete(m);
     const i = this.machines.indexOf(m);
     if (i >= 0) this.machines.splice(i, 1);
   }
@@ -135,6 +140,7 @@ export class Arena {
   respawn(m: Machine, x: number, y: number, weapon: WeaponKind = m.weapon): void {
     this.destroy(m);
     this.world.remove(m.hull);
+    this.parked.delete(m);
     m.hp = MACHINE.health;
     m.alive = true;
     m.stun = 0;
@@ -142,6 +148,12 @@ export class Arena {
     m.flash = 0;
     this.buildHull(m, x, y);
     this.buildWeapon(m, weapon);
+  }
+
+  /** Normal speed now (a new round must not start in the last round's slow motion). */
+  resetTime(): void {
+    this.timewarp = 1;
+    this.slomoTimer = 0;
   }
 
   /** Mouse or finger movement in screen px; scaled by the mouse speed (Hammerfight's calibration). */
@@ -177,6 +189,15 @@ export class Arena {
       }
       m.inx = m.iny = 0;
       this.limit(m);
+      // a wreck far below the frame can't come back: stop simulating it (and its hull's joints and contacts)
+      if (!m.alive && !this.parked.has(m) && m.hull.y > VIEW_H + OUT_OF_PLAY) {
+        this.world.remove(m.hull);
+        this.parked.add(m);
+      }
+    }
+    // the same for a loose weapon that fell far below the frame: nobody can reach it again
+    if (this.loose.length) for (const l of [...this.loose]) {
+      if (l.holder.parts.length && l.holder.parts.every((b) => b.y > VIEW_H + OUT_OF_PLAY)) this.destroy(l.holder);
     }
 
     this.world.commonForces(tn.gravity);
