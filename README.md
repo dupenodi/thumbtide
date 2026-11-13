@@ -12,7 +12,10 @@ Games so far:
 | **Cascade** | 1–8 | Turn-based chain reactions on a grid, in three looks: Culture, Marbles, Reactor |
 | **Sandbox** | any | A connection test: steer a dot, tap to pulse |
 
-This guide gets the project running on your computer, then shows how to build a game of your own.
+This guide gets the project running on your computer, then shows how to build a game of your own. Two more docs:
+
+- [docs/lg-tv.md](docs/lg-tv.md): the LG TV app. The TV we test on, setup, how the app is built, performance, and fixes for freezes.
+- [docs/notes.md](docs/notes.md): design rules, known issues and planned games. Read it before you design a game.
 
 ---
 
@@ -387,7 +390,8 @@ library.
 - **Computer players** (`bots.ts` in Wet Paint, Cult and Cascade) make it playable alone and fill seats when someone leaves.
 - **TVs are slow.** If the game is for the LG TV app: it runs an old Chrome (79 to 87), so avoid CSS `color-mix()`,
   `:has()` and `aspect-ratio`. Check `isWebOS` from `shell/tv.ts` to switch on a lighter mode (30fps, lower
-  resolution). See `cascade/look/stage.ts` and Wet Paint's `quality` setting for how.
+  resolution), as `cascade/look/stage.ts` and Wet Paint's low quality do. Details in [docs/lg-tv.md](docs/lg-tv.md).
+- The full list of design rules is in [docs/notes.md](docs/notes.md).
 - **Sound.** `shell/sound.ts` is the TV's shared sound engine. Cascade plays short recordings
   (`cascade/audio.ts`, files in `cascade/sounds/`) bundled into the code, so they also work in the TV app.
 
@@ -438,7 +442,9 @@ one file per look.
 
 ### LG TV app (optional)
 
-The TV page can be installed on an LG TV (webOS) as an app, so you don't need a laptop plugged into the TV.
+The TV page can be installed on an LG TV (webOS 6 / 2021 or newer) as an app, so you don't need a laptop plugged
+into the TV. **Everything about it is in [docs/lg-tv.md](docs/lg-tv.md)**: first-time setup, commands, the TV's
+older browser, performance and troubleshooting.
 
 ```sh
 pnpm tv                    # build it, install it on the TV and open it
@@ -446,18 +452,10 @@ pnpm tv --build            # only build the .ipk into web/dist-tv
 pnpm tv --perf=cascade     # open straight into a game with computer players and print the TV's frame rate
 ```
 
-- **First time:** install the *Developer Mode* app from the TV's app store, sign in with an LG developer account, turn
-  on Developer Mode and Key Server, then (with the TV's IP address from its network settings):
-  ```sh
-  pnpm --filter @thumbtide/web exec ares-setup-device -a tv -i "host=<TV IP>" -i "port=9922" -i "username=prisoner"
-  pnpm --filter @thumbtide/web exec ares-novacom -d tv --getkey      # type the passphrase the TV shows
-  ```
-  `TV_DEVICE=<name>` picks one if you have several TVs set up.
-- **It still needs your computer.** The app is only the TV page; it connects to the relay and serves the phone page
-  from your computer's `pnpm dev`. Keep that running on the same Wi-Fi. A deployed relay and site remove this need
-  (see Deploy).
-- Developer Mode runs out after about 50 hours. Extend it in the Developer Mode app.
-- Avoid leaving DevTools (`pnpm tv --inspect`) attached for long: an entry-level TV once froze during a session.
+- **It still needs your computer.** The app is only the TV page. The relay and the phone page come from your
+  computer's `pnpm dev`, so keep that running on the same Wi-Fi. The computer's address is fixed when the app is
+  built, so run `pnpm tv` again if it changes.
+- Our test TV is an entry-level LG 43SQ700S (webOS 22, Chromium 87). If a game is smooth there, it'll be smooth on most LG TVs.
 
 ### Art
 
