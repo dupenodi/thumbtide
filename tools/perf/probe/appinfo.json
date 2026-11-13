@@ -1,0 +1,14 @@
+{
+  "id": "com.thumbtide.probe",
+  "version": "0.1.0",
+  "vendor": "Thumbtide",
+  "type": "web",
+  "main": "index.html",
+  "title": "Thumbtide Probe",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgColor": "#0b0b12",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "requiredACG": []
+}

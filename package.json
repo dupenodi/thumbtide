@@ -12,6 +12,7 @@
     "dev:web": "pnpm --filter @thumbtide/web dev",
     "build": "pnpm --filter @thumbtide/web build",
     "tv": "pnpm --filter @thumbtide/web tv",
+    "perf": "pnpm --filter @thumbtide/perf perf",
     "test": "pnpm -r test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
