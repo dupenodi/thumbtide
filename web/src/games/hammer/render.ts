@@ -240,8 +240,36 @@ export class Renderer {
       }
     }
 
+    // Chain links: one path for all the links of a chain, with the corners worked out here. A save, transform, stroke
+    // and restore per link made the chain weapons the slowest sets on the TV (up to 10 links a weapon).
+    let linkFill: string | null = null;
     for (const b of m.parts) {
       const part = (b.data as Tag).spec!;
+      if (part.look !== "link") continue;
+      const fill = PALETTE[part.material].fill;
+      if (linkFill === null) {
+        linkFill = fill;
+        ctx.beginPath();
+      } else if (fill !== linkFill) continue; // another colour: drawn on its own below
+      const [x, y, a] = lerpBody(b, alpha);
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      // the 10 × 6 link outline, corner by corner
+      ctx.moveTo(x - 5 * c + 3 * s, y - 5 * s - 3 * c);
+      ctx.lineTo(x + 5 * c + 3 * s, y + 5 * s - 3 * c);
+      ctx.lineTo(x + 5 * c - 3 * s, y + 5 * s + 3 * c);
+      ctx.lineTo(x - 5 * c - 3 * s, y - 5 * s + 3 * c);
+      ctx.closePath();
+    }
+    if (linkFill !== null) {
+      ctx.strokeStyle = linkFill;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    for (const b of m.parts) {
+      const part = (b.data as Tag).spec!;
+      if (part.look === "link" && PALETTE[part.material].fill === linkFill && !(m.armed && part.rod)) continue;
       const [bx, by, ba] = lerpBody(b, alpha);
       const { minX, maxX, maxY } = bounds(b);
       if (m.armed && part.rod) {
@@ -259,16 +287,16 @@ export class Renderer {
         // spikes on both striking faces and the top, sized to the head
         ctx.fillStyle = "#c9ced8";
         const step = Math.max(4, maxX * 0.6);
-        for (const sgn of [-1, 1]) {
-          for (const off of [-step, 0, step]) {
-            ctx.beginPath();
+        // all 7 spikes in one fill
+        ctx.beginPath();
+        for (let sgn = -1; sgn <= 1; sgn += 2) {
+          for (let off = -step; off <= step + 0.01; off += step) {
             ctx.moveTo(off - 3, sgn * maxY);
             ctx.lineTo(off, sgn * (maxY + 7));
             ctx.lineTo(off + 3, sgn * maxY);
-            ctx.fill();
+            ctx.closePath();
           }
         }
-        ctx.beginPath();
         ctx.moveTo(maxX, -4);
         ctx.lineTo(maxX + 8, 0);
         ctx.lineTo(maxX, 4);
@@ -316,6 +344,11 @@ export class Renderer {
         ctx.fill();
         this.solid(b, pal, 1.5);
       } else if (part.look === "link") {
+        if (pal.fill === linkFill) {
+          // in the batched chain path already (only reached for a link on a rod)
+          ctx.restore();
+          continue;
+        }
         ctx.strokeStyle = pal.fill;
         ctx.lineWidth = 2;
         ctx.strokeRect(-5, -3, 10, 6);
@@ -334,14 +367,16 @@ export class Renderer {
         const r = Math.max(maxX, maxY);
         if (part.material !== "wood") {
           ctx.fillStyle = part.material === "silver" ? "#eef2fa" : "#c9ced8";
+          // the 8 spikes in one fill
+          ctx.beginPath();
           for (let i = 0; i < 8; i++) {
             const t = (i / 8) * Math.PI * 2 + Math.PI / 8;
-            ctx.beginPath();
             ctx.moveTo(Math.cos(t - 0.25) * r * 0.92, Math.sin(t - 0.25) * r * 0.92);
             ctx.lineTo(Math.cos(t) * (r + 6), Math.sin(t) * (r + 6));
             ctx.lineTo(Math.cos(t + 0.25) * r * 0.92, Math.sin(t + 0.25) * r * 0.92);
-            ctx.fill();
+            ctx.closePath();
           }
+          ctx.fill();
         }
         if (part.material === "stone") {
           if (!this.ballGrad) {

@@ -96,8 +96,13 @@ const mount: HostMount = (ctx) => {
   // stretch goes from 0.05 to 0.1 px (measured, 4 orb maces + plates + a worm), which nobody can see.
   const tuning = { ...DEFAULT_TUNING, ...(lite ? { passes: 15 } : {}) };
   const arena = new Arena(tuning);
-  // the melee tour (TV tests only): every melee weapon in turn, with physics and fight numbers in each perf report
-  const tour = import.meta.env.VITE_PERF === "1" && startParam("tour") === "melee" ? makeTour(arena, Math.max(2, Math.min(4, Number(startParam("bots")) || 3)), audio(), Number(startParam("tourfrom")) || 1) : null;
+  // the weapon tours (TV tests only): every melee weapon, or every gun and plate, in turn, with physics, draw and
+  // fight numbers in each perf report
+  const tourKind = startParam("tour");
+  const tour =
+    import.meta.env.VITE_PERF === "1" && (tourKind === "melee" || tourKind === "guns")
+      ? makeTour(arena, Math.max(2, Math.min(4, Number(startParam("bots")) || 3)), audio(), Number(startParam("tourfrom")) || 1, tourKind)
+      : null;
   const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite") });
   const sound = tour ? tour.wrapSound(sound0) : sound0;
   sound?.setMusicOn(ctx.settings().music !== false);
@@ -502,9 +507,10 @@ const mount: HostMount = (ctx) => {
       const set = tour.tick(real);
       for (const [i, s] of seated().entries()) {
         if (set) {
-          s.weapon = set[i % set.length]!;
-          s.sidearm = null;
-          s.plate = null;
+          const k = i % set.weapons.length;
+          s.weapon = set.weapons[k]!;
+          s.sidearm = set.sidearms[k] ?? null;
+          s.plate = set.plates[k] ?? null;
           spawn(s);
         } else if (s.m && !s.m.alive && arena.t - s.m.diedAt > 1.5) spawn(s);
       }
@@ -838,9 +844,14 @@ const mount: HostMount = (ctx) => {
     tickPhase(real);
     soundFrame();
     fx.update(real);
+    const d0 = tour ? performance.now() : 0;
     renderer.draw(arena, Math.min(1, acc / STEP), fx);
     frameDrawn(now);
     maybeDrawHud();
+    if (tour) {
+      const end = performance.now();
+      tour.framed(steps, end - d0, end - now);
+    }
   };
 
   startPick(FIRST_PICK_S);
