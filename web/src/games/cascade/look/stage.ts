@@ -27,6 +27,8 @@ export class Stage {
   // Resolution: rendered pixels per CSS pixel. On a TV it starts below 1 and drops further if frames run long.
   private scale: number;
   private maxScale: number;
+  /** The highest scale for this screen; maxScale drops below it after a step up that didn't hold, for a while. */
+  private readonly topScale: number;
   private readonly minScale: number;
   private readonly frameBudget: number;
   private lastAt = 0;
@@ -36,6 +38,7 @@ export class Stage {
   private grace = 2;
   private clock = 0;
   private raisedAt = -99;
+  private loweredAt = -99;
   private stats = { frames: 0, ms: 0, worst: 0, work: 0, workMax: 0 };
 
   /** `lite`: for TVs, whose graphics chips are phone-class: no antialiasing, and fewer pixels (the HUD stays sharp). */
@@ -48,6 +51,7 @@ export class Stage {
     this.maxScale = opts.lite ? 0.75 : Math.min(window.devicePixelRatio || 1, 2);
     this.minScale = opts.lite ? 0.45 : this.maxScale;
     if (opts.scale) this.maxScale = Math.min(this.maxScale, Math.max(this.minScale, opts.scale));
+    this.topScale = this.maxScale;
     this.scale = this.maxScale;
     this.frameBudget = 1000 / (opts.fps ?? 60);
     this.renderer.setPixelRatio(this.scale);
@@ -75,6 +79,7 @@ export class Stage {
     this.resize();
     // compile every shader now, not the first time a piece or a chain shows up (a visible hitch on a TV)
     this.renderer.compile(this.scene, this.camera);
+    look.release?.(); // the previous board's materials, kept until now so their shader programs were reused
     this.grace = 2;
     look.kick = (a) => {
       this.shake = Math.min(1, this.shake + a);
@@ -211,8 +216,14 @@ export class Stage {
     } else this.slowFor = this.fastFor = 0;
     if (this.slowFor > 1 && this.scale > this.minScale) {
       const next = Math.max(this.minScale, this.scale - 0.1);
-      if (this.clock - this.raisedAt < 10) this.maxScale = next; // that step up didn't hold: stay below it
+      if (this.clock - this.raisedAt < 10) {
+        this.maxScale = next; // that step up didn't hold: stay below it for a while
+        this.loweredAt = this.clock;
+      }
       this.setScale(next);
+    } else if (this.fastFor > 8 && this.scale >= this.maxScale && this.maxScale < this.topScale && this.clock - this.loweredAt > 60) {
+      this.maxScale = Math.min(this.topScale, this.maxScale + 0.05); // a minute on: try higher again
+      this.loweredAt = this.clock;
     } else if (this.fastFor > 8 && this.scale < this.maxScale) {
       this.raisedAt = this.clock;
       this.setScale(Math.min(this.maxScale, this.scale + 0.05));
@@ -223,16 +234,18 @@ export class Stage {
     this.scale = s;
     this.slowFor = this.fastFor = 0;
     this.frameMs = this.frameBudget;
+    // only the pixel count changes: the canvas size and the camera framing stay (setPixelRatio keeps the size)
     this.renderer.setPixelRatio(s);
-    this.resize();
   }
 
-  render(dt: number) {
+  /** `judge`: false for frames drawn at a lower rate on purpose (idle), which must not lower the resolution. */
+  render(dt: number, judge = true) {
     const at = performance.now();
-    if (this.lastAt && at - this.lastAt < 250) this.adapt(at - this.lastAt);
-    this.lastAt = at;
+    if (judge && this.lastAt && at - this.lastAt < 250) this.adapt(at - this.lastAt);
+    this.lastAt = judge ? at : 0;
     this.t += dt;
     this.shake *= Math.exp(-dt * 7);
+    if (this.shake < 1e-3) this.shake = 0; // still, exactly: an idle board is a still picture
     const s = this.shake * this.shake * 0.08;
     const t = this.t;
     this.camera.position.set(

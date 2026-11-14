@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { AREA_UV, areaUniform, bakeGround, type Area } from "./bake.ts";
 import { NOISE, SDF, WORLD_VS } from "./glsl.ts";
-import { FLY, PieceLook, bounceOut, damp, hash, upload, type CameraSpec, type LookInfo, type Piece } from "./look.ts";
+import { FLY, PieceLook, bounceOut, cheerEnd, damp, hash, upload, type CameraSpec, type LookInfo, type Piece } from "./look.ts";
 
 const R = 0.175; // marble radius
 const PIT_R = 0.435;
@@ -418,7 +418,7 @@ export class MarblesLook extends PieceLook {
     }
     if (rattle) y += Math.max(0, Math.sin(this.time * 7 + p.seed * 40)) ** 12 * 0.03;
     if (p.mode !== FLY) y += p.jolt * Math.abs(Math.sin(p.age * 17));
-    if (this.winner >= 0 && this.winT > p.hop) {
+    if (this.winner >= 0 && this.winT > p.hop && this.winT < p.hop + cheerEnd(1.9)) {
       const u = (this.winT - p.hop) % 1.9;
       if (u < 0.55) y += Math.sin((u / 0.55) * Math.PI) * 0.42;
     }

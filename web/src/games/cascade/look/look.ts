@@ -33,6 +33,8 @@ export interface Look {
   /** Draws what never changes into textures, once the renderer exists. Called after build. */
   bake(renderer: THREE.WebGLRenderer): void;
   dispose(): void;
+  /** Frees what the previous build left alive. The stage calls it once the new scene has compiled. */
+  release?(): void;
   clear(): void;
   /** Jump a cell straight to a state, no animation. */
   setCell(i: number, owner: number, count: number): void;
@@ -108,6 +110,11 @@ export function upload(a: THREE.BufferAttribute, count: number) {
   a.needsUpdate = true;
 }
 
+/** About how long a win is celebrated, in seconds, before the pieces settle and the end screen can rest. */
+export const CHEER_S = 5;
+/** CHEER_S rounded up to whole cycles of a look's own motion, so the cheer stops at rest (not mid-hop). */
+export const cheerEnd = (period: number) => Math.ceil(CHEER_S / period) * period;
+
 export function hash(n: number) {
   const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
   return s - Math.floor(s);
@@ -115,6 +122,15 @@ export function hash(n: number) {
 
 const v3 = new THREE.Vector3();
 const euler = new THREE.Euler();
+
+/** Frees the geometry and materials under `root`, except those in `keep`. */
+function freeObject(root: THREE.Object3D, keep: Set<unknown>) {
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.geometry && !keep.has(m.geometry)) m.geometry.dispose();
+    for (const x of ([] as THREE.Material[]).concat(m.material ?? [])) if (!keep.has(x)) x.dispose();
+  });
+}
 
 export abstract class PieceLook implements Look {
   abstract readonly info: LookInfo;
@@ -145,12 +161,20 @@ export abstract class PieceLook implements Look {
   protected dropTime = 0.45;
   private spare: Piece[] = [];
   private seedN = 0;
+  /** The previous build's scene, kept until the new one has compiled (see build). */
+  private old: { objects: THREE.Object3D[]; textures: THREE.Texture[]; targets: THREE.WebGLRenderTarget[] } | null = null;
 
   /** `lite`: for TVs, whose graphics chips are phone-class: lighter meshes and effects. */
   constructor(readonly lite = false) {}
 
   build(w: number, h: number) {
-    this.dispose();
+    // Keep the old scene's materials alive until the new scene has compiled (stage.use calls release): three.js
+    // then reuses their shader programs, instead of compiling each one again (~60 ms each on a TV).
+    this.release();
+    this.old = { objects: [...this.group.children], textures: this.textures, targets: this.targets };
+    this.group.clear();
+    this.textures = [];
+    this.targets = [];
     this.w = w;
     this.h = h;
     this.palette = this.info.colors.map((c) => new THREE.Color(c));
@@ -170,14 +194,25 @@ export abstract class PieceLook implements Look {
     this.bakeScene(renderer);
   }
 
-  dispose() {
+  release() {
+    const old = this.old;
+    if (!old) return;
+    this.old = null;
+    // anything the new scene still uses stays
+    const keep = new Set<unknown>();
     this.group.traverse((o) => {
       const m = o as THREE.Mesh;
-      m.geometry?.dispose();
-      const mat = m.material as THREE.Material | THREE.Material[] | undefined;
-      if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
-      else mat?.dispose();
+      keep.add(m.geometry);
+      for (const x of ([] as unknown[]).concat(m.material ?? [])) keep.add(x);
     });
+    for (const o of old.objects) freeObject(o, keep);
+    for (const t of old.textures) if (!this.textures.includes(t)) t.dispose();
+    for (const t of old.targets) if (!this.targets.includes(t)) t.dispose();
+  }
+
+  dispose() {
+    this.release();
+    for (const o of this.group.children) freeObject(o, new Set());
     for (const t of this.textures) t.dispose();
     this.textures = [];
     for (const t of this.targets) t.dispose();
