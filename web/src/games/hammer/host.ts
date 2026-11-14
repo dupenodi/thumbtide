@@ -17,7 +17,7 @@ import { Fx, Renderer } from "./render.ts";
 import type { HammerGame, Mode, Phase } from "./shared.ts";
 import { Arena, type Machine, STEP, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
-import { GUN_KINDS, type GunKind, MACHINE, type Material, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
+import { GUN_KINDS, type GunKind, MACHINE, type Material, PLATE_KINDS, type PlateKind, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
 const MAX_SEATS = 4;
 const SPAWNS: [number, number][] = [
@@ -67,6 +67,7 @@ interface Seat {
   human: boolean;
   weapon: WeaponKind;
   sidearm: GunKind | null;
+  plate: PlateKind | null;
   /** The gun state last sent to the phone, so it is sent only on a change. */
   gunSig: string;
   wins: number;
@@ -136,6 +137,11 @@ const mount: HostMount = (ctx) => {
   const randomWeapon = (): WeaponKind => WEAPON_KINDS[Math.floor(Math.random() * WEAPON_KINDS.length)]!;
   /** About one bot in three takes a gun. */
   const randomSidearm = (): GunKind | null => (Math.random() < 0.35 ? GUN_KINDS[Math.floor(Math.random() * GUN_KINDS.length)]! : null);
+  /** What the phone shows of a machine's gun and plates: sent again when it changes. */
+  const gunSig = (m: Machine | null) => {
+    const g = gunOf(m);
+    return `${g ? `${g.ammo}/${g.clip}` : ""}|${m?.alive ? m.plates.length : 0}`;
+  };
   const gunOf = (m: Machine | null) => {
     if (!m || !m.armed || !m.guns.length) return null;
     const g = m.guns[0]!;
@@ -150,6 +156,7 @@ const mount: HostMount = (ctx) => {
     auto: null,
     weapon: "hammer",
     sidearm: null,
+    plate: null,
     gunSig: "",
     wins: 0,
     slot: -1,
@@ -240,6 +247,7 @@ const mount: HostMount = (ctx) => {
         auto: null,
         weapon: randomWeapon(),
         sidearm: randomSidearm(),
+        plate: Math.random() < 0.3 ? PLATE_KINDS[Math.floor(Math.random() * PLATE_KINDS.length)]! : null,
         gunSig: "",
         wins: 0,
         slot: -1,
@@ -268,9 +276,9 @@ const mount: HostMount = (ctx) => {
   const spawn = (s: Seat) => {
     const [x, y] = SPAWNS[s.slot] ?? [VIEW_W / 2, VIEW_H / 2];
     if (s.m) {
-      arena.respawn(s.m, x, y, s.weapon, s.sidearm);
+      arena.respawn(s.m, x, y, s.weapon, s.sidearm, s.plate);
     } else {
-      s.m = arena.add({ id: ++machineSerial, name: s.name, color: colorOf(s), weapon: s.weapon, sidearm: s.sidearm, x, y });
+      s.m = arena.add({ id: ++machineSerial, name: s.name, color: colorOf(s), weapon: s.weapon, sidearm: s.sidearm, plate: s.plate, x, y });
       byMachine.set(s.m, s);
     }
     s.m.team = teamOf(s);
@@ -343,7 +351,7 @@ const mount: HostMount = (ctx) => {
   const pushOwn = (s: Seat) => {
     if (!s.human || !host.players.has(s.id)) return;
     const g = gunOf(s.m);
-    s.gunSig = g ? `${g.ammo}/${g.clip}` : "";
+    s.gunSig = gunSig(s.m);
     host.setOwn(s.id, {
       color: colorOf(s),
       slot: s.slot,
@@ -352,6 +360,8 @@ const mount: HostMount = (ctx) => {
       weapon: s.weapon,
       sidearm: s.sidearm,
       gun: g,
+      plate: s.plate,
+      plates: s.m?.alive ? s.m.plates.length : 0,
       hp: s.m ? Math.round(s.m.hp) : MACHINE.health,
       alive: !!s.m && s.m.alive,
       wins: s.wins,
@@ -541,9 +551,10 @@ const mount: HostMount = (ctx) => {
       if (!s) return;
       if (d.type === "weapon" && WEAPON_KINDS.includes(d.weapon)) s.weapon = d.weapon;
       else if (d.type === "gun" && (d.gun === null || GUN_KINDS.includes(d.gun))) s.sidearm = d.gun;
+      else if (d.type === "plate" && (d.plate === null || PLATE_KINDS.includes(d.plate))) s.plate = d.plate;
       else return;
       // In warm-up the new weapon appears straight away; otherwise from the next round.
-      if (phase === "pick" && s.m) arena.respawn(s.m, s.m.hull.x, s.m.hull.y, s.weapon, s.sidearm);
+      if (phase === "pick" && s.m) arena.respawn(s.m, s.m.hull.x, s.m.hull.y, s.weapon, s.sidearm, s.plate);
       pushOwn(s);
       hudDirty = true;
     }),
@@ -570,7 +581,7 @@ const mount: HostMount = (ctx) => {
     }
     const p = host.players.get(s.id);
     const inp = p?.connected ? p.input : null;
-    const moving = !!inp && (inp.f === 1 || (inp.k === 1 ? Math.abs(inp.x) + Math.abs(inp.y) > 0.05 : inp.x !== s.tx || inp.y !== s.ty));
+    const moving = !!inp && (inp.f === 1 || inp.g === 1 || (inp.k === 1 ? Math.abs(inp.x) + Math.abs(inp.y) > 0.05 : inp.x !== s.tx || inp.y !== s.ty));
     s.idle = moving ? 0 : s.idle + STEP;
     // away (or phone asleep) in a fight: a bot flies for them, so the round doesn't stall
     if (phase === "fight" && s.idle > IDLE_S) {
@@ -585,6 +596,7 @@ const mount: HostMount = (ctx) => {
     s.auto = null;
     if (!inp) return;
     if (inp.f === 1) arena.fire(m);
+    if (inp.g === 1) arena.shield(m);
     if (inp.k === 1) {
       s.k = 1;
       arena.pushRaw(m, stickGain * inp.x ** 3, stickGain * inp.y ** 3);
@@ -632,6 +644,10 @@ const mount: HostMount = (ctx) => {
         if (v?.human) host.send(v.id, { type: "hurt", dmg: 0 });
         if (a?.human) host.send(a.id, { type: "hit", dmg: 0 });
         hudDirty = true;
+      } else if (e.type === "plateoff") {
+        sound?.disarm();
+        fx.burst(e.x, e.y, 14, 300, "#cfd6e4", 2);
+        fx.text(e.x, e.y - 16, "SHIELD BROKEN", "#cfd6e4", 16);
       } else if (e.type === "blast") {
         sound?.shot(true);
         fx.burst(e.x, e.y, lite ? 18 : 36, 380, "#ffb347", 3);
@@ -800,8 +816,7 @@ const mount: HostMount = (ctx) => {
     // the phone shows the ammo: send a gun's state when it changes (a shot, the reload, a lost weapon)
     for (const s of seats.values()) {
       if (!s.human || !s.m) continue;
-      const g = gunOf(s.m);
-      if ((g ? `${g.ammo}/${g.clip}` : "") !== s.gunSig) pushOwn(s);
+      if (gunSig(s.m) !== s.gunSig) pushOwn(s);
     }
     tickPhase(real);
     soundFrame();

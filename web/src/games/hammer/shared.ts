@@ -1,4 +1,4 @@
-import type { GunKind, WeaponKind } from "./weapons.ts";
+import type { GunKind, PlateKind, WeaponKind } from "./weapons.ts";
 
 export type Phase = "pick" | "fight" | "result" | "match";
 
@@ -18,10 +18,12 @@ export interface HammerInput {
   y: number;
   /** 1 while the fire button is held. */
   f?: 0 | 1;
+  /** 1 while the shield button is held. */
+  g?: 0 | 1;
 }
 
 export interface HammerGame {
-  toHost: { type: "weapon"; weapon: WeaponKind } | { type: "gun"; gun: GunKind | null };
+  toHost: { type: "weapon"; weapon: WeaponKind } | { type: "gun"; gun: GunKind | null } | { type: "plate"; plate: PlateKind | null };
   input: HammerInput;
   toController: { type: "hit"; dmg: number } | { type: "hurt"; dmg: number } | { type: "ko" } | { type: "win" };
   shared: {
@@ -50,6 +52,9 @@ export interface HammerGame {
     sidearm: GunKind | null;
     /** The machine has a gun now: rounds left, clip size, and true while reloading. */
     gun: { ammo: number; clip: number; reloading: boolean } | null;
+    /** The shield picked, and plates still on the machine. */
+    plate: PlateKind | null;
+    plates: number;
     hp: number;
     alive: boolean;
     wins: number;

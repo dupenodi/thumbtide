@@ -6,7 +6,7 @@
 import { Body, type ContactReport, joint, type Joint, World, wrapPi } from "./engine.ts";
 import type { Tuning } from "./tuning.ts";
 import { type CreatureLayout, type MonsterKind, wormLayout } from "./monsters.ts";
-import { armedSpec, type GunKind, type GunSpec, MACHINE, type PartSpec, type WeaponKind, type WeaponSpec } from "./weapons.ts";
+import { armedSpec, type GunKind, type GunSpec, MACHINE, type PartSpec, PLATE_COUNT, type PlateKind, PLATES, type WeaponKind, type WeaponSpec } from "./weapons.ts";
 
 /** The fixed camera frame, px. 16:9. */
 export const VIEW_W = 960;
@@ -50,6 +50,10 @@ export interface Tag {
   jaws?: number;
   /** A bullet or mortar ball (its owner is `m`). */
   shot?: Shot;
+  /** A shield plate (attached while its joint is in `m.plates`). */
+  plate?: PlateKind;
+  /** A knocked-off plate: it no longer counts as its machine's. */
+  loose?: boolean;
   spec: PartSpec | null;
 }
 
@@ -99,6 +103,11 @@ export interface Machine {
   guns: GunState[];
   /** The trigger is held this frame. */
   trigger: boolean;
+  /** Shield plates still on the machine, and the kind taken. */
+  plateKind: PlateKind | null;
+  plates: { body: Body; joint: Joint }[];
+  /** The shield is held this frame: plates spread apart, thrust halves. */
+  shielding: boolean;
   hull: Body;
   /** The weapon's bodies (attached, or loose next to a weaponless machine). */
   parts: Body[];
@@ -136,6 +145,7 @@ export type SimEvent =
   | { type: "pickup"; m: Machine; weapon: WeaponKind }
   | { type: "shot"; m: Machine; ball: boolean; x: number; y: number }
   | { type: "blast"; m: Machine; radius: number; x: number; y: number }
+  | { type: "plateoff"; m: Machine; by: Machine; x: number; y: number }
   | { type: "ko"; victim: Machine; by: Machine | null; x: number; y: number };
 
 interface Loose {
@@ -169,14 +179,19 @@ export class Arena {
   suddenDeath = false;
   /** Bullets and mortar balls in the air. */
   readonly shots: Shot[] = [];
+  /** Knocked-off plates, removed a few seconds later. */
+  private debris: { body: Body; at: number }[] = [];
 
   constructor(public tuning: Tuning) {}
 
-  add(o: { id: number; team?: number; name: string; color: string; weapon: WeaponKind; sidearm?: GunKind | null; x: number; y: number }): Machine {
+  add(o: { id: number; team?: number; name: string; color: string; weapon: WeaponKind; sidearm?: GunKind | null; plate?: PlateKind | null; x: number; y: number }): Machine {
     const m = {
       ...o,
       team: o.team ?? o.id,
       sidearm: o.sidearm ?? null,
+      plateKind: o.plate ?? null,
+      plates: [],
+      shielding: false,
       guns: [],
       trigger: false,
       grips: [],
@@ -198,12 +213,14 @@ export class Arena {
     } as unknown as Machine;
     this.buildHull(m, o.x, o.y);
     this.buildWeapon(m, o.weapon, m.sidearm);
+    this.buildPlates(m, m.plateKind);
     this.machines.push(m);
     return m;
   }
 
   remove(m: Machine): void {
     this.destroy(m);
+    this.removePlates(m);
     this.world.remove(m.hull);
     this.parked.delete(m);
     const i = this.machines.indexOf(m);
@@ -211,8 +228,9 @@ export class Arena {
   }
 
   /** Back to full health at (x, y) with a fresh weapon. */
-  respawn(m: Machine, x: number, y: number, weapon: WeaponKind = m.weapon, sidearm: GunKind | null = m.sidearm): void {
+  respawn(m: Machine, x: number, y: number, weapon: WeaponKind = m.weapon, sidearm: GunKind | null = m.sidearm, plate: PlateKind | null = m.plateKind): void {
     this.destroy(m);
+    this.removePlates(m);
     this.world.remove(m.hull);
     this.parked.delete(m);
     m.hp = MACHINE.health;
@@ -222,6 +240,7 @@ export class Arena {
     m.flash = 0;
     this.buildHull(m, x, y);
     this.buildWeapon(m, weapon, sidearm);
+    this.buildPlates(m, plate);
   }
 
   /**
@@ -242,6 +261,9 @@ export class Arena {
       sidearm: null,
       guns: [],
       trigger: false,
+      plateKind: null,
+      plates: [],
+      shielding: false,
       grips: [],
       parts: [],
       part: new Map(),
@@ -296,6 +318,11 @@ export class Arena {
     m.trigger = true;
   }
 
+  /** Hold the shield this frame. */
+  shield(m: Machine): void {
+    m.shielding = true;
+  }
+
   /** Mouse or finger movement in screen px; scaled by the mouse speed (Hammerfight's calibration). */
   push(m: Machine, dx: number, dy: number): void {
     m.inx += dx * this.tuning.mouseSpeed;
@@ -333,7 +360,9 @@ export class Arena {
         if (!m.armed && !m.monster) this.tryPickup(m);
       }
       if (m.guns.length) this.guns(m, dt);
+      if (m.plates.length > 1 && m.shielding && m.alive && m.stun <= 0) this.spreadPlates(m);
       m.trigger = false;
+      m.shielding = false;
       m.inx = m.iny = 0;
       this.limit(m);
       // a wreck far below the frame can't come back: stop simulating it (and its hull's joints and contacts)
@@ -352,7 +381,70 @@ export class Arena {
     this.dtPrev = dt;
     this.t += dt;
     if (this.shots.length) this.ageShots();
+    if (this.debris.length && this.t - this.debris[0]!.at > 4) {
+      for (const d of this.debris) if (this.t - d.at > 4) this.world.remove(d.body);
+      this.debris = this.debris.filter((d) => this.t - d.at <= 4);
+    }
     this.slowMotion();
+  }
+
+  /** Shield-hold: the plates push each other apart (8e7 in the exe; the fall-off with distance is OURS). */
+  private spreadPlates(m: Machine): void {
+    const ps = m.plates;
+    for (let i = 0; i < ps.length; i++) {
+      for (let j = i + 1; j < ps.length; j++) {
+        const a = ps[i]!.body;
+        const b = ps[j]!.body;
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let d = Math.hypot(dx, dy);
+        if (d < 1) {
+          dx = 1;
+          dy = 0;
+          d = 1;
+        }
+        const f = 8e7 * Math.max(0, 1 - d / 160);
+        a.applyForce((-dx / d) * f, (-dy / d) * f);
+        b.applyForce((dx / d) * f, (dy / d) * f);
+      }
+    }
+  }
+
+  /** Plates: one on each side of the hull, on its rod (type 2), apart from the weapon (they stay on when disarmed). */
+  private buildPlates(m: Machine, kind: PlateKind | null): void {
+    m.plateKind = kind;
+    m.plates = [];
+    if (!kind) return;
+    const ps = PLATES[kind];
+    for (let i = 0; i < PLATE_COUNT; i++) {
+      const a = (i / PLATE_COUNT) * Math.PI * 2;
+      const b = new Body(ps.mesh, ps.density).place(m.hull.x + Math.cos(a) * ps.rod, m.hull.y + Math.sin(a) * ps.rod, a);
+      b.group = m.id;
+      b.data = { m, hull: false, striker: false, sharpness: 0.5, bladeable: 0, bladeableU: 0, sharpnessU: 0.5, spec: null, plate: kind } satisfies Tag;
+      this.world.add(b);
+      const jt = joint(m.hull, b, 2, ps.rod, { necess: 5 });
+      this.world.joints.push(jt);
+      m.plates.push({ body: b, joint: jt });
+    }
+  }
+
+  /** A plate comes off (0x5123c0's list): it falls as debris and goes after a few seconds. */
+  private knockPlate(m: Machine, body: Body): void {
+    const i = m.plates.findIndex((p) => p.body === body);
+    if (i < 0) return;
+    const [p] = m.plates.splice(i, 1);
+    this.world.removeJoint(p!.joint);
+    (body.data as Tag).loose = true;
+    body.group = -1;
+    this.debris.push({ body, at: this.t });
+  }
+
+  private removePlates(m: Machine): void {
+    for (const p of m.plates) {
+      this.world.removeJoint(p.joint);
+      this.world.remove(p.body);
+    }
+    m.plates = [];
   }
 
   /** Reload timers, and a shot from every ready gun while the trigger is held (0x4184xx). */
@@ -478,8 +570,9 @@ export class Arena {
 
     if (!stunned) {
       // Thrust: an impulse from this frame's input movement, capped.
-      let fx = m.inx * tn.thrust * 0.6 * K;
-      let fy = m.iny * tn.thrust * 0.6 * K;
+      const shield = m.shielding && m.plates.length ? 0.5 : 1;
+      let fx = m.inx * tn.thrust * 0.6 * K * shield;
+      let fy = m.iny * tn.thrust * 0.6 * K * shield;
       const fl = Math.hypot(fx, fy);
       const cap = (8e6 * K) / dt;
       if (fl > cap) {
@@ -607,6 +700,8 @@ export class Arena {
 
     if (!ta.hull && !tb.hull) {
       if (impact > 15) this.events.push({ type: "clash", a: ta.m, b: tb.m, impact, x: c.x, y: c.y });
+      if (ta.plate && !tb.plate) this.plateHit(c.a, ta, c.b, tb, impact, c);
+      else if (tb.plate && !ta.plate) this.plateHit(c.b, tb, c.a, ta, impact, c);
       if (ta.striker && tb.striker) this.clash(c.a, ta, c.b, tb, impact, c);
       return;
     }
@@ -618,7 +713,7 @@ export class Arena {
   /** Is this body still held by a live machine? Loose weapons and wrecks are "unowned". */
   private owned(t: Tag): boolean {
     // a shot stays its shooter's, even after the shooter is wrecked
-    return !!t.shot || (t.m.alive && (t.hull || t.m.armed));
+    return !!t.shot || (t.m.alive && (t.hull || (t.plate ? !t.loose : t.m.armed)));
   }
 
   /** Damage (0x410340) and shock. */
@@ -687,6 +782,19 @@ export class Arena {
     victim.flash = 0.12;
     this.events.push({ type: "hit", attacker, victim, dmg: before - victim.hp, impact, cut, x, y });
     if (victim.hp <= 0) this.wreck(victim);
+  }
+
+  /** A weapon much faster than the plate, hitting hard enough, knocks it off (m_overkill). */
+  private plateHit(pBody: Body, pt: Tag, wBody: Body, wt: Tag, impact: number, c: ContactReport): void {
+    const m = pt.m;
+    if (!m.alive || this.tuning.damage <= 0 || !m.plates.some((p) => p.body === pBody)) return;
+    if (wt.m.team === m.team && this.tuning.teamDamage < 1) return;
+    const sp = Math.hypot(pBody.vx, pBody.vy);
+    const sw = Math.hypot(wBody.vx, wBody.vy);
+    const need = PLATES[pt.plate!].overkill * 100 * (m.hp <= MACHINE.healthLow ? 0.25 : 1);
+    if ((sw + 1) / (sp + 1) <= 1.5 || impact <= need) return;
+    this.knockPlate(m, pBody);
+    this.events.push({ type: "plateoff", m, by: wt.m, x: c.x, y: c.y });
   }
 
   /** Weapon against weapon (0x420ca0): the much faster one can knock the other off its machine. */
@@ -784,6 +892,7 @@ export class Arena {
     m.diedAt = this.t;
     m.stun = 0;
     this.drop(m);
+    for (const p of [...m.plates]) this.knockPlate(m, p.body);
     m.hull.gravity = true;
     m.hull.spinDamp = 300000;
     if (m.monster) for (const b of m.parts) b.gravity = true;

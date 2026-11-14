@@ -682,6 +682,59 @@
   color: #8a90a6;
 }
 
+/* shield: upright, bottom right (opposite Fire); sideways, above Fire */
+.hmc-shield {
+  position: absolute;
+  z-index: 2;
+  right: max(22px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  width: 84px;
+  height: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 50%;
+  border: 3px solid #8fb6ff;
+  background: radial-gradient(circle at 50% 35%, #233656, #111a2b);
+  color: #cfe0ff;
+  font: 13px "Russo One", system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.hmc-shield[hidden],
+.hmc-g[hidden] {
+  display: none;
+}
+
+.hmc-shield.on {
+  background: radial-gradient(circle at 50% 35%, #8fb6ff, #3b5f9e);
+  color: #0b1424;
+  transform: scale(0.94);
+}
+
+.hmc-plates {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.hmc-load {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: #9aa1b8;
+}
+
+@media (orientation: landscape) {
+  .hmc-shield {
+    bottom: calc(max(24px, env(safe-area-inset-bottom)) + 96px);
+  }
+}
+
 .hmc-ammo {
   font-size: 11px;
   opacity: 0.85;
@@ -698,10 +751,9 @@
 .hmc-tabs {
   grid-column: 1 / -1;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-top: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
 .hmc-tabs button {

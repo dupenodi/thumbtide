@@ -281,6 +281,43 @@ export const SIDEARMS: Record<GunKind, SidearmSpec> = {
   },
 };
 
+// ---------------------------------------------------------------- plates (shields)
+// Item factory ids 184-198: a box (thickness along local +x, away from the machine), density, m_overkill and the rod
+// (m_jrad_x), all with sharpness 0.5. A plate is knocked off when a weapon at more than 1.5x its speed hits it with an
+// impact above overkill x 100 (x 0.25 at critical health). Holding the shield pushes the plates apart and halves thrust.
+export type PlateKind = "woodlight" | "woodheavy" | "rusty" | "iron" | "silver" | "imperia" | "armor" | "heavyplate";
+export interface PlateSpec {
+  kind: PlateKind;
+  label: string;
+  mesh: number[];
+  density: number;
+  overkill: number;
+  rod: number;
+  material: Material;
+}
+const plate = (kind: PlateKind, label: string, w: number, h: number, density: number, overkill: number, rod: number, material: Material): PlateSpec => ({
+  kind,
+  label,
+  mesh: box(w / 2, h / 2),
+  density,
+  overkill,
+  rod,
+  material,
+});
+export const PLATES: Record<PlateKind, PlateSpec> = {
+  woodlight: plate("woodlight", "Light wood", 12, 28, 15, 0.3, 21, "wood"), // plate_wood_light (184)
+  woodheavy: plate("woodheavy", "Heavy wood", 15, 27, 20, 0.4, 23, "wood"), // plate_wood_heavy (186)
+  rusty: plate("rusty", "Rusty", 13, 31, 30, 0.6, 21, "stone"), // plate_rusty (189)
+  iron: plate("iron", "Iron", 16, 31, 30, 0.6, 21, "iron"), // plate_iron (190)
+  silver: plate("silver", "Silver", 15, 27, 30, 0.7, 23, "silver"), // plate_silver (194)
+  imperia: plate("imperia", "Imperia", 15, 31, 35, 0.7, 19, "gold"), // plate_imperia (195)
+  armor: plate("armor", "Armour", 16, 33, 40, 0.7, 36, "steel"), // plate_armor (198)
+  heavyplate: plate("heavyplate", "Heavy", 15, 38, 30, 0.8, 25, "iron"), // plate_heavy (193)
+};
+export const PLATE_KINDS = Object.keys(PLATES) as PlateKind[];
+/** Plates a machine carries (the game allows up to 6; two keep the body count down on the TV). */
+export const PLATE_COUNT = 2;
+
 /** Dual weapons already fill the far side (the tribune's back blade is its own gun). */
 export const takesSidearm = (k: WeaponKind) => WEAPONS[k].cls !== "dual";
 

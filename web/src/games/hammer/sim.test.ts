@@ -332,6 +332,49 @@ test("tiers: heavier weapons in a class have a heavier striking part, and the sa
   assert.ok(mallet < hammer && hammer < maul, `mallet ${mallet}, hammer ${hammer}, maul ${maul}`);
 });
 
+test("plates: two per machine, the shield spreads them and halves thrust, a fast hard hit knocks one off", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", plate: "woodlight", x: 400, y: 270 });
+  assert.equal(m.plates.length, 2);
+  for (let i = 0; i < 60; i++) a.step();
+  const gap = () => Math.hypot(m.plates[0]!.body.x - m.plates[1]!.body.x, m.plates[0]!.body.y - m.plates[1]!.body.y);
+  const before = gap();
+  for (let i = 0; i < 30; i++) {
+    a.shield(m);
+    a.step();
+  }
+  assert.ok(gap() > before, `plates spread: ${before.toFixed(0)} -> ${gap().toFixed(0)}`);
+  // half thrust while shielding
+  const speed = (shield: boolean) => {
+    const b = arena();
+    const x = b.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", plate: "iron", x: 400, y: 270 });
+    for (let i = 0; i < 5; i++) {
+      if (shield) b.shield(x);
+      b.pushRaw(x, 60, 0);
+      b.step();
+    }
+    return x.hull.vx;
+  };
+  assert.ok(speed(true) < speed(false) * 0.7, `shield ${speed(true)} vs ${speed(false)}`);
+  // a heavy, fast weapon knocks a light plate off
+  const victim = m;
+  const p = victim.plates[0]!.body;
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "krankhammer", x: p.x + 120, y: p.y });
+  let off = 0;
+  for (let i = 0; i < 40 && !off; i++) {
+    // a hard swing: 1500 px/s straight at the plate
+    const dx = p.x - foe.striker.x;
+    const dy = p.y - foe.striker.y;
+    const d = Math.hypot(dx, dy) || 1;
+    foe.striker.setVelocity((dx / d) * 1500, (dy / d) * 1500, 0, 0.02);
+    a.step();
+    for (const e of a.events) if (e.type === "plateoff") off++;
+    a.events.length = 0;
+  }
+  assert.equal(off, 1);
+  assert.equal(victim.plates.length, 1);
+});
+
 test("guns: the arquebus fires every 0.1 s while held, bullets hurt, the clip reloads, shots leave the world", () => {
   const a = arena();
   const shooter = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", sidearm: "arquebus", x: 300, y: 300 });

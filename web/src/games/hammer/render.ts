@@ -4,7 +4,7 @@
 import type { Body } from "./engine.ts";
 import { type Arena, lerpBody, type Machine, type Tag, VIEW_H, VIEW_W } from "./sim.ts";
 import { MONSTER_LOOK } from "./monsters.ts";
-import { MACHINE, type Material, WEAPONS } from "./weapons.ts";
+import { MACHINE, type Material, PLATES, WEAPONS } from "./weapons.ts";
 
 interface Spark {
   x: number;
@@ -121,6 +121,7 @@ export class Renderer {
     // a wreck that has faded out (or left play) draws nothing: skip its paths entirely
     for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
     if (arena.shots.length) this.shots(arena, alpha);
+    this.plates(arena, alpha);
 
     ctx.lineCap = "round";
     for (const p of fx.sparks) {
@@ -362,6 +363,34 @@ export class Renderer {
           }
         }
       }
+      ctx.restore();
+    }
+  }
+
+  /** Shield plates: on a short rod while attached, then falling debris. */
+  private plates(arena: Arena, alpha: number): void {
+    const ctx = this.ctx;
+    for (const b of arena.world.bodies) {
+      const t = b.data as Tag | null;
+      if (!t?.plate) continue;
+      const pal = PALETTE[PLATES[t.plate].material];
+      if (!t.loose && t.m.alive) {
+        const [hx, hy] = lerpBody(t.m.hull, alpha);
+        const [bx, by] = lerpBody(b, alpha);
+        ctx.strokeStyle = "#8a6a4a";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(hx, hy);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+      }
+      this.enter(b, alpha);
+      this.solid(b, pal, 1.5);
+      // rivets
+      const { maxX, maxY } = bounds(b);
+      ctx.fillStyle = pal.stroke;
+      for (const sy of [-1, 1]) ctx.fillRect(-1.5, sy * (maxY - 5) - 1.5, 3, 3);
+      ctx.fillRect(maxX - 4, -1.5, 3, 3);
       ctx.restore();
     }
   }

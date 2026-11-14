@@ -84,6 +84,9 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot): void {
   const y = Math.min(VIEW_H + 40, Math.max(30, enemy.hull.y + Math.sin(bot.theta) * r));
   seek(arena, m, x, y, 350);
 
+  // shield up when the enemy is close (it halves thrust, so not all the time)
+  if (m.plates.length > 1 && best < 110) arena.shield(m);
+
   // guns: pull the trigger when one points at the enemy (the mortar only up close)
   for (const g of m.guns) {
     const b = g.body;
