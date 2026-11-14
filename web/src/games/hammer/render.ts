@@ -240,36 +240,46 @@ export class Renderer {
       }
     }
 
-    // Chain links: one path for all the links of a chain, with the corners worked out here. A save, transform, stroke
-    // and restore per link made the chain weapons the slowest sets on the TV (up to 10 links a weapon).
+    // Chain links: one path for all the links of a chain (the colour of the first link), with the corners worked out
+    // here. A save, transform, stroke and restore per link made the chain weapons the slowest sets on the TV (up to
+    // 10 links a weapon). The batch draws where the first link comes in the parts order, so the links stay above
+    // the parts before them (a mace's handle) and below the parts after them.
     let linkFill: string | null = null;
     for (const b of m.parts) {
       const part = (b.data as Tag).spec!;
-      if (part.look !== "link") continue;
-      const fill = PALETTE[part.material].fill;
-      if (linkFill === null) {
-        linkFill = fill;
-        ctx.beginPath();
-      } else if (fill !== linkFill) continue; // another colour: drawn on its own below
-      const [x, y, a] = lerpBody(b, alpha);
-      const c = Math.cos(a);
-      const s = Math.sin(a);
-      // the 10 × 6 link outline, corner by corner
-      ctx.moveTo(x - 5 * c + 3 * s, y - 5 * s - 3 * c);
-      ctx.lineTo(x + 5 * c + 3 * s, y + 5 * s - 3 * c);
-      ctx.lineTo(x + 5 * c - 3 * s, y + 5 * s + 3 * c);
-      ctx.lineTo(x - 5 * c - 3 * s, y - 5 * s + 3 * c);
-      ctx.closePath();
+      if (part.look === "link") {
+        linkFill = PALETTE[part.material].fill;
+        break;
+      }
     }
-    if (linkFill !== null) {
-      ctx.strokeStyle = linkFill;
+    let linksDrawn = false;
+    const strokeLinks = () => {
+      linksDrawn = true;
+      ctx.beginPath();
+      for (const b of m.parts) {
+        const part = (b.data as Tag).spec!;
+        if (part.look !== "link" || PALETTE[part.material].fill !== linkFill) continue; // another colour: drawn on its own
+        const [x, y, a] = lerpBody(b, alpha);
+        const c = Math.cos(a);
+        const s = Math.sin(a);
+        // the 10 × 6 link outline, corner by corner
+        ctx.moveTo(x - 5 * c + 3 * s, y - 5 * s - 3 * c);
+        ctx.lineTo(x + 5 * c + 3 * s, y + 5 * s - 3 * c);
+        ctx.lineTo(x + 5 * c - 3 * s, y + 5 * s + 3 * c);
+        ctx.lineTo(x - 5 * c - 3 * s, y - 5 * s + 3 * c);
+        ctx.closePath();
+      }
+      ctx.strokeStyle = linkFill!;
       ctx.lineWidth = 2;
       ctx.stroke();
-    }
+    };
 
     for (const b of m.parts) {
       const part = (b.data as Tag).spec!;
-      if (part.look === "link" && PALETTE[part.material].fill === linkFill && !(m.armed && part.rod)) continue;
+      if (part.look === "link" && PALETTE[part.material].fill === linkFill && !(m.armed && part.rod)) {
+        if (!linksDrawn) strokeLinks();
+        continue;
+      }
       const [bx, by, ba] = lerpBody(b, alpha);
       const { minX, maxX, maxY } = bounds(b);
       if (m.armed && part.rod) {
@@ -345,8 +355,9 @@ export class Renderer {
         this.solid(b, pal, 1.5);
       } else if (part.look === "link") {
         if (pal.fill === linkFill) {
-          // in the batched chain path already (only reached for a link on a rod)
+          // a link on a rod (none today): its shaft is drawn, the link itself goes in the batched chain path
           ctx.restore();
+          if (!linksDrawn) strokeLinks();
           continue;
         }
         ctx.strokeStyle = pal.fill;
