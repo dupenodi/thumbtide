@@ -2,8 +2,8 @@ import type { WeaponKind } from "./weapons.ts";
 
 export type Phase = "pick" | "fight" | "result" | "match";
 
-/** ffa: everyone for themselves. teams: Red (P1, P3) against Blue (P2, P4). pve: all players against the CPU. */
-export type Mode = "ffa" | "teams" | "pve";
+/** ffa: everyone for themselves. teams: Red (P1, P3) against Blue (P2, P4). pve: all players against the CPU. pvm: all players against waves of monsters. */
+export type Mode = "ffa" | "teams" | "pve" | "pvm";
 
 /**
  * Phone input. Touchpad (k 0): running totals of finger movement in CSS px since the controller started, so no

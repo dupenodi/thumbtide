@@ -3,6 +3,7 @@
 
 import type { Body } from "./engine.ts";
 import { type Arena, lerpBody, type Machine, type Tag, VIEW_H, VIEW_W } from "./sim.ts";
+import { MONSTER_LOOK } from "./monsters.ts";
 import { MACHINE, type Material, WEAPONS } from "./weapons.ts";
 
 interface Spark {
@@ -113,10 +114,12 @@ export class Renderer {
     const sh = fx.shake;
     ctx.setTransform(s, 0, 0, s, (Math.random() - 0.5) * sh * s, (Math.random() - 0.5) * sh * s);
 
-    for (const m of arena.machines) this.trail(m, alpha, fx);
-    for (const m of arena.machines) this.weapon(m, alpha);
+    // monsters first (behind the machines), then the machines' trails, weapons and hulls
+    for (const m of arena.machines) if (m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.creature(arena, m, alpha);
+    for (const m of arena.machines) if (!m.monster) this.trail(m, alpha, fx);
+    for (const m of arena.machines) if (!m.monster) this.weapon(m, alpha);
     // a wreck that has faded out (or left play) draws nothing: skip its paths entirely
-    for (const m of arena.machines) if (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m))) this.machine(arena, m, alpha);
+    for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
 
     ctx.lineCap = "round";
     for (const p of fx.sparks) {
@@ -352,6 +355,95 @@ export class Renderer {
         }
       }
       ctx.restore();
+    }
+  }
+
+  /** A monster (worm): segments tail to head as rounded capsules, a toothed jaw, a health bar. */
+  private creature(arena: Arena, m: Machine, alpha: number): void {
+    const ctx = this.ctx;
+    const st = m.monster!;
+    const look = MONSTER_LOOK[st.kind];
+    const flash = m.flash > 0;
+    ctx.globalAlpha = m.alive ? 1 : Math.max(0, 1 - (arena.t - m.diedAt) / 2.5);
+    // tail first, so the head is on top
+    for (let i = st.layout.parts.length - 1; i >= 0; i--) {
+      const cp = st.layout.parts[i]!;
+      if (cp.look !== "segment") continue;
+      const b = st.part.get(cp.key);
+      if (!b) continue;
+      const { maxX, maxY } = bounds(b);
+      this.enter(b, alpha);
+      ctx.fillStyle = flash ? "#ffffff" : look.fill;
+      ctx.strokeStyle = look.stroke;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, maxX * 1.15, maxY, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // ridge, or armour plates
+      ctx.strokeStyle = look.stroke;
+      ctx.lineWidth = st.layout.armored ? 2.5 : 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-maxX * 0.4, -maxY * 0.85);
+      ctx.lineTo(-maxX * 0.4, maxY * 0.85);
+      if (st.layout.armored) {
+        ctx.moveTo(maxX * 0.4, -maxY * 0.85);
+        ctx.lineTo(maxX * 0.4, maxY * 0.85);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    // the jaw: a wedge with teeth pointing forward (+x), and an eye
+    const jaw = st.part.get("jaw");
+    if (jaw) {
+      const { maxX, maxY } = bounds(jaw);
+      this.enter(jaw, alpha);
+      ctx.fillStyle = flash ? "#ffffff" : look.jaw;
+      ctx.strokeStyle = look.stroke;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-maxX, -maxY);
+      ctx.lineTo(maxX * 0.7, -maxY * 0.7);
+      ctx.lineTo(maxX, 0);
+      ctx.lineTo(maxX * 0.7, maxY * 0.7);
+      ctx.lineTo(-maxX, maxY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#f4efe2";
+      ctx.beginPath();
+      for (const sgn of [-1, 1]) {
+        for (let k = 0; k < 3; k++) {
+          const x = maxX * (0.15 + k * 0.25);
+          ctx.moveTo(x - 3, sgn * maxY * 0.55);
+          ctx.lineTo(x, sgn * maxY * 0.15);
+          ctx.lineTo(x + 3, sgn * maxY * 0.55);
+        }
+      }
+      ctx.fill();
+      ctx.fillStyle = "#ffdf5d";
+      ctx.beginPath();
+      ctx.arc(-maxX * 0.35, -maxY * 0.45, Math.max(2, maxY * 0.18), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    if (!m.alive) return;
+    // health bar over the head
+    const head = jaw ?? m.hull;
+    const [x, y] = lerpBody(head, alpha);
+    const w = 44;
+    const frac = Math.max(0, m.hp / st.layout.hp);
+    ctx.fillStyle = "rgba(10,12,20,0.6)";
+    ctx.fillRect(x - w / 2 - 1, y - 34, w + 2, 6);
+    ctx.fillStyle = "#ff8a3d";
+    ctx.fillRect(x - w / 2, y - 33, w * frac, 4);
+    if (m.stun > 0) {
+      ctx.fillStyle = "#ffe066";
+      for (let i = 0; i < 3; i++) {
+        const t = arena.t * 7 + (i * Math.PI * 2) / 3;
+        star(ctx, x + Math.cos(t) * 18, y - 42 + Math.sin(t) * 5, 4.5);
+      }
     }
   }
 

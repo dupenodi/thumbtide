@@ -37,6 +37,10 @@ const PVE_TEAMS = [
   { name: "Players", color: "#7cf29a" },
   { name: "CPU", color: "#c18cff" },
 ];
+/** Co-op vs monsters: the monsters' team, and how many may be alive at once (TV budget). */
+const MONSTER_TEAM = 9;
+const MAX_MONSTERS = 4;
+const MONSTER_COLOR = "#c8995a";
 const PICK_S = 8;
 const FIRST_PICK_S = 12;
 const RESULT_S = 4;
@@ -78,6 +82,7 @@ const mount: HostMount = (ctx) => {
   sound?.setMusicOn(ctx.settings().music !== false);
   /** The material of a machine's striking part, for the hit sound. */
   const materialOf = (m: Machine): Material => {
+    if (m.monster) return "stone";
     const w = WEAPONS[m.weapon];
     return (w.parts.find((p) => p.key === w.striker) ?? w.parts[0]!).material;
   };
@@ -139,21 +144,53 @@ const mount: HostMount = (ctx) => {
   // ---- modes and teams ---------------------------------------------------------------------------
   const settingMode = (): Mode => {
     const m = String(ctx.settings().mode);
-    return m === "teams" || m === "pve" ? m : "ffa";
+    return m === "teams" || m === "pve" || m === "pvm" ? m : "ffa";
   };
   /** The mode of the current round (a change in Settings applies from the next warm-up). */
   let mode: Mode = settingMode();
-  const teamOf = (s: Seat): number => (mode === "teams" ? s.slot % 2 : mode === "pve" ? (s.human ? 0 : 1) : s.slot);
-  const teamName = (t: number): string => (mode === "teams" ? TEAMS[t]!.name : mode === "pve" ? PVE_TEAMS[t]!.name : "");
-  const teamColor = (t: number): string => (mode === "teams" ? TEAMS[t]!.color : PVE_TEAMS[t]!.color);
+  // co-op vs monsters: every seat (players and computer allies) is team 0
+  const teamOf = (s: Seat): number => (mode === "teams" ? s.slot % 2 : mode === "pve" ? (s.human ? 0 : 1) : mode === "pvm" ? 0 : s.slot);
+  const teamName = (t: number): string =>
+    t === MONSTER_TEAM ? "The worms" : mode === "teams" ? TEAMS[t]!.name : mode === "pve" || mode === "pvm" ? PVE_TEAMS[t]!.name : "";
+  const teamColor = (t: number): string => (t === MONSTER_TEAM ? MONSTER_COLOR : mode === "teams" ? TEAMS[t]!.color : PVE_TEAMS[t]!.color);
   const colorOf = (s: Seat): string => (mode === "teams" ? TEAMS[s.slot % 2]!.shades[s.slot >= 2 ? 1 : 0]! : s.color);
   /** Computer players wanted: the setting, but at least one enemy in co-op. */
   const botsWanted = () => {
     const n = Number(ctx.settings().bots) || 0;
     return mode === "pve" ? Math.max(1, n) : n;
   };
-  const teamsAlive = () => new Set(seated().filter((s) => s.m?.alive).map(teamOf));
-  const teamsSeated = () => new Set(seated().map(teamOf));
+  // ---- monsters (co-op vs monsters) ----------------------------------------------------------------
+  let monsters: Machine[] = [];
+  let monsterSerial = 1000;
+  const clearMonsters = () => {
+    for (const w of monsters) {
+      fx.trails.delete(w);
+      arena.remove(w);
+    }
+    monsters = [];
+  };
+  /** Wave n: 1, 2, 2, 3, 4… worms (at most 4 alive); armoured worms from wave 3. They fly in from the sides. */
+  const spawnWave = () => {
+    const n = Math.min(MAX_MONSTERS, 1 + Math.floor(round / 2));
+    for (let i = 0; i < n; i++) {
+      const left = i % 2 === 0;
+      const kind = round >= 3 && i % 2 === 1 ? "armoredworm" : "worm";
+      const y = 120 + Math.random() * (VIEW_H - 240);
+      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, x: left ? -40 : VIEW_W + 40, y, dir: left ? 0 : Math.PI }));
+    }
+  };
+
+  const teamsAlive = () => {
+    const t = new Set(seated().filter((s) => s.m?.alive).map(teamOf));
+    if (monsters.some((w) => w.alive)) t.add(MONSTER_TEAM);
+    return t;
+  };
+  // co-op vs monsters needs only one player: the worms are the other side
+  const teamsSeated = () => {
+    const t = new Set(seated().map(teamOf));
+    if (mode === "pvm" && t.size) t.add(MONSTER_TEAM);
+    return t;
+  };
   const applyToggles = () => {
     const st = ctx.settings();
     tuning.teamCollision = st.teamCollision === false ? 0 : 1;
@@ -301,6 +338,7 @@ const mount: HostMount = (ctx) => {
   const startPick = (seconds = PICK_S) => {
     phase = "pick";
     arena.suddenDeath = false;
+    clearMonsters();
     const nextMode = settingMode();
     if (nextMode !== mode) {
       // a new mode starts a new match
@@ -328,7 +366,14 @@ const mount: HostMount = (ctx) => {
     hud.clearFeed();
     sound?.music("warm");
     if (teamsSeated().size >= 2) sound?.sting("round");
-    if (teamsSeated().size >= 2) hud.announce("round", `Round ${round}`, mode === "ffa" ? "Pick your weapon" : mode === "teams" ? "Red vs Blue" : "Players vs CPU", "#ffd84d", 1800);
+    if (teamsSeated().size >= 2)
+      hud.announce(
+        "round",
+        mode === "pvm" ? `Wave ${round}` : `Round ${round}`,
+        mode === "ffa" ? "Pick your weapon" : mode === "teams" ? "Red vs Blue" : mode === "pve" ? "Players vs CPU" : "Worms incoming",
+        "#ffd84d",
+        1800,
+      );
     else hud.clearAnnounce();
     hudDirty = true;
   };
@@ -336,6 +381,7 @@ const mount: HostMount = (ctx) => {
   const startFight = () => {
     phase = "fight";
     arena.suddenDeath = false;
+    if (mode === "pvm") spawnWave();
     phaseFor = 0;
     tuning.damage = DEFAULT_TUNING.damage;
     tuning.slomo = ctx.settings().slomo === false ? 0 : 1;
@@ -352,7 +398,7 @@ const mount: HostMount = (ctx) => {
   const endRound = () => {
     const alive = teamsAlive();
     const team = alive.size === 1 ? [...alive][0]! : null;
-    const winners = team === null ? [] : seated().filter((s) => teamOf(s) === team);
+    const winners = team === null || team === MONSTER_TEAM ? [] : seated().filter((s) => teamOf(s) === team);
     for (const w of winners) {
       w.wins++;
       if (w.human) host.send(w.id, { type: "win" });
@@ -364,7 +410,8 @@ const mount: HostMount = (ctx) => {
         : solo
           ? { label: solo.name, color: colorOf(solo), id: solo.id, team }
           : { label: mode === "teams" ? `${teamName(team)} team` : teamName(team), color: teamColor(team), id: null, team };
-    phase = winners.some((w) => w.wins >= winsToMatch()) ? "match" : "result";
+    // co-op vs monsters: losing a wave ends the run
+    phase = winners.some((w) => w.wins >= winsToMatch()) || (mode === "pvm" && team === MONSTER_TEAM) ? "match" : "result";
     phaseFor = 0;
     left = phase === "match" ? MATCH_S : RESULT_S;
     tuning.slomo = 0;
@@ -372,7 +419,10 @@ const mount: HostMount = (ctx) => {
     pushShared();
     sound?.music("off");
     sound?.sting(phase === "match" ? "champ" : "win");
-    if (phase === "match") hud.announce("champ", winner!.label, mode === "ffa" ? "Champion" : "Champions", winner!.color, 0);
+    if (phase === "match" && mode === "pvm") {
+      hud.announce("champ", team === MONSTER_TEAM ? "Game over" : "Victory", team === MONSTER_TEAM ? `The worms got you on wave ${round}` : `${round} waves survived`, winner?.color ?? "#fff", 0);
+    } else if (phase === "match") hud.announce("champ", winner!.label, mode === "ffa" ? "Champion" : "Champions", winner!.color, 0);
+    else if (winner && mode === "pvm") hud.announce("win", "Wave cleared", `Wave ${round} of ${winsToMatch()}`, winner.color, 0);
     else if (winner) hud.announce("win", `${winner.label} wins`, `Round ${round}`, winner.color, 0);
     else hud.announce("win", "Draw", "", "#ffffff", 0);
     hudDirty = true;
@@ -532,6 +582,7 @@ const mount: HostMount = (ctx) => {
         fx.shake = 14;
         const v = byMachine.get(e.victim);
         const by = e.by ? byMachine.get(e.by) : null;
+        if (e.victim.monster) hud.feed(by ? { name: by.name, color: colorOf(by) } : null, { name: e.victim.name, color: MONSTER_COLOR });
         if (v) hud.feed(by ? { name: by.name, color: by.color } : null, { name: v.name, color: v.color });
         sound?.ko();
         if (seated().filter((x) => x.m?.alive).length > 1) hud.announce("ko", "K.O.!", "", "#ff3d55", 900);

@@ -5,6 +5,7 @@
 
 import { Body, type ContactReport, joint, type Joint, World, wrapPi } from "./engine.ts";
 import type { Tuning } from "./tuning.ts";
+import { type CreatureLayout, type MonsterKind, wormLayout } from "./monsters.ts";
 import { MACHINE, type PartSpec, WEAPONS, type WeaponKind } from "./weapons.ts";
 
 /** The fixed camera frame, px. 16:9. */
@@ -37,7 +38,19 @@ export interface Tag {
   bladeableU: number;
   /** m_sharpness_u side (equal to sharpness when the weapon is the same on both sides). */
   sharpnessU: number;
+  /** m_jaws: a bite adds 0.3–3 × jaws damage (monster jaws). */
+  jaws?: number;
   spec: PartSpec | null;
+}
+
+/** A monster's state (Hammerfight's Polypod creatures; see monsters.ts). */
+export interface MonsterState {
+  kind: MonsterKind;
+  layout: CreatureLayout;
+  /** Seconds offset for its lunge and wiggle rhythm, so a pack doesn't move in step. */
+  phase: number;
+  /** Part bodies by key, for drawing ("jaw", "seg0"…). */
+  part: Map<string, Body>;
 }
 
 export interface Machine {
@@ -71,6 +84,8 @@ export interface Machine {
   lastHitBy: Machine | null;
   /** Seconds of white flash left after a hit. */
   flash: number;
+  /** Set for monsters; null for machines. */
+  monster: MonsterState | null;
 }
 
 export type SimEvent =
@@ -128,6 +143,7 @@ export class Arena {
       diedAt: 0,
       lastHitBy: null,
       flash: 0,
+      monster: null,
     } as unknown as Machine;
     this.buildHull(m, o.x, o.y);
     this.buildWeapon(m, o.weapon);
@@ -155,6 +171,60 @@ export class Arena {
     m.flash = 0;
     this.buildHull(m, x, y);
     this.buildWeapon(m, weapon);
+  }
+
+  /**
+   * A monster at (x, y), its head pointing along `dir` (radians). It joins the machines list (it is hit, stunned and
+   * knocked out like one) but flies by its own AI and has no weapon.
+   */
+  addMonster(o: { id: number; team: number; kind: MonsterKind; x: number; y: number; dir: number; size?: number }): Machine {
+    const size = o.size ?? 0.55 + Math.random() * 0.15;
+    const layout = wormLayout(o.kind, size, 0.35 + Math.random() * 0.65);
+    const c = Math.cos(o.dir);
+    const sn = Math.sin(o.dir);
+    const m = {
+      id: o.id,
+      team: o.team,
+      name: layout.name,
+      color: o.kind === "armoredworm" ? "#7c8496" : "#c8995a",
+      weapon: "hammer",
+      parts: [],
+      part: new Map(),
+      joints: [],
+      grip: null,
+      armed: false,
+      droppedAt: -10,
+      inx: 0,
+      iny: 0,
+      hp: layout.hp,
+      alive: true,
+      stun: 0,
+      diedAt: 0,
+      lastHitBy: null,
+      flash: 0,
+      monster: { kind: o.kind, layout, phase: Math.random() * 10, part: new Map() },
+    } as unknown as Machine;
+    const make = (cp: (typeof layout.parts)[number]) => {
+      const b = new Body(cp.mesh, cp.density).place(o.x + cp.x * c, o.y + cp.x * sn, o.dir + cp.angle);
+      b.gravity = false;
+      b.group = m.id;
+      b.data = { m, hull: true, striker: false, sharpness: cp.sharpness, bladeable: 0, bladeableU: 0, sharpnessU: cp.sharpness, jaws: cp.jaws, spec: null } satisfies Tag;
+      this.world.add(b);
+      return b;
+    };
+    m.hull = make(layout.core);
+    m.hull.spinDamp = 300000;
+    const byKey = new Map<string, Body>([["core", m.hull]]);
+    for (const cp of layout.parts) {
+      const b = make(cp);
+      byKey.set(cp.key, b);
+      m.parts.push(b);
+      m.monster!.part.set(cp.key, b);
+    }
+    m.striker = byKey.get("jaw")!;
+    m.joints = layout.joints.map((j) => this.makeJoint(byKey.get(j.a)!, byKey.get(j.b)!, j));
+    this.machines.push(m);
+    return m;
   }
 
   /** Normal speed now (a new round must not start in the last round's slow motion). */
@@ -193,10 +263,11 @@ export class Arena {
       m.hull.team = t;
       for (const b of m.parts) b.team = t;
       if (m.alive) {
-        this.drive(m, dt, K);
+        if (m.monster) this.creatureDrive(m, dt);
+        else this.drive(m, dt, K);
         // Shock wears off (base tick 0x411af0): stun −= (R + 1) · dt · 0.5.
         if (m.stun > 0) m.stun = Math.max(0, m.stun - (recovery(m) + 1) * dt * 0.5);
-        if (!m.armed) this.tryPickup(m);
+        if (!m.armed && !m.monster) this.tryPickup(m);
       }
       m.inx = m.iny = 0;
       this.limit(m);
@@ -271,6 +342,63 @@ export class Arena {
     }
   }
 
+  /**
+   * Polypod movement (0x433cd0): runs only while not stunned. Toward the nearest enemy machine: push from far, lunge in
+   * pulses × 2(1 + sin 3t) inside 150 px, back off inside 70 px. A side-to-side wiggle (ours) makes it slither; every
+   * part feels a drag like m_spasm_dump, and the core's speed is capped.
+   */
+  private creatureDrive(m: Machine, dt: number): void {
+    const st = m.monster!;
+    const core = m.hull;
+    const all = [core, ...m.parts];
+    for (const b of all) b.applyForce(-1.5 * b.mass * b.vx, -1.5 * b.mass * b.vy);
+    if (m.stun > 0) return;
+    let target: Machine | null = null;
+    let best = Infinity;
+    for (const o of this.machines) {
+      if (o === m || !o.alive || o.team === m.team || o.monster) continue;
+      const d = Math.hypot(o.hull.x - core.x, o.hull.y - core.y);
+      if (d < best) {
+        best = d;
+        target = o;
+      }
+    }
+    const t = this.t + st.phase;
+    let hx: number;
+    let hy: number;
+    let k: number;
+    if (target) {
+      hx = (target.hull.x - core.x) / (best || 1);
+      hy = (target.hull.y - core.y) / (best || 1);
+      k = best > 150 ? 1 : best > 70 ? 2 * (1 + Math.sin(3 * t)) * 0.5 : -0.8;
+    } else {
+      // nobody to hunt: drift round the middle of the arena
+      const cx = VIEW_W / 2 + Math.cos(t * 0.4) * 250 - core.x;
+      const cy = VIEW_H / 2 + Math.sin(t * 0.6) * 120 - core.y;
+      const d = Math.hypot(cx, cy) || 1;
+      hx = cx / d;
+      hy = cy / d;
+      k = 0.5;
+    }
+    const wig = Math.sin(t * 5) * 0.6;
+    const ax = (hx * k - hy * wig) * 750 * st.layout.force;
+    const ay = (hy * k + hx * wig) * 750 * st.layout.force;
+    // pull at the head end: the core and the jaw share the push for the whole body
+    let mass = 0;
+    for (const b of all) mass += b.mass;
+    const jaw = m.striker;
+    const share = jaw.mass / (jaw.mass + core.mass);
+    jaw.applyForce(ax * mass * share, ay * mass * share);
+    core.applyForce(ax * mass * (1 - share), ay * mass * (1 - share));
+    // top speed for the core
+    const sp = Math.hypot(core.vx, core.vy);
+    const cap = 300;
+    if (sp > cap) {
+      core.px = core.x - (core.vx / sp) * cap * dt;
+      core.py = core.y - (core.vy / sp) * cap * dt;
+    }
+  }
+
   /** Not in Hammerfight: a stiff spring a little outside the fixed camera frame. */
   private limit(m: Machine): void {
     if (!m.alive) return;
@@ -338,15 +466,19 @@ export class Arena {
         sharpness = by.sharpnessU;
       }
     }
-    const cut = cutFactor(byBody, bladeable, c.nx, c.ny);
-    const dmg = Math.floor(this.tuning.damage * sharpness * cut * impact * effect);
+    // armoured monsters: blades get no cut bonus (the game's tips: swords are weak against heavy armour)
+    const cut = victim.monster?.layout.armored ? 1 : cutFactor(byBody, bladeable, c.nx, c.ny);
+    let dmg = Math.floor(this.tuning.damage * sharpness * cut * impact * effect);
+    // a bite (0x410340): m_jaws adds rand(0.3, 3) × jaws
+    if (by.jaws && dmg > 0) dmg += Math.round((0.3 + Math.random() * 2.7) * by.jaws);
     if (dmg <= 0) return;
 
     // health_low rule: below 12 only a lethal hit counts; the first lethal hit leaves 12, the next one kills.
     // In sudden death (ours, to end long rounds) every hit simply subtracts.
     const before = victim.hp;
     const low = MACHINE.healthLow;
-    if (this.suddenDeath) {
+    if (this.suddenDeath || victim.monster) {
+      // monsters have no health_low rule either
       victim.hp = Math.max(0, victim.hp - dmg);
     } else if (victim.hp - dmg > 0) {
       if (victim.hp > low) victim.hp -= dmg;
@@ -461,6 +593,7 @@ export class Arena {
     this.drop(m);
     m.hull.gravity = true;
     m.hull.spinDamp = 300000;
+    if (m.monster) for (const b of m.parts) b.gravity = true;
     m.hull.setVelocity(m.hull.vx, m.hull.vy, (Math.random() - 0.5) * 12, STEP * this.timewarp);
     this.events.push({ type: "ko", victim: m, by: m.lastHitBy, x: m.hull.x, y: m.hull.y });
   }

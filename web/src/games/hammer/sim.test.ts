@@ -231,6 +231,43 @@ test("teams: friendly fire off protects teammates, on hurts them; collision off 
   assert.ok(!run({ teamDamage: 0, teamCollision: 0, sameTeam: true }).touched, "teammates collided with collision off");
 });
 
+test("monsters: a worm hunts the nearest machine, holds together, and dies when its health runs out", () => {
+  for (const kind of ["worm", "armoredworm"] as const) {
+    const ar = arena();
+    ar.tuning.hover = 1;
+    const m = ar.add({ id: 0, team: 0, name: "a", color: "#f00", weapon: "hammer", x: 700, y: 270 });
+    const w = ar.addMonster({ id: 50, team: 9, kind, x: 200, y: 270, dir: 0 });
+    let closest = Infinity;
+    let worst = 0;
+    for (let i = 0; i < 250; i++) {
+      ar.step();
+      closest = Math.min(closest, Math.hypot(w.hull.x - m.hull.x, w.hull.y - m.hull.y));
+      for (const j of w.joints) {
+        const [ax, ay] = j.a.worldPoint(j.sax, j.say);
+        const [bx, by] = j.b.worldPoint(j.sbx, j.sby);
+        worst = Math.max(worst, Math.abs(Math.hypot(bx - ax, by - ay) - j.radius));
+      }
+    }
+    assert.ok(closest < 200, `${kind}: never got closer than ${closest.toFixed(0)} px`);
+    // collisions run after the joints, so a bite can push a part a few px off for a frame; falling apart is the failure
+    assert.ok(worst < 10, `${kind}: a joint was off by ${worst.toFixed(1)} px`);
+    assert.ok(Number.isFinite(w.hull.x));
+    // health: hit it until it drops
+    w.hp = 1;
+    ar.tuning.slomo = 0;
+    m.striker.setVelocity(0, 0, 0, 0.02);
+    let ko = false;
+    for (let i = 0; i < 400 && !ko; i++) {
+      // push the hammer into the worm's core
+      m.striker.applyForce((w.hull.x - m.striker.x) * m.striker.mass * 40, (w.hull.y - m.striker.y) * m.striker.mass * 40);
+      ar.step();
+      if (ar.events.some((e) => e.type === "ko" && e.victim === w)) ko = true;
+      ar.events.length = 0;
+    }
+    assert.ok(ko && !w.alive, `${kind}: never knocked out`);
+  }
+});
+
 test("every weapon builds, hangs below its machine and keeps its joints together when whipped", () => {
   for (const weapon of WEAPON_KINDS) {
     const ar = arena();

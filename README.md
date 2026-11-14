@@ -452,7 +452,9 @@ Hammerfight's object files and from its item factory in the exe; the wooden ones
 Each round starts with a warm-up: fly and swing with no damage, and pick a weapon on the phone.
 
 Modes: **Free for all**, **Teams 2v2** (Red P1+P3 against Blue P2+P4; computer players fill free seats) and **Co-op vs CPU**
-(all players against 1–3 computer machines). Settings: mode, rounds to win (2, 3 or 5), computer players (0–3), slow
+(all players against 1–3 computer machines), and **Co-op vs monsters**: waves of flying worms (armoured ones from wave 3,
+after Hammerfight's Polypod creatures; see `monsters.ts`); "rounds to win" is the number of waves to survive, and
+computer players fight on your side. Settings: mode, rounds to win (2, 3 or 5), computer players (0–3), music, slow
 motion on big hits, teammates collide, friendly fire. After 60 s of fight a round goes to sudden death: every hit counts.
 
 The physics is a small engine of its own (`engine.ts`, `collide.ts`, `sim.ts`) that follows Hammerfight's model:

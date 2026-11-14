@@ -163,6 +163,7 @@ export const GAMES: GameDef[] = [
           { value: "ffa", label: "Free for all" },
           { value: "teams", label: "Teams 2v2" },
           { value: "pve", label: "Co-op vs CPU" },
+          { value: "pvm", label: "Co-op vs monsters" },
         ],
         default: "ffa",
       },
