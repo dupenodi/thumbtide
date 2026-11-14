@@ -387,6 +387,29 @@ export class Renderer {
     ctx.fillStyle = "#2b2f38";
     ctx.strokeStyle = "#ffb347";
     ctx.lineWidth = 1.5;
+    // rockets: a body with a flame behind
+    for (const sh of arena.shots) {
+      if (sh.look !== "rocket") continue;
+      const [x, y] = lerpBody(sh.body, alpha);
+      const a = Math.atan2(sh.body.vy, sh.body.vx);
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      ctx.strokeStyle = "#ff8a2a";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(x - c * 6, y - s * 6);
+      ctx.lineTo(x - c * (14 + Math.random() * 8), y - s * (14 + Math.random() * 8));
+      ctx.stroke();
+      ctx.strokeStyle = "#c9ced8";
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(x - c * 7, y - s * 7);
+      ctx.lineTo(x + c * 7, y + s * 7);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#2b2f38";
+    ctx.strokeStyle = "#ffb347";
+    ctx.lineWidth = 1.5;
     for (const sh of arena.shots) {
       if (sh.look !== "ball") continue;
       const [x, y] = lerpBody(sh.body, alpha);

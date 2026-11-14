@@ -80,6 +80,8 @@ export interface Shot {
   born: number;
   contacts: number;
   maxContacts: number;
+  /** Rockets: the blast when it goes. */
+  blast?: GunSpec["blast"];
 }
 
 export interface Machine {
@@ -133,6 +135,7 @@ export type SimEvent =
   | { type: "disarm"; victim: Machine; by: Machine; x: number; y: number }
   | { type: "pickup"; m: Machine; weapon: WeaponKind }
   | { type: "shot"; m: Machine; ball: boolean; x: number; y: number }
+  | { type: "blast"; m: Machine; radius: number; x: number; y: number }
   | { type: "ko"; victim: Machine; by: Machine | null; x: number; y: number };
 
 interface Loose {
@@ -389,7 +392,17 @@ export class Arena {
       shot.group = m.id;
       shot.team = this.tuning.teamCollision >= 1 ? -1 : m.team;
       shot.spinDamp = 0;
-      const sh: Shot = { body: shot, look: gs.look, r: gs.shotR, born: this.t, contacts: 0, maxContacts: gs.look === "ball" ? BALL_CONTACTS : SHOT_CONTACTS };
+      // a rocket flies straight under its own thrust and goes off on the first touch
+      if (gs.blast) shot.gravity = false;
+      const sh: Shot = {
+        body: shot,
+        look: gs.look,
+        r: gs.shotR,
+        born: this.t,
+        contacts: 0,
+        maxContacts: gs.blast ? 1 : gs.look === "ball" ? BALL_CONTACTS : SHOT_CONTACTS,
+        blast: gs.blast,
+      };
       shot.data = { m, hull: false, striker: false, sharpness: gs.shotSharpness, bladeable: 0, bladeableU: 0, sharpnessU: gs.shotSharpness, spec: null, shot: sh } satisfies Tag;
       this.world.add(shot);
       this.shots.push(sh);
@@ -408,9 +421,43 @@ export class Arena {
     for (const sh of this.shots) {
       const b = sh.body;
       if (sh.contacts >= sh.maxContacts || this.t - sh.born > SHOT_LIFE || b.x < -80 || b.x > VIEW_W + 80 || b.y < -80 || b.y > VIEW_H + 80) b.dead = true;
-      if (b.dead) any = true;
+      if (b.dead) {
+        any = true;
+        if (sh.blast) this.blast(sh);
+      }
     }
     if (any) this.sweepShots();
+  }
+
+  /** A rocket goes off: everything near is pushed away, and machines take damage (less at the edge). */
+  private blast(sh: Shot): void {
+    const bl = sh.blast!;
+    const { x, y } = sh.body;
+    const owner = (sh.body.data as Tag).m;
+    sh.blast = undefined;
+    const dt = STEP * this.timewarp;
+    for (const b of this.world.bodies) {
+      if (b === sh.body || b.dead) continue;
+      const dx = b.x - x;
+      const dy = b.y - y;
+      const d = Math.hypot(dx, dy);
+      if (d > bl.radius) continue;
+      const k = 1 - d / bl.radius;
+      const nx = d > 0 ? dx / d : 0;
+      const ny = d > 0 ? dy / d : -1;
+      b.setVelocity(b.vx + nx * bl.push * k, b.vy + ny * bl.push * k, b.w, dt);
+    }
+    if (this.tuning.damage > 0) {
+      for (const m of this.machines) {
+        if (!m.alive || (m !== owner && m.team === owner.team && this.tuning.teamDamage < 1)) continue;
+        const d = Math.hypot(m.hull.x - x, m.hull.y - y);
+        if (d > bl.radius) continue;
+        const k = 1 - d / bl.radius;
+        m.stun = Math.min(1, m.stun + 0.5 * k);
+        this.damage(m, Math.round(bl.damage * k * (this.tuning.damage / 0.1)), owner, true, bl.push * k, 1, m.hull.x, m.hull.y);
+      }
+    }
+    this.events.push({ type: "blast", m: owner, radius: bl.radius, x, y });
   }
 
   private sweepShots(): void {
@@ -586,7 +633,8 @@ export class Arena {
     const effect = !owned && by.sharpness <= 1 ? COLLISION_EFFECT : 1;
 
     // Shock: big hits switch the victim's engine off for a moment.
-    if (impact > 30) victim.stun = Math.min(1, victim.stun + SHOCK_VALUE * EXTRA_SHOCK * impact * 0.5 * effect);
+    // m_extra_shock on the weapon (the wooden hammer's 4) makes its stuns longer
+    if (impact > 30) victim.stun = Math.min(1, victim.stun + SHOCK_VALUE * EXTRA_SHOCK * (by.spec?.extraShock ?? 1) * impact * 0.5 * effect);
 
     // Two-sided weapons (0x512ff0…): which side touched decides the sharpness and the blade (an axe's back is blunt,
     // the katar's back edge cuts at 0.6). Then blades cut harder the faster they slide across.
@@ -608,7 +656,19 @@ export class Arena {
     // a bite (0x410340): m_jaws adds rand(0.3, 3) × jaws
     if (by.jaws && dmg > 0) dmg += Math.round((0.3 + Math.random() * 2.7) * by.jaws);
     if (dmg <= 0) return;
+    this.damage(victim, dmg, by.m, owned, impact, cut, c.x, c.y);
 
+    // GAME_SLOMO (0x483b94): v = 0.15 · M · (40000/(victimMass + 15001) + 0.25); v > 27, or a fast blade, slows time.
+    const v = 0.15 * impact * (40000 / (vBody.mass + 15001) + 0.25);
+    if ((v > 27 || cut > 4) && this.tuning.slomo >= 1 && this.timewarp === 1) {
+      this.timewarp = 0.3;
+      this.slomoTimer = 2;
+    }
+  }
+
+  /** Take `dmg` off a machine (the health_low rule), report it, and wreck it at 0. */
+  private damage(victim: Machine, dmg: number, attacker: Machine, owned: boolean, impact: number, cut: number, x: number, y: number): void {
+    if (!victim.alive || dmg <= 0) return;
     // health_low rule: below 12 only a lethal hit counts; the first lethal hit leaves 12, the next one kills.
     // In sudden death (ours, to end long rounds) every hit simply subtracts.
     const before = victim.hp;
@@ -623,16 +683,9 @@ export class Arena {
     } else {
       victim.hp = 0;
     }
-    if (owned) victim.lastHitBy = by.m;
+    if (owned) victim.lastHitBy = attacker;
     victim.flash = 0.12;
-    this.events.push({ type: "hit", attacker: by.m, victim, dmg: before - victim.hp, impact, cut, x: c.x, y: c.y });
-
-    // GAME_SLOMO (0x483b94): v = 0.15 · M · (40000/(victimMass + 15001) + 0.25); v > 27, or a fast blade, slows time.
-    const v = 0.15 * impact * (40000 / (vBody.mass + 15001) + 0.25);
-    if ((v > 27 || cut > 4) && this.tuning.slomo >= 1 && this.timewarp === 1) {
-      this.timewarp = 0.3;
-      this.slomoTimer = 2;
-    }
+    this.events.push({ type: "hit", attacker, victim, dmg: before - victim.hp, impact, cut, x, y });
     if (victim.hp <= 0) this.wreck(victim);
   }
 

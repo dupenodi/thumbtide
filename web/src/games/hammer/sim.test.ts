@@ -385,6 +385,21 @@ test("guns: the mortar fires 5 balls and kicks the machine back; the tribune's b
   const t = a.add({ id: 2, name: "T", color: "#0f0", weapon: "tribune", x: 600, y: 300 });
   assert.equal(t.guns.length, 1);
   assert.equal(t.guns[0]!.spec.clip, 40);
+  // the launcher's rocket explodes next to an enemy: damage, a push, and a blast event
+  const b2 = arena();
+  const l = b2.add({ id: 1, name: "L", color: "#f00", weapon: "hammer", sidearm: "launcher", x: 300, y: 300 });
+  const foe = b2.add({ id: 2, name: "F", color: "#00f", weapon: "hammer", x: 300, y: 160 });
+  (b2 as unknown as { destroy(m: typeof foe): void }).destroy(foe);
+  let blasts = 0;
+  for (let i = 0; i < 40; i++) {
+    if (i === 0) b2.fire(l);
+    b2.step();
+    for (const e of b2.events) if (e.type === "blast") blasts++;
+    b2.events.length = 0;
+  }
+  assert.equal(blasts, 1);
+  assert.ok(foe.hp < 100, `rocket damage: hp ${foe.hp}`);
+  assert.equal(b2.shots.length, 0);
   // dual weapons take no sidearm
   const d = a.add({ id: 3, name: "D", color: "#0ff", weapon: "twin", sidearm: "arquebus", x: 200, y: 300 });
   assert.equal(d.guns.length, 0);

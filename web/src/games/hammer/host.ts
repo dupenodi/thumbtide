@@ -632,6 +632,11 @@ const mount: HostMount = (ctx) => {
         if (v?.human) host.send(v.id, { type: "hurt", dmg: 0 });
         if (a?.human) host.send(a.id, { type: "hit", dmg: 0 });
         hudDirty = true;
+      } else if (e.type === "blast") {
+        sound?.shot(true);
+        fx.burst(e.x, e.y, lite ? 18 : 36, 380, "#ffb347", 3);
+        fx.burst(e.x, e.y, lite ? 8 : 16, 200, "#fff3c4", 2);
+        fx.shake = Math.min(12, fx.shake + 7);
       } else if (e.type === "shot") {
         sound?.shot(e.ball);
         if (e.ball) fx.shake = Math.min(12, fx.shake + 3);
