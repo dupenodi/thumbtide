@@ -1,4 +1,4 @@
-import type { WeaponKind } from "./weapons.ts";
+import type { GunKind, WeaponKind } from "./weapons.ts";
 
 export type Phase = "pick" | "fight" | "result" | "match";
 
@@ -16,10 +16,12 @@ export interface HammerInput {
   k: 0 | 1;
   x: number;
   y: number;
+  /** 1 while the fire button is held. */
+  f?: 0 | 1;
 }
 
 export interface HammerGame {
-  toHost: { type: "weapon"; weapon: WeaponKind };
+  toHost: { type: "weapon"; weapon: WeaponKind } | { type: "gun"; gun: GunKind | null };
   input: HammerInput;
   toController: { type: "hit"; dmg: number } | { type: "hurt"; dmg: number } | { type: "ko" } | { type: "win" };
   shared: {
@@ -44,6 +46,10 @@ export interface HammerGame {
     team: number;
     teamName: string;
     weapon: WeaponKind;
+    /** The sidearm picked (it comes with weapons that take one). */
+    sidearm: GunKind | null;
+    /** The machine has a gun now: rounds left, clip size, and true while reloading. */
+    gun: { ammo: number; clip: number; reloading: boolean } | null;
     hp: number;
     alive: boolean;
     wins: number;

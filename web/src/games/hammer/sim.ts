@@ -6,7 +6,7 @@
 import { Body, type ContactReport, joint, type Joint, World, wrapPi } from "./engine.ts";
 import type { Tuning } from "./tuning.ts";
 import { type CreatureLayout, type MonsterKind, wormLayout } from "./monsters.ts";
-import { MACHINE, type PartSpec, WEAPONS, type WeaponKind } from "./weapons.ts";
+import { armedSpec, type GunKind, type GunSpec, MACHINE, type PartSpec, type WeaponKind, type WeaponSpec } from "./weapons.ts";
 
 /** The fixed camera frame, px. 16:9. */
 export const VIEW_W = 960;
@@ -25,6 +25,14 @@ const EXTRA_SHOCK = 1;
 const PICKUP_RANGE = 34;
 /** Not in Hammerfight: seconds after losing a weapon before a machine can take one. */
 const PICKUP_DELAY = 1;
+/** Bullets go after this many contacts (the exe: 2), mortar balls after 5; and after SHOT_LIFE seconds. */
+const SHOT_CONTACTS = 2;
+const BALL_CONTACTS = 5;
+const SHOT_LIFE = 1.5;
+/** At most this many shots in the air (each is a body: they count in the TV's body budget). The oldest goes first. */
+export const MAX_SHOTS = 24;
+/** A bullet does 3x damage against monster flesh (the exe tags it 0x6c). */
+const MONSTER_SHOT_BONUS = 3;
 
 export interface Tag {
   /** The machine this body belongs to now (a picked-up weapon changes owner). */
@@ -40,6 +48,8 @@ export interface Tag {
   sharpnessU: number;
   /** m_jaws: a bite adds 0.3–3 × jaws damage (monster jaws). */
   jaws?: number;
+  /** A bullet or mortar ball (its owner is `m`). */
+  shot?: Shot;
   spec: PartSpec | null;
 }
 
@@ -53,6 +63,25 @@ export interface MonsterState {
   part: Map<string, Body>;
 }
 
+/** A gun on one of the machine's weapon bodies. */
+export interface GunState {
+  spec: GunSpec;
+  body: Body;
+  /** Rounds left in the clip. */
+  ammo: number;
+  /** Seconds until it can fire again (between shots, or the reload). */
+  timer: number;
+}
+
+export interface Shot {
+  body: Body;
+  look: GunSpec["look"];
+  r: number;
+  born: number;
+  contacts: number;
+  maxContacts: number;
+}
+
 export interface Machine {
   id: number;
   /** Team number: machines with the same team are allies (free-for-all gives each machine its own). */
@@ -60,6 +89,14 @@ export interface Machine {
   name: string;
   color: string;
   weapon: WeaponKind;
+  /** The gun taken with the weapon, if any. */
+  sidearm: GunKind | null;
+  /** The weapon as built (with the sidearm's parts and joints). */
+  spec: WeaponSpec;
+  /** The guns on the weapon (a sidearm, the tribune's back blade). */
+  guns: GunState[];
+  /** The trigger is held this frame. */
+  trigger: boolean;
   hull: Body;
   /** The weapon's bodies (attached, or loose next to a weaponless machine). */
   parts: Body[];
@@ -68,8 +105,10 @@ export interface Machine {
   striker: Body;
   /** Joints inside the weapon (chain links), plus the hull joint while armed. */
   joints: Joint[];
-  /** The joint from the hull to the weapon; null when disarmed or wrecked. */
+  /** The first joint from the hull to the weapon; null when disarmed or wrecked. */
   grip: Joint | null;
+  /** All hull joints of the weapon (a dual set or a sidearm has two). */
+  grips: Joint[];
   armed: boolean;
   /** Sim time the weapon came off. */
   droppedAt: number;
@@ -93,12 +132,15 @@ export type SimEvent =
   | { type: "clash"; a: Machine; b: Machine; impact: number; x: number; y: number }
   | { type: "disarm"; victim: Machine; by: Machine; x: number; y: number }
   | { type: "pickup"; m: Machine; weapon: WeaponKind }
+  | { type: "shot"; m: Machine; ball: boolean; x: number; y: number }
   | { type: "ko"; victim: Machine; by: Machine | null; x: number; y: number };
 
 interface Loose {
   /** Whose parts arrays hold the bodies. */
   holder: Machine;
   kind: WeaponKind;
+  sidearm: GunKind | null;
+  spec: WeaponSpec;
 }
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
@@ -122,13 +164,19 @@ export class Arena {
   private lastDisarm = -10;
   /** Not in Hammerfight: the game turns this on late in a round; the health_low rule stops and hits simply subtract. */
   suddenDeath = false;
+  /** Bullets and mortar balls in the air. */
+  readonly shots: Shot[] = [];
 
   constructor(public tuning: Tuning) {}
 
-  add(o: { id: number; team?: number; name: string; color: string; weapon: WeaponKind; x: number; y: number }): Machine {
+  add(o: { id: number; team?: number; name: string; color: string; weapon: WeaponKind; sidearm?: GunKind | null; x: number; y: number }): Machine {
     const m = {
       ...o,
       team: o.team ?? o.id,
+      sidearm: o.sidearm ?? null,
+      guns: [],
+      trigger: false,
+      grips: [],
       parts: [],
       part: new Map(),
       joints: [],
@@ -146,7 +194,7 @@ export class Arena {
       monster: null,
     } as unknown as Machine;
     this.buildHull(m, o.x, o.y);
-    this.buildWeapon(m, o.weapon);
+    this.buildWeapon(m, o.weapon, m.sidearm);
     this.machines.push(m);
     return m;
   }
@@ -160,7 +208,7 @@ export class Arena {
   }
 
   /** Back to full health at (x, y) with a fresh weapon. */
-  respawn(m: Machine, x: number, y: number, weapon: WeaponKind = m.weapon): void {
+  respawn(m: Machine, x: number, y: number, weapon: WeaponKind = m.weapon, sidearm: GunKind | null = m.sidearm): void {
     this.destroy(m);
     this.world.remove(m.hull);
     this.parked.delete(m);
@@ -170,7 +218,7 @@ export class Arena {
     m.lastHitBy = null;
     m.flash = 0;
     this.buildHull(m, x, y);
-    this.buildWeapon(m, weapon);
+    this.buildWeapon(m, weapon, sidearm);
   }
 
   /**
@@ -188,6 +236,10 @@ export class Arena {
       name: layout.name,
       color: o.kind === "armoredworm" ? "#7c8496" : "#c8995a",
       weapon: "hammer",
+      sidearm: null,
+      guns: [],
+      trigger: false,
+      grips: [],
       parts: [],
       part: new Map(),
       joints: [],
@@ -222,15 +274,23 @@ export class Arena {
       m.monster!.part.set(cp.key, b);
     }
     m.striker = byKey.get("jaw")!;
+    m.spec = { kind: "hammer", cls: "hammer", tier: 1, label: layout.name, blurb: "", parts: [], joints: [], striker: "jaw" };
     m.joints = layout.joints.map((j) => this.makeJoint(byKey.get(j.a)!, byKey.get(j.b)!, j));
     this.machines.push(m);
     return m;
   }
 
-  /** Normal speed now (a new round must not start in the last round's slow motion). */
+  /** Normal speed now (a new round must not start in the last round's slow motion). Also clears shots in the air. */
   resetTime(): void {
     this.timewarp = 1;
     this.slomoTimer = 0;
+    for (const sh of this.shots) sh.body.dead = true;
+    this.sweepShots();
+  }
+
+  /** Hold the trigger this frame. */
+  fire(m: Machine): void {
+    m.trigger = true;
   }
 
   /** Mouse or finger movement in screen px; scaled by the mouse speed (Hammerfight's calibration). */
@@ -269,6 +329,8 @@ export class Arena {
         if (m.stun > 0) m.stun = Math.max(0, m.stun - (recovery(m) + 1) * dt * 0.5);
         if (!m.armed && !m.monster) this.tryPickup(m);
       }
+      if (m.guns.length) this.guns(m, dt);
+      m.trigger = false;
       m.inx = m.iny = 0;
       this.limit(m);
       // a wreck far below the frame can't come back: stop simulating it (and its hull's joints and contacts)
@@ -286,7 +348,77 @@ export class Arena {
     this.world.step({ dt, dtPrev: this.dtPrev, gravity: tn.gravity, passes: tn.passes, onContact: this.onContact });
     this.dtPrev = dt;
     this.t += dt;
+    if (this.shots.length) this.ageShots();
     this.slowMotion();
+  }
+
+  /** Reload timers, and a shot from every ready gun while the trigger is held (0x4184xx). */
+  private guns(m: Machine, dt: number): void {
+    const canFire = m.trigger && m.alive && m.armed && m.stun <= 0 && this.tuning.damage > 0;
+    for (const g of m.guns) {
+      if (g.timer > 0) {
+        g.timer -= dt;
+        if (g.timer <= 0) {
+          g.timer = 0;
+          if (g.ammo <= 0) g.ammo = g.spec.clip;
+        }
+      }
+      if (!canFire || g.timer > 0 || g.ammo < 1) continue;
+      g.ammo--;
+      g.timer = g.ammo > 0 ? g.spec.interval : g.spec.reload;
+      this.shoot(m, g, dt);
+    }
+  }
+
+  private shoot(m: Machine, g: GunState, dt: number): void {
+    const gs = g.spec;
+    const b = g.body;
+    let px = 0;
+    let py = 0;
+    for (let i = 0; i < gs.pellets; i++) {
+      const a = b.a + (Math.random() * 2 - 1) * gs.spread;
+      const dx = Math.cos(a);
+      const dy = Math.sin(a);
+      // spawn at the muzzle (the gun's edge along its aim) and one step on, so it starts clear of the gun
+      const d = b.radius + gs.shotR + 1 + (i % 2) * gs.shotR * 2;
+      const x = b.x + dx * d;
+      const y = b.y + dy * d;
+      const shot = new Body(octagon(gs.shotR), gs.shotDensity).place(x, y, a);
+      // the muzzle speed plus the gun's own motion
+      shot.setVelocity(b.vx + dx * gs.speed, b.vy + dy * gs.speed, 0, dt);
+      shot.group = m.id;
+      shot.team = this.tuning.teamCollision >= 1 ? -1 : m.team;
+      shot.spinDamp = 0;
+      const sh: Shot = { body: shot, look: gs.look, r: gs.shotR, born: this.t, contacts: 0, maxContacts: gs.look === "ball" ? BALL_CONTACTS : SHOT_CONTACTS };
+      shot.data = { m, hull: false, striker: false, sharpness: gs.shotSharpness, bladeable: 0, bladeableU: 0, sharpnessU: gs.shotSharpness, spec: null, shot: sh } satisfies Tag;
+      this.world.add(shot);
+      this.shots.push(sh);
+      px += shot.mass * dx * gs.speed;
+      py += shot.mass * dy * gs.speed;
+    }
+    // the mortar kicks back (the exe: an impulse equal to the balls' momentum)
+    if (gs.recoil > 0) b.setVelocity(b.vx - (px * gs.recoil) / b.mass, b.vy - (py * gs.recoil) / b.mass, b.w, dt);
+    if (this.shots.length > MAX_SHOTS) for (let i = 0; i < this.shots.length - MAX_SHOTS; i++) this.shots[i]!.body.dead = true;
+    this.events.push({ type: "shot", m, ball: gs.look === "ball", x: b.x, y: b.y });
+  }
+
+  /** Shots that hit their limit, grew old or left the frame go, all at once. */
+  private ageShots(): void {
+    let any = false;
+    for (const sh of this.shots) {
+      const b = sh.body;
+      if (sh.contacts >= sh.maxContacts || this.t - sh.born > SHOT_LIFE || b.x < -80 || b.x > VIEW_W + 80 || b.y < -80 || b.y > VIEW_H + 80) b.dead = true;
+      if (b.dead) any = true;
+    }
+    if (any) this.sweepShots();
+  }
+
+  private sweepShots(): void {
+    // one pass over the body list instead of a splice per shot
+    this.world.bodies = this.world.bodies.filter((b) => !b.dead);
+    let k = 0;
+    for (const sh of this.shots) if (!sh.body.dead) this.shots[k++] = sh;
+    this.shots.length = k;
   }
 
   /** Hammerfight's PC control (0x4b03d0) and Human forces (0x44c930). */
@@ -421,6 +553,8 @@ export class Arena {
     const ta = c.a.data as Tag | null;
     const tb = c.b.data as Tag | null;
     if (!ta || !tb || ta.m === tb.m) return;
+    if (ta.shot) ta.shot.contacts++;
+    if (tb.shot) tb.shot.contacts++;
     const impact = c.impulse * 1e-5;
     if (impact <= 0) return;
 
@@ -436,7 +570,8 @@ export class Arena {
 
   /** Is this body still held by a live machine? Loose weapons and wrecks are "unowned". */
   private owned(t: Tag): boolean {
-    return t.m.alive && (t.hull || t.m.armed);
+    // a shot stays its shooter's, even after the shooter is wrecked
+    return !!t.shot || (t.m.alive && (t.hull || t.m.armed));
   }
 
   /** Damage (0x410340) and shock. */
@@ -468,7 +603,8 @@ export class Arena {
     }
     // armoured monsters: blades get no cut bonus (the game's tips: swords are weak against heavy armour)
     const cut = victim.monster?.layout.armored ? 1 : cutFactor(byBody, bladeable, c.nx, c.ny);
-    let dmg = Math.floor(this.tuning.damage * sharpness * cut * impact * effect);
+    const bonus = by.shot && victim.monster && by.shot.look === "bullet" ? MONSTER_SHOT_BONUS : 1;
+    let dmg = Math.floor(this.tuning.damage * sharpness * cut * impact * effect * bonus);
     // a bite (0x410340): m_jaws adds rand(0.3, 3) × jaws
     if (by.jaws && dmg > 0) dmg += Math.round((0.3 + Math.random() * 2.7) * by.jaws);
     if (dmg <= 0) return;
@@ -526,14 +662,13 @@ export class Arena {
   /** The weapon comes off the hull but stays in one piece (a chain stays a chain). */
   private drop(m: Machine): void {
     if (!m.armed) return;
-    if (m.grip) {
-      this.world.removeJoint(m.grip);
-      m.joints = m.joints.filter((j) => j !== m.grip);
-      m.grip = null;
-    }
+    for (const g of m.grips) this.world.removeJoint(g);
+    if (m.grips.length) m.joints = m.joints.filter((j) => !m.grips.includes(j));
+    m.grips = [];
+    m.grip = null;
     m.armed = false;
     m.droppedAt = this.t;
-    if (m.parts.length) this.loose.push({ holder: m, kind: m.weapon });
+    if (m.parts.length) this.loose.push({ holder: m, kind: m.weapon, sidearm: m.sidearm, spec: m.spec });
   }
 
   /** Not in Hammerfight's code as we read it: a weaponless machine takes a loose weapon by flying into its grip. */
@@ -541,7 +676,7 @@ export class Arena {
     if (this.t - m.droppedAt < PICKUP_DELAY) return;
     for (let i = 0; i < this.loose.length; i++) {
       const l = this.loose[i]!;
-      const grip = l.holder.part.get(WEAPONS[l.kind].joints.find((j) => j.a === "hull")!.b);
+      const grip = l.holder.part.get(l.spec.joints.find((j) => j.a === "hull")!.b);
       if (!grip) continue;
       if (Math.hypot(grip.x - m.hull.x, grip.y - m.hull.y) > PICKUP_RANGE) continue;
       this.loose.splice(i, 1);
@@ -559,11 +694,16 @@ export class Arena {
         for (const b of m.parts) this.world.remove(b);
         this.loose = this.loose.filter((x) => x.holder !== m);
       }
+      const guns = from.guns;
+      if (from !== m) from.guns = [];
       m.parts = parts;
       m.part = part;
       m.joints = joints;
       m.weapon = l.kind;
-      m.striker = part.get(WEAPONS[l.kind].striker)!;
+      m.sidearm = l.sidearm;
+      m.spec = l.spec;
+      m.guns = guns;
+      m.striker = part.get(l.spec.striker)!;
       for (const b of parts) {
         b.group = m.id;
         (b.data as Tag).m = m;
@@ -606,7 +746,9 @@ export class Arena {
     m.joints = [];
     m.parts = [];
     m.part = new Map();
+    m.guns = [];
     m.grip = null;
+    m.grips = [];
     m.armed = false;
   }
 
@@ -621,12 +763,15 @@ export class Arena {
   }
 
   /** A new weapon hanging straight below the hull. */
-  private buildWeapon(m: Machine, kind: WeaponKind): void {
-    const spec = WEAPONS[kind];
+  private buildWeapon(m: Machine, kind: WeaponKind, sidearm: GunKind | null): void {
+    const spec = armedSpec(kind, sidearm);
     const { x, y } = m.hull;
     m.weapon = kind;
+    m.sidearm = sidearm;
+    m.spec = spec;
     m.parts = [];
     m.part = new Map();
+    m.guns = [];
     for (const p of spec.parts) {
       // Hanging straight down: local +x (away from the machine) points along world +y.
       const b = new Body(p.mesh, p.density).place(x, y + p.hang, p.angle ?? Math.PI / 2);
@@ -644,6 +789,7 @@ export class Arena {
       this.world.add(b);
       m.part.set(p.key, b);
       m.parts.push(b);
+      if (p.gun) m.guns.push({ spec: p.gun, body: b, ammo: p.gun.clip, timer: 0 });
     }
     m.striker = m.part.get(spec.striker)!;
     m.joints = [];
@@ -655,19 +801,36 @@ export class Arena {
     this.attach(m);
   }
 
-  /** Join the weapon to the hull. */
+  /** Join the weapon to the hull (every hull joint: a dual set or a sidearm has two). */
   private attach(m: Machine): void {
-    const j = WEAPONS[m.weapon].joints.find((x) => x.a === "hull")!;
-    m.grip = this.makeJoint(m.hull, m.part.get(j.b)!, j);
-    m.joints.push(m.grip);
+    m.grips = [];
+    for (const j of m.spec.joints) {
+      if (j.a !== "hull") continue;
+      const g = this.makeJoint(m.hull, m.part.get(j.b)!, j);
+      m.grips.push(g);
+      m.joints.push(g);
+    }
+    m.grip = m.grips[0] ?? null;
     m.armed = true;
   }
 
-  private makeJoint(a: Body, b: Body, j: (typeof WEAPONS)[WeaponKind]["joints"][number]): Joint {
+  private makeJoint(a: Body, b: Body, j: WeaponSpec["joints"][number]): Joint {
     const jt = joint(a, b, j.type, j.radius, { sax: j.sax ?? 0, say: j.say ?? 0, sbx: j.sbx ?? 0, sby: j.sby ?? 0, necess: j.necess });
     this.world.joints.push(jt);
     return jt;
   }
+}
+
+const octagons = new Map<number, number[]>();
+/** A round shot's mesh (shared per radius). */
+function octagon(r: number): number[] {
+  let v = octagons.get(r);
+  if (!v) {
+    v = [];
+    for (let i = 0; i < 8; i++) v.push(Math.cos((i / 8) * Math.PI * 2) * r, Math.sin((i / 8) * Math.PI * 2) * r);
+    octagons.set(r, v);
+  }
+  return v;
 }
 
 /** Blades cut harder when they slide across the surface fast (0x403c00). */

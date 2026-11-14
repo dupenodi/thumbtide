@@ -10,7 +10,7 @@ import "./hammer.css";
 import { loadGameFont } from "./font.ts";
 import { WEAPON_ICON, WEAPON_STATS, WEAPON_TINT } from "./icons.ts";
 import type { HammerGame } from "./shared.ts";
-import { WEAPON_KINDS, WEAPON_LABEL, WEAPONS, type WeaponClass, type WeaponKind } from "./weapons.ts";
+import { GUN_KINDS, type GunKind, SIDEARMS, takesSidearm, WEAPON_KINDS, WEAPON_LABEL, WEAPONS, type WeaponClass, type WeaponKind } from "./weapons.ts";
 
 const CLASS_LABEL: Record<WeaponClass, string> = { hammer: "Hammers", axe: "Axes", mace: "Maces", sword: "Swords", dual: "Dual" };
 
@@ -32,9 +32,12 @@ const mount: ControllerMount = (ctx) => {
     </div>
     <div class="hmc-body">
       <div class="hmc-stick"><b class="hmc-stick-hint">Fly</b></div>
+      <button type="button" class="hmc-fire" hidden><b>FIRE</b><span class="hmc-ammo"></span></button>
       <div class="hmc-side">
         <div class="hmc-tip"><b>Fly in circles</b><span>to swing your weapon</span></div>
-        <div class="hmc-pick" hidden>${WEAPON_KINDS.map((w, i) => {
+        <div class="hmc-pick" hidden><p class="hmc-cls">Gun · hold Fire to shoot</p>${[null, ...GUN_KINDS]
+          .map((g) => `<button type="button" class="hmc-g" data-g="${g ?? ""}"><h4>${g ? SIDEARMS[g].label : "No gun"}</h4><span>${g ? SIDEARMS[g].blurb : "Hands free."}</span></button>`)
+          .join("")}${WEAPON_KINDS.map((w, i) => {
           const cls = WEAPONS[w].cls;
           const head = i === 0 || WEAPONS[WEAPON_KINDS[i - 1]!].cls !== cls ? `<p class="hmc-cls">${CLASS_LABEL[cls]}</p>` : "";
           const st = WEAPON_STATS[w];
@@ -50,10 +53,16 @@ const mount: ControllerMount = (ctx) => {
   const tip = el.querySelector<HTMLElement>(".hmc-tip")!;
   const over = el.querySelector<HTMLElement>(".hmc-over")!;
   const pick = el.querySelector<HTMLElement>(".hmc-pick")!;
+  const fire = el.querySelector<HTMLButtonElement>(".hmc-fire")!;
 
   // ---- the stick ---------------------------------------------------------------------------------
   const session = Math.floor(Math.random() * 1e9);
   const s = spec.stick!;
+  // the stick and the fire button share one input: keep the last stick position to send with the trigger
+  let sx = 0;
+  let sy = 0;
+  let firing: 0 | 1 = 0;
+  const send = () => ctl.input({ s: session, k: 1, x: sx, y: sy, f: firing });
   const makeStick = () =>
     joystick(zone, {
       mode: "fixed",
@@ -67,7 +76,9 @@ const mount: ControllerMount = (ctx) => {
       hapticRim: s.rimHaptic,
       onMove: (v) => {
         zone.classList.toggle("on", v.active);
-        ctl.input({ s: session, k: 1, x: v.x, y: v.y });
+        sx = v.x;
+        sy = v.y;
+        send();
       },
     });
   let stickOff = makeStick();
@@ -82,11 +93,35 @@ const mount: ControllerMount = (ctx) => {
       zoneSize = size;
       stickOff();
       zone.querySelector(".tt-stick")?.remove();
-      ctl.input({ s: session, k: 1, x: 0, y: 0 });
+      sx = sy = 0;
+      send();
       stickOff = makeStick();
     }, 150);
   };
   window.addEventListener("resize", onResize);
+
+  // fire: held down = the trigger is held (an arquebus fires 10 a second)
+  const setFire = (on: 0 | 1) => {
+    if (on === firing) return;
+    firing = on;
+    fire.classList.toggle("on", !!on);
+    if (on) haptic(8);
+    send();
+  };
+  fire.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    fire.setPointerCapture?.(e.pointerId);
+    setFire(1);
+  });
+  for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) fire.addEventListener(t, () => setFire(0));
+  fire.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  for (const b of pick.querySelectorAll<HTMLButtonElement>(".hmc-g")) {
+    b.addEventListener("click", () => {
+      haptic(15);
+      ctl.send({ type: "gun", gun: (b.dataset.g || null) as GunKind | null });
+    });
+  }
 
   for (const b of pick.querySelectorAll<HTMLButtonElement>(".hmc-w")) {
     b.addEventListener("click", () => {
@@ -119,6 +154,19 @@ const mount: ControllerMount = (ctx) => {
     const target = sh?.winsToMatch ?? 3;
     (el.querySelector(".hmc-wins") as HTMLElement).innerHTML = Array.from({ length: target }, (_, i) => `<i${own && i < own.wins ? ' class="on"' : ""}></i>`).join("");
     for (const b of pick.querySelectorAll<HTMLElement>(".hmc-w")) b.classList.toggle("sel", b.dataset.w === own?.weapon);
+    const canGun = !own || takesSidearm(own.weapon);
+    for (const b of pick.querySelectorAll<HTMLElement>(".hmc-g")) {
+      b.classList.toggle("sel", (b.dataset.g || null) === (own?.sidearm ?? null));
+      b.classList.toggle("off", !canGun && !!b.dataset.g);
+    }
+    // the fire button shows while the machine holds a gun (a sidearm, or the tribune's own)
+    const gun = own?.gun ?? null;
+    fire.hidden = !gun;
+    if (!gun && firing) setFire(0);
+    if (gun) {
+      fire.classList.toggle("empty", gun.reloading);
+      (fire.querySelector(".hmc-ammo") as HTMLElement).textContent = gun.reloading ? "reload" : `${gun.ammo}/${gun.clip}`;
+    }
 
     const phase = sh?.phase ?? "pick";
     pick.hidden = phase !== "pick";
@@ -151,7 +199,7 @@ const mount: ControllerMount = (ctx) => {
     window.removeEventListener("resize", onResize);
     clearTimeout(resizeTimer);
     stickOff();
-    ctl.input({ s: session, k: 1, x: 0, y: 0 });
+    ctl.input({ s: session, k: 1, x: 0, y: 0, f: 0 });
     el.remove();
   };
 };

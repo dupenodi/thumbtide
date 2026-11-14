@@ -120,6 +120,7 @@ export class Renderer {
     for (const m of arena.machines) if (!m.monster) this.weapon(m, alpha);
     // a wreck that has faded out (or left play) draws nothing: skip its paths entirely
     for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
+    if (arena.shots.length) this.shots(arena, alpha);
 
     ctx.lineCap = "round";
     for (const p of fx.sparks) {
@@ -208,7 +209,7 @@ export class Renderer {
   private weapon(m: Machine, alpha: number): void {
     const ctx = this.ctx;
     const [hx, hy] = lerpBody(m.hull, alpha);
-    const spec = WEAPONS[m.weapon];
+    const spec = m.spec;
 
     // Ropes and chains: a line between the anchors of every rope joint (the hull one only while armed). One path per
     // colour, so a whole chain is a single stroke. Type 0 joints (the dual sets' spacers) are not drawn.
@@ -321,6 +322,13 @@ export class Renderer {
         ctx.fillStyle = pal.fill;
         this.mesh(b);
         ctx.fill();
+      } else if (part.look === "gun") {
+        this.solid(b, pal, 1.5);
+        // the barrel, out along local +x (where it shoots), with a dark muzzle
+        ctx.fillStyle = "#4a505c";
+        ctx.fillRect(0, -3, maxX + 7, 6);
+        ctx.fillStyle = "#15171c";
+        ctx.fillRect(maxX + 4, -2, 3, 4);
       } else {
         const r = Math.max(maxX, maxY);
         if (part.material !== "wood") {
@@ -355,6 +363,37 @@ export class Renderer {
         }
       }
       ctx.restore();
+    }
+  }
+
+  /** Bullets as short tracers along their path (one stroke for all), mortar balls as dark balls. */
+  private shots(arena: Arena, alpha: number): void {
+    const ctx = this.ctx;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#ffe9a8";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    let lines = false;
+    for (const sh of arena.shots) {
+      if (sh.look !== "bullet") continue;
+      const [x, y] = lerpBody(sh.body, alpha);
+      const b = sh.body;
+      // a tail half a step long, against the direction of flight
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - b.vx * 0.012, y - b.vy * 0.012);
+      lines = true;
+    }
+    if (lines) ctx.stroke();
+    ctx.fillStyle = "#2b2f38";
+    ctx.strokeStyle = "#ffb347";
+    ctx.lineWidth = 1.5;
+    for (const sh of arena.shots) {
+      if (sh.look !== "ball") continue;
+      const [x, y] = lerpBody(sh.body, alpha);
+      ctx.beginPath();
+      ctx.arc(x, y, sh.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
     }
   }
 

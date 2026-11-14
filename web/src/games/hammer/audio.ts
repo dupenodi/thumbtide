@@ -16,6 +16,8 @@ export interface GameAudio {
   stun(): void;
   disarm(): void;
   pickup(): void;
+  /** A gunshot (bullet) or a mortar blast (ball). */
+  shot(ball: boolean): void;
   ko(): void;
   sting(kind: Sting, n?: number): void;
   /** Per frame: average machine speed and fastest weapon speed (0–1 each), and the time warp (1 normal, 0.3 slow). */
@@ -235,6 +237,18 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
       const t = now();
       tone("square", 440, 440, t, 0.05, 0.06);
       tone("square", 660, 660, t + 0.06, 0.05, 0.08);
+    },
+    shot(ball) {
+      // an arquebus fires 10 a second: at most one crack per 60 ms
+      if (!allow(0.06)) return;
+      const t = now();
+      if (ball) {
+        burst(t, "lowpass", 900, 0.7, 0.8, 0.45, sfx, 150);
+        tone("sine", 110, 40, t, 0.7, 0.35);
+      } else {
+        burst(t, "bandpass", 2600, 0.9, 0.35, 0.07);
+        tone("square", 300, 90, t, 0.06, 0.05);
+      }
     },
     ko() {
       const t = now();

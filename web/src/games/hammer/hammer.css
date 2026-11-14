@@ -638,6 +638,97 @@
   }
 }
 
+/* fire: upright, bottom left over the stick zone (the left thumb); sideways, bottom right */
+.hmc-body {
+  position: relative;
+}
+
+.hmc-fire {
+  position: absolute;
+  z-index: 2;
+  left: max(22px, env(safe-area-inset-left));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  width: 84px;
+  height: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 50%;
+  border: 3px solid #ffb347;
+  background: radial-gradient(circle at 50% 35%, #5a3a12, #2a1a08);
+  color: #ffd9a0;
+  font: 16px "Russo One", system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.hmc-fire[hidden] {
+  display: none;
+}
+
+.hmc-fire.on {
+  background: radial-gradient(circle at 50% 35%, #ffb347, #b5651d);
+  color: #1b1206;
+  transform: scale(0.94);
+}
+
+.hmc-fire.empty {
+  border-color: #6f7792;
+  color: #8a90a6;
+}
+
+.hmc-ammo {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+@media (orientation: landscape) {
+  .hmc-fire {
+    left: auto;
+    right: max(22px, env(safe-area-inset-right));
+  }
+}
+
+/* the gun row above the weapon cards */
+.hmc-g {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 48px;
+  padding: 4px 6px;
+  text-align: left;
+  color: #dfe3f0;
+  background: linear-gradient(rgba(255, 179, 71, 0.1), rgba(255, 179, 71, 0.02));
+  border: 2px solid rgba(255, 179, 71, 0.18);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.hmc-g h4 {
+  margin: 0;
+  font: 13px "Russo One", system-ui, sans-serif;
+}
+
+.hmc-g span {
+  font-size: 10px;
+  color: #9aa1b8;
+}
+
+.hmc-g.sel {
+  border-color: #ffb347;
+  background: rgba(255, 179, 71, 0.22);
+}
+
+.hmc-g.off {
+  opacity: 0.35;
+}
+
 .hmc-tip {
   display: flex;
   flex-direction: column;

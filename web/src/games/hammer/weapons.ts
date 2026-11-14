@@ -96,10 +96,39 @@ export interface PartSpec {
   /** Spawn angle; default π/2 (local +x pointing down, away from the machine). */
   angle?: number;
   /** Drawing hint. */
-  look: "hammer" | "mallet" | "axe" | "blade" | "link" | "spike" | "handle" | "ball";
+  look: "hammer" | "mallet" | "axe" | "blade" | "link" | "spike" | "handle" | "ball" | "gun";
   material: Material;
   /** Draw a shaft from the machine to this part (parts on a rod joint). */
   rod?: boolean;
+  /** This part shoots (class Weapon with m_ammoclip_size): along its local +x, away from the machine. */
+  gun?: GunSpec;
+}
+
+/**
+ * A gun (Weapon::fire, 0x4184xx; mortar 0x41adxx). Fire needs the timer at 0 and a round in the clip; each shot sets
+ * the timer to 0.1 s, the last one to m_recoil_time, and the clip refills when that runs out.
+ */
+export interface GunSpec {
+  /** m_ammoclip_size. */
+  clip: number;
+  /** m_recoil_time: seconds to reload an empty clip. */
+  reload: number;
+  /** Seconds between shots while the trigger is held (the exe sets 0.1). */
+  interval: number;
+  /** Projectiles per shot and their spread, +- radians (mortar: 5, 0.2). */
+  pellets: number;
+  spread: number;
+  /** Muzzle speed px/s (bullets: 2000). */
+  speed: number;
+  /** Projectile radius px and density. */
+  shotR: number;
+  shotDensity: number;
+  /** Projectile sharpness (bullets: 7). */
+  shotSharpness: number;
+  /** Recoil impulse on the gun as a multiple of the shot's momentum (the exe: 1, mortar only). */
+  recoil: number;
+  /** "ball" shots are drawn as mortar balls, "bullet" as tracers. */
+  look: "bullet" | "ball";
 }
 
 export interface JointSpec {
@@ -129,6 +158,88 @@ export interface WeaponSpec {
   joints: JointSpec[];
   /** The part that does most of the hitting (for trails and clashes). */
   striker: string;
+}
+
+// ---------------------------------------------------------------- guns
+// Bullets are 7 px balls of sharpness 7 at 2000 px/s. Their density (200 in the exe) is OURS: with this port's
+// damage formula a 200-density bullet does about 100 damage, so we use 8 (about 5 a hit) and 10 for mortar balls.
+const BULLET = { interval: 0.1, pellets: 1, spread: 0.01, speed: 2000, shotR: 3.5, shotDensity: 8, shotSharpness: 7, recoil: 0, look: "bullet" } as const;
+
+export type GunKind = "arquebus" | "mortar";
+export const GUN_KINDS: GunKind[] = ["arquebus", "mortar"];
+
+/** A gun you take with a melee weapon: it rides on its own rod on the far side, tied to the weapon (type 0). */
+export interface SidearmSpec {
+  kind: GunKind;
+  label: string;
+  blurb: string;
+  part: Omit<PartSpec, "key" | "hang" | "rod" | "angle">;
+  rod: number;
+}
+
+export const SIDEARMS: Record<GunKind, SidearmSpec> = {
+  // gun_blade.seria: density 40.8, sharpness 5 (it has a bayonet), m_recoil_time 2; the item code sets a clip of 20.
+  arquebus: {
+    kind: "arquebus",
+    label: "Arquebus",
+    blurb: "20 quick shots, then a reload.",
+    rod: 34,
+    part: {
+      mesh: [-16.347, -9.848, -16.494, 4.143, 16.494, 12.124, 9.118, -12.124],
+      density: 40.8006,
+      sharpness: 5,
+      bladeable: 0,
+      look: "gun",
+      material: "iron",
+      gun: { ...BULLET, clip: 20, reload: 2 },
+    },
+  },
+  // mortar (code-built): clip 3, 5 balls a shot with +-0.2 spread, recoil = the balls' momentum. The barrel shape,
+  // the ball speed, the time between blasts and the 3x kick are OURS (the exe's kick is too small to feel here).
+  mortar: {
+    kind: "mortar",
+    label: "Mortar",
+    blurb: "3 blasts of 5 balls. Big kick.",
+    rod: 18,
+    part: {
+      mesh: box(13, 9),
+      density: 40,
+      sharpness: 1,
+      bladeable: 0,
+      look: "gun",
+      material: "iron",
+      gun: { clip: 3, reload: 5, interval: 0.6, pellets: 5, spread: 0.2, speed: 1100, shotR: 5, shotDensity: 10, shotSharpness: 7, recoil: 3, look: "ball" },
+    },
+  },
+};
+
+/** Dual weapons already fill the far side (the tribune's back blade is its own gun). */
+export const takesSidearm = (k: WeaponKind) => WEAPONS[k].cls !== "dual";
+
+const combined = new Map<string, WeaponSpec>();
+/** The weapon with a sidearm added: the gun hangs opposite the weapon on its own rod, held apart by a type 0 joint. */
+export function armedSpec(kind: WeaponKind, gun: GunKind | null): WeaponSpec {
+  const w = WEAPONS[kind];
+  if (!gun || !takesSidearm(kind)) return w;
+  const key = `${kind}+${gun}`;
+  let c = combined.get(key);
+  if (!c) {
+    const g = SIDEARMS[gun];
+    const first = w.joints.find((j) => j.a === "hull")!;
+    const rigid = first.type === 2;
+    c = {
+      ...w,
+      parts: [...w.parts, { key: "gun", hang: -g.rod, angle: -Math.PI / 2, rod: true, ...g.part }],
+      joints: [
+        ...w.joints,
+        { a: "hull", b: "gun", type: 2, radius: g.rod, necess: 5 },
+        // a rod weapon holds the gun straight across (like the dual sets); a chain can't, so the gun swings free
+        ...(rigid ? [{ a: first.b, b: "gun", type: 0, radius: first.radius + g.rod, necess: 1 }] : []),
+      ],
+    };
+    combined.set(key, c);
+  }
+  return c;
 }
 
 // ---------------------------------------------------------------- building blocks
@@ -488,6 +599,8 @@ const list: WeaponSpec[] = [
         look: "blade",
         material: "steel",
         rod: true,
+        // tribun.seria: m_ammoclip_size 40, m_recoil_time 5
+        gun: { ...BULLET, clip: 40, reload: 5 },
       },
     ],
     joints: [

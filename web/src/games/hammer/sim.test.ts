@@ -328,3 +328,61 @@ test("tiers: heavier weapons in a class have a heavier striking part, and the sa
   const [mallet, hammer, maul] = [hit("mallet"), hit("hammer"), hit("maul")];
   assert.ok(mallet < hammer && hammer < maul, `mallet ${mallet}, hammer ${hammer}, maul ${maul}`);
 });
+
+test("guns: the arquebus fires every 0.1 s while held, bullets hurt, the clip reloads, shots leave the world", () => {
+  const a = arena();
+  const shooter = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", sidearm: "arquebus", x: 300, y: 300 });
+  const target = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 300, y: 120 });
+  // the target's hammer would hang in the line of fire: take it away
+  (a as unknown as { destroy(m: typeof target): void }).destroy(target);
+  const bodies = a.world.bodies.length;
+  assert.equal(shooter.guns.length, 1);
+  const gun = shooter.guns[0]!;
+  // the gun hangs above the hull and points up, away from it
+  assert.ok(gun.body.y < shooter.hull.y - 20, `gun y=${gun.body.y}`);
+  assert.ok(Math.abs(gun.body.a + Math.PI / 2) < 0.2, `gun a=${gun.body.a}`);
+  let shots = 0;
+  const hits: number[] = [];
+  const run = (n: number, fire: boolean) => {
+    for (let i = 0; i < n; i++) {
+      if (fire) a.fire(shooter);
+      a.step();
+      for (const e of a.events) {
+        if (e.type === "shot") shots++;
+        if (e.type === "hit" && e.victim === target && e.attacker === shooter) hits.push(e.dmg);
+      }
+      a.events.length = 0;
+    }
+  };
+  run(25, true); // 0.5 s
+  assert.ok(shots >= 4 && shots <= 6, `shots in 0.5 s: ${shots}`);
+  assert.ok(hits.length > 0, "a bullet hit the target");
+  assert.ok(Math.max(...hits) <= 15, `bullet damage ${hits.join(",")}`);
+  run(200, true); // empties the clip and reloads (2 s) at least once
+  assert.ok(shots > 20, `shots after the reload: ${shots}`);
+  // the clip refills only once it is empty (as in the exe): empty it, then wait out the reload
+  while (gun.ammo > 0) run(1, true);
+  run(150, false);
+  assert.equal(gun.ammo, gun.spec.clip);
+  assert.equal(a.shots.length, 0);
+  assert.equal(a.world.bodies.length, bodies);
+});
+
+test("guns: the mortar fires 5 balls and kicks the machine back; the tribune's back blade shoots", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "axe", sidearm: "mortar", x: 400, y: 300 });
+  for (let i = 0; i < 10; i++) a.step();
+  const vy = m.hull.vy;
+  a.fire(m);
+  a.step();
+  assert.equal(a.shots.length, 5);
+  for (let i = 0; i < 3; i++) a.step();
+  // fired upward, so the kick pushes the machine down
+  assert.ok(m.hull.vy - vy > 20, `kick ${m.hull.vy - vy}`);
+  const t = a.add({ id: 2, name: "T", color: "#0f0", weapon: "tribune", x: 600, y: 300 });
+  assert.equal(t.guns.length, 1);
+  assert.equal(t.guns[0]!.spec.clip, 40);
+  // dual weapons take no sidearm
+  const d = a.add({ id: 3, name: "D", color: "#0ff", weapon: "twin", sidearm: "arquebus", x: 200, y: 300 });
+  assert.equal(d.guns.length, 0);
+});

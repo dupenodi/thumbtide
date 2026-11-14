@@ -83,4 +83,18 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot): void {
   // down to just below the frame: a sinking (idle) machine sits there, inside the soft limit
   const y = Math.min(VIEW_H + 40, Math.max(30, enemy.hull.y + Math.sin(bot.theta) * r));
   seek(arena, m, x, y, 350);
+
+  // guns: pull the trigger when one points at the enemy (the mortar only up close)
+  for (const g of m.guns) {
+    const b = g.body;
+    const dx = enemy.hull.x - b.x;
+    const dy = enemy.hull.y - b.y;
+    const d = Math.hypot(dx, dy);
+    if (d > (g.spec.pellets > 1 ? 280 : 650)) continue;
+    const off = Math.abs(Math.atan2(Math.sin(Math.atan2(dy, dx) - b.a), Math.cos(Math.atan2(dy, dx) - b.a)));
+    if (off < Math.max(0.12, 30 / d)) {
+      arena.fire(m);
+      break;
+    }
+  }
 }
