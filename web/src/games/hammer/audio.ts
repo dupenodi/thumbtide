@@ -34,9 +34,11 @@ const ROOTS = [0, -4, -2, -5];
 const BASS: (number | null)[] = [0, null, 0, 12, null, 0, 7, null, 0, null, 10, null, 7, null, 5, 3];
 const hz = (semis: number, base = 55) => base * 2 ** (semis / 12);
 
-export function createGameAudio(ctx: AudioContext | null): GameAudio | null {
+/** lite (the TV): no hi-hats and a single partial for metal rings, to save audio-thread time. */
+export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean } = {}): GameAudio | null {
   if (!ctx) return null;
   const c = ctx;
+  const lite = !!opts.lite;
 
   // master → slow-motion low-pass → compressor → speakers
   const master = c.createGain();
@@ -113,12 +115,9 @@ export function createGameAudio(ctx: AudioContext | null): GameAudio | null {
     s.stop(t + decay + 0.05);
   };
   /** A metal ring: a few inharmonic partials with a fast decay. */
+  const PARTIALS = lite ? ([[1, 1]] as const) : ([[1, 1], [2.76, 0.5], [5.4, 0.25]] as const);
   const ring = (t: number, base: number, peak: number, decay: number) => {
-    for (const [ratio, amp] of [
-      [1, 1],
-      [2.76, 0.5],
-      [5.4, 0.25],
-    ] as const) {
+    for (const [ratio, amp] of PARTIALS) {
       tone("triangle", base * ratio, base * ratio * 0.995, t, peak * amp, decay * (1 - ratio * 0.08));
     }
   };
@@ -165,7 +164,7 @@ export function createGameAudio(ctx: AudioContext | null): GameAudio | null {
       tone("triangle", 200, 160, t, 0.18, 0.08, mus);
     }
     // hats
-    if (full ? s % 2 === 0 : s % 4 === 2) burst(t, "highpass", 7500, 0.7, full ? 0.12 : 0.07, 0.04, mus);
+    if (!lite && (full ? s % 2 === 0 : s % 4 === 2)) burst(t, "highpass", 7500, 0.7, full ? 0.12 : 0.07, 0.04, mus);
     // bass
     const b = BASS[s];
     if (b !== null && b !== undefined && (full || s % 4 === 0)) {
@@ -198,6 +197,8 @@ export function createGameAudio(ctx: AudioContext | null): GameAudio | null {
   }, 30);
 
   // ---- the interface ---------------------------------------------------------------------------
+  let lastFrame = 0;
+  let paused = false;
   return {
     hit(dmg, impact, cut, material) {
       if (!allow(dmg > 10 ? 1 : 0.6)) return;
@@ -267,6 +268,9 @@ export function createGameAudio(ctx: AudioContext | null): GameAudio | null {
     },
     frame(speed, swing, warp) {
       const t = now();
+      // about 10 updates a second is plenty for slow-moving levels
+      if (t - lastFrame < 0.1) return;
+      lastFrame = t;
       humGain.gain.setTargetAtTime(mood === "off" ? 0 : 0.02 + speed * 0.05, t, 0.1);
       hum.frequency.setTargetAtTime(50 + speed * 40, t, 0.1);
       windGain.gain.setTargetAtTime(swing > 0.25 ? (swing - 0.25) * 0.35 : 0, t, 0.05);
@@ -281,10 +285,16 @@ export function createGameAudio(ctx: AudioContext | null): GameAudio | null {
       mus.gain.setTargetAtTime(on ? 0.32 : 0, now(), 0.1);
     },
     pause(on) {
-      master.gain.setTargetAtTime(on ? 0 : 0.9, now(), 0.05);
+      // suspend the whole engine (scheduler, hum, whoosh): nothing runs on the audio thread while paused
+      if (on === paused) return;
+      paused = on;
+      if (on) void c.suspend().catch(() => {});
+      else void c.resume().catch(() => {});
     },
     dispose() {
       clearInterval(scheduler);
+      // the context is shared with the lobby: leave it running
+      if (paused) void c.resume().catch(() => {});
       try {
         hum.stop();
         wind.stop();

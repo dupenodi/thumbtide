@@ -80,6 +80,7 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot): void {
   bot.theta += dt * 3.2 * bot.spin;
   const r = 90;
   const x = Math.min(VIEW_W - 30, Math.max(30, enemy.hull.x + Math.cos(bot.theta) * r));
-  const y = Math.min(VIEW_H - 30, Math.max(30, enemy.hull.y + Math.sin(bot.theta) * r));
+  // down to just below the frame: a sinking (idle) machine sits there, inside the soft limit
+  const y = Math.min(VIEW_H + 40, Math.max(30, enemy.hull.y + Math.sin(bot.theta) * r));
   seek(arena, m, x, y, 350);
 }

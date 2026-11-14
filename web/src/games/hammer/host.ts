@@ -49,8 +49,18 @@ const MATCH_S = 7;
 const CALL_S = 1.2;
 /** Seconds of fight before sudden death: the health_low rule stops, so long rounds end. */
 const SUDDEN_DEATH_S = 60;
+/** Seconds after sudden death before time runs out: the team with the most health left wins (or a draw). */
+const TIME_LIMIT_S = SUDDEN_DEATH_S + 30;
+/** A player with no input for this long in a fight is flown by a bot until they touch the stick again. */
+const IDLE_S = 8;
+/** Body budget for monster waves (each worm is 10 bodies): the TV keeps 60 fps up to about 48 bodies. */
+const BODY_BUDGET_LITE = 48;
+const BODY_BUDGET = 90;
 
 interface Seat {
+  /** Real seconds since this player last moved the stick; an autopilot bot flies the machine while they're away. */
+  idle: number;
+  auto: Bot | null;
   id: string;
   name: string;
   color: string;
@@ -78,7 +88,7 @@ const mount: HostMount = (ctx) => {
   const lite = isWebOS || !!startParam("lite");
   const tuning = { ...DEFAULT_TUNING };
   const arena = new Arena(tuning);
-  const sound = createGameAudio(audio());
+  const sound = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite") });
   sound?.setMusicOn(ctx.settings().music !== false);
   /** The material of a machine's striking part, for the hit sound. */
   const materialOf = (m: Machine): Material => {
@@ -126,6 +136,8 @@ const mount: HostMount = (ctx) => {
     name: p.name,
     color: colorFor(p.index),
     human: true,
+    idle: 0,
+    auto: null,
     weapon: "hammer",
     wins: 0,
     slot: -1,
@@ -171,7 +183,9 @@ const mount: HostMount = (ctx) => {
   };
   /** Wave n: 1, 2, 2, 3, 4… worms (at most 4 alive); armoured worms from wave 3. They fly in from the sides. */
   const spawnWave = () => {
-    const n = Math.min(MAX_MONSTERS, 1 + Math.floor(round / 2));
+    // fit the wave in the body budget (each worm is 10 bodies), but always at least one worm
+    const room = Math.floor(((lite ? BODY_BUDGET_LITE : BODY_BUDGET) - arena.world.bodies.length) / 10);
+    const n = Math.max(1, Math.min(MAX_MONSTERS, 1 + Math.floor(round / 2), room));
     for (let i = 0; i < n; i++) {
       const left = i % 2 === 0;
       const kind = round >= 3 && i % 2 === 1 ? "armoredworm" : "worm";
@@ -210,6 +224,8 @@ const mount: HostMount = (ctx) => {
         name: `CPU ${n + 1}`,
         color: BOT_COLORS[n % BOT_COLORS.length]!,
         human: false,
+        idle: 0,
+        auto: null,
         weapon: randomWeapon(),
         wins: 0,
         slot: -1,
@@ -257,6 +273,8 @@ const mount: HostMount = (ctx) => {
     const taken = new Set(seated().map((s) => s.slot));
     const waiting = [...humans().filter((s) => s.slot < 0), ...bots().filter((s) => s.slot < 0)];
     for (const s of waiting) {
+      // co-op vs CPU keeps the last seat for an enemy
+      if (mode === "pve" && s.human && seated().filter((x) => x.human).length >= MAX_SEATS - 1) continue;
       let slot = 0;
       while (taken.has(slot)) slot++;
       if (slot >= MAX_SEATS) break;
@@ -302,6 +320,8 @@ const mount: HostMount = (ctx) => {
   /** The last round's winner: a player (free-for-all) or a team. */
   let winner: { label: string; color: string; id: string | null; team: number } | null = null;
   let callAt = -1;
+  /** The round ended because time ran out (decided on health). */
+  let timeUp = false;
   let paused = false;
   let hudDirty = true;
   const winsToMatch = () => Number(ctx.settings().wins) || 3;
@@ -397,7 +417,16 @@ const mount: HostMount = (ctx) => {
 
   const endRound = () => {
     const alive = teamsAlive();
-    const team = alive.size === 1 ? [...alive][0]! : null;
+    let team = alive.size === 1 ? [...alive][0]! : null;
+    const byTime = timeUp && alive.size > 1;
+    if (byTime) {
+      // time ran out: the team with the most health left wins; equal health is a draw
+      const hp = new Map<number, number>();
+      for (const s of seated()) if (s.m?.alive) hp.set(teamOf(s), (hp.get(teamOf(s)) ?? 0) + s.m.hp);
+      const ranked = [...hp.entries()].sort((a, b) => b[1] - a[1]);
+      team = ranked.length > 1 && ranked[0]![1] === ranked[1]![1] ? null : (ranked[0]?.[0] ?? null);
+    }
+    timeUp = false;
     const winners = team === null || team === MONSTER_TEAM ? [] : seated().filter((s) => teamOf(s) === team);
     for (const w of winners) {
       w.wins++;
@@ -423,8 +452,8 @@ const mount: HostMount = (ctx) => {
       hud.announce("champ", team === MONSTER_TEAM ? "Game over" : "Victory", team === MONSTER_TEAM ? `The worms got you on wave ${round}` : `${round} waves survived`, winner?.color ?? "#fff", 0);
     } else if (phase === "match") hud.announce("champ", winner!.label, mode === "ffa" ? "Champion" : "Champions", winner!.color, 0);
     else if (winner && mode === "pvm") hud.announce("win", "Wave cleared", `Wave ${round} of ${winsToMatch()}`, winner.color, 0);
-    else if (winner) hud.announce("win", `${winner.label} wins`, `Round ${round}`, winner.color, 0);
-    else hud.announce("win", "Draw", "", "#ffffff", 0);
+    else if (winner) hud.announce("win", `${winner.label} wins`, byTime ? "Time up: most health left" : `Round ${round}`, winner.color, 0);
+    else hud.announce("win", "Draw", byTime ? "Time up" : "", "#ffffff", 0);
     hudDirty = true;
   };
 
@@ -433,6 +462,11 @@ const mount: HostMount = (ctx) => {
     if (phase === "fight") {
       // the round ends when one team (or one machine) is left flying
       if (teamsAlive().size <= 1 && callAt < 0) callAt = CALL_S;
+      if (mode !== "pvm" && phaseFor >= TIME_LIMIT_S && callAt < 0) {
+        timeUp = true;
+        endRound();
+        return;
+      }
       if (!arena.suddenDeath && phaseFor >= SUDDEN_DEATH_S && callAt < 0) {
         arena.suddenDeath = true;
         hud.announce("ko", "Sudden death", "Every hit counts", "#ff3d55", 1800);
@@ -516,6 +550,19 @@ const mount: HostMount = (ctx) => {
     }
     const p = host.players.get(s.id);
     const inp = p?.connected ? p.input : null;
+    const moving = !!inp && (inp.k === 1 ? Math.abs(inp.x) + Math.abs(inp.y) > 0.05 : inp.x !== s.tx || inp.y !== s.ty);
+    s.idle = moving ? 0 : s.idle + STEP;
+    // away (or phone asleep) in a fight: a bot flies for them, so the round doesn't stall
+    if (phase === "fight" && s.idle > IDLE_S) {
+      s.auto ??= makeBot("fight", m.hull.x, m.hull.y);
+      driveBot(arena, m, s.auto);
+      if (inp && inp.k === 0) {
+        s.tx = inp.x;
+        s.ty = inp.y;
+      }
+      return;
+    }
+    s.auto = null;
     if (!inp) return;
     if (inp.k === 1) {
       s.k = 1;
