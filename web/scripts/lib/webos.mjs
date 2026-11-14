@@ -70,12 +70,24 @@ export function deviceInfo(tv) {
   return info;
 }
 
-/** First LAN IPv4 address of this computer: what the TV connects back to. */
-export function lanIp() {
-  for (const list of Object.values(networkInterfaces())) {
+/** Adapters a TV or a phone on the Wi-Fi can't reach (WSL, Hyper-V, VMs, Docker). */
+const VIRTUAL = /vEthernet|WSL|Hyper-V|VirtualBox|VMware|Docker|vboxnet|Loopback/i;
+
+/**
+ * This computer's LAN IPv4 address: what the TV (and phones) connect back to. LAN_IP sets it by hand. Otherwise an
+ * address on the same /24 as `near` (the TV's address) if there is one, then the first real adapter's. The first
+ * address of all was often WSL's virtual adapter (172.x), which the TV can't reach: its reports never arrived.
+ */
+export function lanIp(near) {
+  if (process.env.LAN_IP) return process.env.LAN_IP;
+  const all = [];
+  for (const [name, list] of Object.entries(networkInterfaces())) {
     for (const a of list ?? []) {
-      if (a.family === "IPv4" && !a.internal && !a.address.startsWith("169.254.")) return a.address;
+      if (a.family === "IPv4" && !a.internal && !a.address.startsWith("169.254.")) all.push({ name, address: a.address });
     }
   }
-  fail("This computer isn't on a network the TV can reach.");
+  const net = (ip) => ip.split(".").slice(0, 3).join(".");
+  const pick = (near && all.find((a) => net(a.address) === net(near))) ?? all.find((a) => !VIRTUAL.test(a.name)) ?? all[0];
+  if (!pick) fail("This computer isn't on a network the TV can reach.");
+  return pick.address;
 }
