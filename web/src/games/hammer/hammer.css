@@ -694,6 +694,39 @@
   }
 }
 
+/* class tabs between the gun row and the weapon cards */
+.hmc-tabs {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.hmc-tabs button {
+  flex: 1 0 auto;
+  padding: 7px 8px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: rgba(255, 255, 255, 0.05);
+  color: #8a90a6;
+  font: 12px "Russo One", system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hmc-tabs button.sel {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border-bottom-color: var(--c);
+}
+
+.hmc-w[hidden] {
+  display: none;
+}
+
 /* the gun row above the weapon cards */
 .hmc-g {
   display: flex;

@@ -13,6 +13,8 @@ import type { HammerGame } from "./shared.ts";
 import { GUN_KINDS, type GunKind, SIDEARMS, takesSidearm, WEAPON_KINDS, WEAPON_LABEL, WEAPONS, type WeaponClass, type WeaponKind } from "./weapons.ts";
 
 const CLASS_LABEL: Record<WeaponClass, string> = { hammer: "Hammers", axe: "Axes", mace: "Maces", sword: "Swords", dual: "Dual" };
+/** Tabs in this order; a class with no weapons gets no tab. */
+const CLASSES = (["hammer", "axe", "mace", "sword", "dual"] as WeaponClass[]).filter((c) => WEAPON_KINDS.some((w) => WEAPONS[w].cls === c));
 
 const bars = (n: number) => Array.from({ length: 5 }, (_, i) => `<i${i < n ? ' class="on"' : ""}></i>`).join("");
 
@@ -37,11 +39,9 @@ const mount: ControllerMount = (ctx) => {
         <div class="hmc-tip"><b>Fly in circles</b><span>to swing your weapon</span></div>
         <div class="hmc-pick" data-scroll hidden><p class="hmc-cls">Gun · hold Fire to shoot</p>${[null, ...GUN_KINDS]
           .map((g) => `<button type="button" class="hmc-g" data-g="${g ?? ""}"><h4>${g ? SIDEARMS[g].label : "No gun"}</h4><span>${g ? SIDEARMS[g].blurb : "Hands free."}</span></button>`)
-          .join("")}${WEAPON_KINDS.map((w, i) => {
-          const cls = WEAPONS[w].cls;
-          const head = i === 0 || WEAPONS[WEAPON_KINDS[i - 1]!].cls !== cls ? `<p class="hmc-cls">${CLASS_LABEL[cls]}</p>` : "";
+          .join("")}<div class="hmc-tabs">${CLASSES.map((c) => `<button type="button" data-c="${c}">${CLASS_LABEL[c]}</button>`).join("")}</div>${WEAPON_KINDS.map((w) => {
           const st = WEAPON_STATS[w];
-          return `${head}<button type="button" class="hmc-w" data-w="${w}" style="--t:${WEAPON_TINT[w]}">${WEAPON_ICON[w]}<h4>${WEAPON_LABEL[w]}</h4>
+          return `<button type="button" class="hmc-w" data-w="${w}" data-c="${WEAPONS[w].cls}" style="--t:${WEAPON_TINT[w]}">${WEAPON_ICON[w]}<h4>${WEAPON_LABEL[w]}</h4>
             <div class="hmc-stats"><span>Weight</span><u>${bars(st.weight)}</u><span>Reach</span><u>${bars(st.reach)}</u><span>Cut</span><u>${bars(st.cut)}</u></div></button>`;
         }).join("")}</div>
         <div class="hmc-over" hidden><b></b><span></span></div>
@@ -116,6 +116,21 @@ const mount: ControllerMount = (ctx) => {
   for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) fire.addEventListener(t, () => setFire(0));
   fire.addEventListener("contextmenu", (e) => e.preventDefault());
 
+  // class tabs: one class of cards at a time (opens on the class of the weapon you hold)
+  let tab: WeaponClass | null = null;
+  const showTab = (c: WeaponClass) => {
+    if (c === tab) return;
+    tab = c;
+    for (const b of pick.querySelectorAll<HTMLElement>(".hmc-tabs button")) b.classList.toggle("sel", b.dataset.c === c);
+    for (const b of pick.querySelectorAll<HTMLElement>(".hmc-w")) b.hidden = b.dataset.c !== c;
+  };
+  for (const b of pick.querySelectorAll<HTMLButtonElement>(".hmc-tabs button")) {
+    b.addEventListener("click", () => {
+      haptic(8);
+      showTab(b.dataset.c as WeaponClass);
+    });
+  }
+
   for (const b of pick.querySelectorAll<HTMLButtonElement>(".hmc-g")) {
     b.addEventListener("click", () => {
       haptic(15);
@@ -154,6 +169,7 @@ const mount: ControllerMount = (ctx) => {
     const target = sh?.winsToMatch ?? 3;
     (el.querySelector(".hmc-wins") as HTMLElement).innerHTML = Array.from({ length: target }, (_, i) => `<i${own && i < own.wins ? ' class="on"' : ""}></i>`).join("");
     for (const b of pick.querySelectorAll<HTMLElement>(".hmc-w")) b.classList.toggle("sel", b.dataset.w === own?.weapon);
+    if (!tab) showTab(own ? WEAPONS[own.weapon].cls : CLASSES[0]!);
     const canGun = !own || takesSidearm(own.weapon);
     for (const b of pick.querySelectorAll<HTMLElement>(".hmc-g")) {
       b.classList.toggle("sel", (b.dataset.g || null) === (own?.sidearm ?? null));
