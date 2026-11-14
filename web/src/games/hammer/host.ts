@@ -97,7 +97,7 @@ const mount: HostMount = (ctx) => {
   const tuning = { ...DEFAULT_TUNING, ...(lite ? { passes: 15 } : {}) };
   const arena = new Arena(tuning);
   // the melee tour (TV tests only): every melee weapon in turn, with physics and fight numbers in each perf report
-  const tour = import.meta.env.VITE_PERF === "1" && startParam("tour") === "melee" ? makeTour(arena, Math.max(2, Math.min(4, Number(startParam("bots")) || 3)), audio()) : null;
+  const tour = import.meta.env.VITE_PERF === "1" && startParam("tour") === "melee" ? makeTour(arena, Math.max(2, Math.min(4, Number(startParam("bots")) || 3)), audio(), Number(startParam("tourfrom")) || 1) : null;
   const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite") });
   const sound = tour ? tour.wrapSound(sound0) : sound0;
   sound?.setMusicOn(ctx.settings().music !== false);

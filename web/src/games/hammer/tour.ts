@@ -28,7 +28,7 @@ export interface Tour {
   wrapSound(s: GameAudio | null): GameAudio | null;
 }
 
-export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | null): Tour {
+export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | null, from = 1): Tour {
   const sets: WeaponKind[][] = [];
   for (let i = 0; i < WEAPON_KINDS.length; i += seats) {
     const set = WEAPON_KINDS.slice(i, i + seats);
@@ -36,7 +36,8 @@ export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | n
     while (set.length < seats) set.push(WEAPON_KINDS[set.length]!);
     sets.push(set);
   }
-  let setIdx = -1;
+  // `from` (1-based) starts the tour at a later set, to repeat the end of a run
+  let setIdx = Math.max(0, Math.min(sets.length, from) - 1) - 1;
   let setT = SET_S;
   let lap = 1;
   let steps = 0;
