@@ -173,10 +173,12 @@ const mount: ControllerMount = (ctx) => {
     tip.hidden = phase === "pick";
     // a win for my team counts as my win
     const won = !!sh && !!own && (sh.mode === "ffa" ? sh.winnerId === ctl.me?.id : sh.winnerTeam === own.team);
+    // "CPU wins", but "Players win"
+    const wins = (name: string) => `${name} ${/Players$/.test(name) ? "win" : "wins"}`;
     if (own && !own.seated) showOver("Wait", "You're in from the next round");
     else if (phase === "fight" && own && !own.alive) showOver("K.O.", "Next round soon", "#ff3d55");
-    else if (phase === "result") showOver(won ? (sh?.mode === "ffa" ? "You win!" : "Your team wins!") : sh?.winner ? `${sh.winner} wins` : "Draw", "Next round soon", sh?.winnerColor ?? "#fff");
-    else if (phase === "match") showOver(won ? "Champion!" : `${sh?.winner ?? "Match"} wins`, "New match soon", sh?.winnerColor ?? "#fff");
+    else if (phase === "result") showOver(won ? (sh?.mode === "ffa" ? "You win!" : "Your team wins!") : sh?.winner ? wins(sh.winner) : "Draw", "Next round soon", sh?.winnerColor ?? "#fff");
+    else if (phase === "match") showOver(won ? "Champion!" : wins(sh?.winner ?? "Match"), "New match soon", sh?.winnerColor ?? "#fff");
     else showOver("", "");
   };
 

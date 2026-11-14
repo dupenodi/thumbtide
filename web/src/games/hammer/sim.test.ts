@@ -231,7 +231,10 @@ test("teams: friendly fire off protects teammates, on hurts them; collision off 
   assert.ok(!run({ teamDamage: 0, teamCollision: 0, sameTeam: true }).touched, "teammates collided with collision off");
 });
 
-test("monsters: a worm hunts the nearest machine, holds together, and dies when its health runs out", () => {
+test("monsters: a worm hunts the nearest machine, holds together, and dies when its health runs out", (t) => {
+  // worm size and strength are random: seed it, so the same worms are tested each run
+  let seed = 12345;
+  t.mock.method(Math, "random", () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648));
   for (const kind of ["worm", "armoredworm"] as const) {
     const ar = arena();
     ar.tuning.hover = 1;

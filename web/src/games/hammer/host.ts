@@ -470,7 +470,7 @@ const mount: HostMount = (ctx) => {
       hud.announce("champ", team === MONSTER_TEAM ? "Game over" : "Victory", team === MONSTER_TEAM ? `The worms got you on wave ${round}` : `${round} waves survived`, winner?.color ?? "#fff", 0);
     } else if (phase === "match") hud.announce("champ", winner!.label, mode === "ffa" ? "Champion" : "Champions", winner!.color, 0);
     else if (winner && mode === "pvm") hud.announce("win", "Wave cleared", `Wave ${round} of ${winsToMatch()}`, winner.color, 0);
-    else if (winner) hud.announce("win", `${winner.label} wins`, byTime ? "Time up: most health left" : `Round ${round}`, winner.color, 0);
+    else if (winner) hud.announce("win", `${winner.label} ${/Players$/.test(winner.label) ? "win" : "wins"}`, byTime ? "Time up: most health left" : `Round ${round}`, winner.color, 0);
     else hud.announce("win", "Draw", byTime ? "Time up" : "", "#ffffff", 0);
     hudDirty = true;
   };
