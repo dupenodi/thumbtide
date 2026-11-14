@@ -35,7 +35,7 @@ const mount: ControllerMount = (ctx) => {
       <button type="button" class="hmc-fire" hidden><b>FIRE</b><span class="hmc-ammo"></span></button>
       <div class="hmc-side">
         <div class="hmc-tip"><b>Fly in circles</b><span>to swing your weapon</span></div>
-        <div class="hmc-pick" hidden><p class="hmc-cls">Gun · hold Fire to shoot</p>${[null, ...GUN_KINDS]
+        <div class="hmc-pick" data-scroll hidden><p class="hmc-cls">Gun · hold Fire to shoot</p>${[null, ...GUN_KINDS]
           .map((g) => `<button type="button" class="hmc-g" data-g="${g ?? ""}"><h4>${g ? SIDEARMS[g].label : "No gun"}</h4><span>${g ? SIDEARMS[g].blurb : "Hands free."}</span></button>`)
           .join("")}${WEAPON_KINDS.map((w, i) => {
           const cls = WEAPONS[w].cls;
