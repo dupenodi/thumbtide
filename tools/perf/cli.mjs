@@ -340,7 +340,7 @@ async function probeTv({ save = true } = {}) {
   let probe = null;
   const report = receive((r) => ((probe = r), true), 300000);
   capture("ares-launch", "-d", tv.name, "--close", appinfo.id);
-  if (!run("ares-launch", "-d", tv.name, appinfo.id, "-p", JSON.stringify({ report: `http://${lanIp()}:${REPORT_PORT}/` }))) fail("The probe didn't open.");
+  if (!run("ares-launch", "-d", tv.name, appinfo.id, "-p", JSON.stringify({ report: `http://${lanIp(tv.host)}:${REPORT_PORT}/` }))) fail("The probe didn't open.");
   say("The probe runs on the TV (about a minute)…");
   await report.catch((e) => fail(e.message));
   capture("ares-launch", "-d", tv.name, "--close", appinfo.id);
@@ -505,7 +505,7 @@ async function playOnTv(names) {
   const tv = device();
   const info = deviceInfo(tv);
   say(`TV: ${info.modelName} at ${tv.host}`);
-  const ip = lanIp();
+  const ip = lanIp(tv.host);
   const appinfo = installTvApp(tv);
 
   const rows = {};
@@ -571,7 +571,7 @@ async function calibrate(browser, profile, host, names) {
 // ------------------------------------------------------------------ capture: the whole story from the TV
 /** Builds the TV app against this computer's sandbox relay and installs it. Returns its appinfo. */
 function installTvApp(tv) {
-  const ip = lanIp();
+  const ip = lanIp(tv.host);
   const out = join(cacheDir, "calibrate-app");
   rmSync(out, { recursive: true, force: true });
   say("Building the TV app (it connects to this computer's sandbox relay)…");
@@ -606,7 +606,7 @@ function takeLock(tv) {
       fail(`The TV is busy: another performance run (${who}) took it ${Math.round(age)}s ago.\nWait for it, or add --force to take it anyway.`);
     }
   }
-  const me = `${process.pid}@${createHash("sha1").update(lanIp()).digest("hex").slice(0, 6)}`;
+  const me = `${process.pid}@${createHash("sha1").update(lanIp(tv.host)).digest("hex").slice(0, 6)}`;
   sh(`echo "${me} $(cut -d' ' -f1 /proc/uptime)" > ${LOCK}`);
   process.on("exit", () => capture("ares-novacom", "-d", tv.name, "-r", `rm -f ${LOCK} /tmp/thumbtide-stop`));
 }
@@ -746,7 +746,7 @@ async function captureTv(names) {
 
   await startRelay();
   const appinfo = installTvApp(tv);
-  const ip = lanIp();
+  const ip = lanIp(tv.host);
   const scenarios = {};
   for (const name of names) {
     const sc = SCENARIOS[name];
