@@ -53,6 +53,8 @@ export class Body {
   /** Per-pass joint angle accumulation. */
   angSum = 0;
   angCnt = 0;
+  /** Marks a body already listed for this step's joint passes (World.step). */
+  inPass = false;
 
   constructor(verts: number[], density: number) {
     let n = verts.length / 2;
@@ -188,6 +190,8 @@ export { wrapPi };
 export class World {
   bodies: Body[] = [];
   joints: Joint[] = [];
+  /** The bodies on a joint, gathered each step (reused, so no allocation). */
+  private readonly jointed: Body[] = [];
 
   add(b: Body): Body {
     this.bodies.push(b);
@@ -238,6 +242,19 @@ export class World {
     }
 
     // 3. Joints: positions only; angles averaged per body after each pass.
+    // Only bodies on a joint collect angle corrections, so only they are visited after each pass.
+    const jointed = this.jointed;
+    jointed.length = 0;
+    for (const j of this.joints) {
+      if (!j.a.inPass) {
+        j.a.inPass = true;
+        jointed.push(j.a);
+      }
+      if (!j.b.inPass) {
+        j.b.inPass = true;
+        jointed.push(j.b);
+      }
+    }
     for (let pass = 0; pass < o.passes; pass++) {
       let any = false;
       for (const j of this.joints) {
@@ -246,7 +263,7 @@ export class World {
         solveJoint(j);
       }
       if (!any) break;
-      for (const b of this.bodies) {
+      for (const b of jointed) {
         if (b.angCnt > 0) {
           b.a += b.angSum / b.angCnt;
           b.angSum = 0;
@@ -254,6 +271,7 @@ export class World {
         }
       }
     }
+    for (const b of jointed) b.inPass = false;
 
     // 4. Velocities from the Verlet state.
     for (const b of this.bodies) {
@@ -288,8 +306,16 @@ function solveJoint(j: Joint): void {
     wB = A.mass / (A.mass + B.mass);
   }
 
-  const [ax, ay] = A.worldPoint(j.sax, j.say);
-  const [bx, by] = B.worldPoint(j.sbx, j.sby);
+  // the anchors in world space, inline (worldPoint returns a new array; this runs up to 30 times a step per joint),
+  // and each body's cos/sin once for the anchors and the angle terms below (the angles don't change in here)
+  const cA = Math.cos(A.a);
+  const sA = Math.sin(A.a);
+  const cB = Math.cos(B.a);
+  const sB = Math.sin(B.a);
+  const ax = A.x + j.sax * cA - j.say * sA;
+  const ay = A.y + j.sax * sA + j.say * cA;
+  const bx = B.x + j.sbx * cB - j.sby * sB;
+  const by = B.y + j.sbx * sB + j.sby * cB;
   const dx = bx - ax;
   const dy = by - ay;
   let len = Math.hypot(dx, dy);
@@ -308,21 +334,21 @@ function solveJoint(j: Joint): void {
   let dB = 0;
   if (j.type & JointType.Aim) {
     // B's local (−radius, sby) must point from B toward A, i.e. along −n.
-    const c = Math.cos(B.a);
-    const s = Math.sin(B.a);
+    const c = cB;
+    const s = sB;
     const lx = -j.radius;
     const ly = j.sby;
     dB = wrapPi(signedAngle(lx * c - ly * s, lx * s + ly * c, -nx, -ny));
   } else if (j.type & JointType.SoftAlign) {
     if (A.invMass > 0 && (j.sax || j.say)) {
-      const c = Math.cos(A.a);
-      const s = Math.sin(A.a);
+      const c = cA;
+      const s = sA;
       const t = wrapPi(signedAngle(j.sax * c - j.say * s, j.sax * s + j.say * c, nx, ny));
       dA = Math.max(-0.02, Math.min(0.02, 0.3 * f * wA * t));
     }
     if (B.invMass > 0 && (j.sbx || j.sby)) {
-      const c = Math.cos(B.a);
-      const s = Math.sin(B.a);
+      const c = cB;
+      const s = sB;
       const t = wrapPi(signedAngle(j.sbx * c - j.sby * s, j.sbx * s + j.sby * c, -nx, -ny));
       dB = Math.max(-0.02, Math.min(0.02, 0.3 * f * wB * t));
     }
