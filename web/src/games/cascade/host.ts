@@ -4,6 +4,7 @@
 import type { Host } from "@thumbtide/sdk";
 import { shell } from "../../shell/host-state.ts";
 import { audio } from "../../shell/sound.ts";
+import { fpsOverride, frameDrawn, setPerfExtras } from "../../shell/perf.ts";
 import { isWebOS, startParam } from "../../shell/tv.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount, type Settings } from "../types.ts";
@@ -43,13 +44,14 @@ const mount: HostMount = (ctx) => {
     endCard: 1800, // ms of celebration before the winner's card
   };
   const params = new URLSearchParams(location.search);
-  // TVs have phone-class graphics chips: no antialiasing, 30fps
+  // TVs have phone-class graphics chips: no antialiasing, 30fps (fps=60 lifts the cap, for tests at the target)
   const lite = params.get("quality") === "low" || (isWebOS && params.get("quality") !== "high");
-  const minFrameMs = lite ? 1000 / 30 - 4 : 0;
+  const fps = fpsOverride() ?? (lite ? 30 : 60);
+  const minFrameMs = fps < 60 ? 1000 / fps - 4 : 0;
 
   ctx.root.innerHTML = `<div class="cz"><div class="cz-stage"></div><div class="cz-hud-root"></div></div>`;
   const wrap = ctx.root.firstElementChild as HTMLElement;
-  const stage = new Stage(wrap.querySelector(".cz-stage") as HTMLElement, { lite, fps: lite ? 30 : 60, scale: Number(startParam("res")) || 0 });
+  const stage = new Stage(wrap.querySelector(".cz-stage") as HTMLElement, { lite, fps, scale: Number(startParam("res")) || 0 });
   stage.fill = { x: 0.72, y: 0.78 };
   stage.center = { x: 0.17, y: -0.04 };
   const hud = createHud(wrap.querySelector(".cz-hud-root") as HTMLElement);
@@ -330,6 +332,7 @@ const mount: HostMount = (ctx) => {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     if (paused) return;
+    frameDrawn(now);
     const t0 = performance.now();
     update(dt);
     look.update(dt, stage.camera);
@@ -410,17 +413,11 @@ const mount: HostMount = (ctx) => {
 
   deal();
   raf = requestAnimationFrame(frame);
-  // perf=<url> (pnpm tv --perf): every 2s, tell the computer that installed the app how smoothly it's running
-  const perfTo = startParam("perf");
-  let lastError = "";
-  if (perfTo) window.addEventListener("error", (e) => (lastError = String(e.message).slice(0, 120)));
-  const perfTimer = perfTo
-    ? setInterval(() => {
-        const pieces = game.board.count.reduce((a, b) => a + b, 0);
-        const body = JSON.stringify({ look: lookId, board: `${game.w}x${game.h}`, pieces, chain: busy, paused, ...stage.perf(), error: lastError });
-        void fetch(perfTo, { method: "POST", mode: "no-cors", body }).catch(() => {});
-      }, 2000)
-    : 0;
+  // perf=… (pnpm perf, pnpm tv --perf): the frame monitor adds these to each report
+  const offPerf = setPerfExtras(() => {
+    const { fps: _fps, worst: _worst, ...s } = stage.perf();
+    return { look: lookId, board: `${game.w}x${game.h}`, pieces: game.board.count.reduce((a, b) => a + b, 0), chain: busy, ...s };
+  });
   // dev only: poke at the game from the browser console
   if (import.meta.env.DEV) {
     (window as unknown as { __cascade: unknown }).__cascade = {
@@ -437,7 +434,7 @@ const mount: HostMount = (ctx) => {
   return {
     dispose() {
       cancelAnimationFrame(raf);
-      clearInterval(perfTimer);
+      offPerf();
       offs.forEach((o) => o());
       director.stop();
       look.dispose();

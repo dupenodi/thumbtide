@@ -6,6 +6,8 @@ import type { Host, HostPlayer } from "@thumbtide/sdk";
 import { colorFor } from "../../config.ts";
 import { audio } from "../../shell/sound.ts";
 import { isWebOS, startParam } from "../../shell/tv.ts";
+import { frameDrawn, setPerfExtras } from "../../shell/perf.ts";
+import { makeTour } from "./tour.ts";
 import { createGameAudio } from "./audio.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount } from "../types.ts";
@@ -90,9 +92,14 @@ const mount: HostMount = (ctx) => {
   const stickGain = spec.tune.stick ?? 150;
 
   const lite = isWebOS || !!startParam("lite");
-  const tuning = { ...DEFAULT_TUNING };
+  // lite (the TV): 15 joint passes instead of 30. Heavy chains cost about a third less per step; the mean chain
+  // stretch goes from 0.05 to 0.1 px (measured, 4 orb maces + plates + a worm), which nobody can see.
+  const tuning = { ...DEFAULT_TUNING, ...(lite ? { passes: 15 } : {}) };
   const arena = new Arena(tuning);
-  const sound = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite") });
+  // the melee tour (TV tests only): every melee weapon in turn, with physics and fight numbers in each perf report
+  const tour = import.meta.env.VITE_PERF === "1" && startParam("tour") === "melee" ? makeTour(arena, Math.max(2, Math.min(4, Number(startParam("bots")) || 3)), audio()) : null;
+  const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite") });
+  const sound = tour ? tour.wrapSound(sound0) : sound0;
   sound?.setMusicOn(ctx.settings().music !== false);
   /** The material of a machine's striking part, for the hit sound. */
   const materialOf = (m: Machine): Material => {
@@ -487,6 +494,20 @@ const mount: HostMount = (ctx) => {
 
   const tickPhase = (real: number) => {
     phaseFor += real;
+    if (phase === "fight" && tour) {
+      // the tour never ends a round: wrecks come back, and the weapons change every set
+      const set = tour.tick(real);
+      for (const [i, s] of seated().entries()) {
+        if (set) {
+          s.weapon = set[i % set.length]!;
+          s.sidearm = null;
+          s.plate = null;
+          spawn(s);
+        } else if (s.m && !s.m.alive && arena.t - s.m.diedAt > 1.5) spawn(s);
+      }
+      if (set) hudDirty = true;
+      return;
+    }
     if (phase === "fight") {
       // the round ends when one team (or one machine) is left flying
       if (teamsAlive().size <= 1 && callAt < 0) callAt = CALL_S;
@@ -736,30 +757,17 @@ const mount: HostMount = (ctx) => {
     }
   };
 
-  // perf=<url> (pnpm tv --perf=hammer): every 2 s, tell the computer that installed the app how smoothly it runs.
-  const perfTo = startParam("perf");
-  let perfFrames = 0;
-  let perfWorst = 0;
-  let perfSince = performance.now();
-  const perfTick = (now: number, frameMs: number) => {
-    if (!perfTo) return;
-    perfFrames++;
-    perfWorst = Math.max(perfWorst, frameMs);
-    if (now - perfSince < 2000) return;
+  // Perf test builds (`pnpm tv --perf=hammer`): the shared frame monitor sends the frame rate; add the game's numbers.
+  const offPerf = setPerfExtras(() => {
     const rect = canvas.getBoundingClientRect();
-    const body = JSON.stringify({
-      fps: Math.round((perfFrames * 1000) / (now - perfSince)),
-      worst: Math.round(perfWorst),
-      scale: rect.width ? canvas.width / (rect.width * (window.devicePixelRatio || 1)) : 1,
+    return {
+      scale: rect.width ? Math.round((canvas.width / (rect.width * (window.devicePixelRatio || 1))) * 100) / 100 : 1,
       canvas: `${canvas.width}x${canvas.height}`,
       phase,
       machines: arena.machines.length,
-    });
-    void fetch(perfTo, { method: "POST", mode: "no-cors", body }).catch(() => {});
-    perfFrames = 0;
-    perfWorst = 0;
-    perfSince = now;
-  };
+      ...(tour ? tour.report() : {}),
+    };
+  });
 
   // ---- sound per frame -----------------------------------------------------------------------------
   const stunned = new Set<Machine>();
@@ -795,7 +803,6 @@ const mount: HostMount = (ctx) => {
     if (paused) return;
     const cap = capFps();
     if (cap && now - last < 1000 / cap - 4) return;
-    perfTick(now, now - last);
     const real = Math.min(0.1, (now - last) / 1000);
     last = now;
     acc += real;
@@ -806,7 +813,14 @@ const mount: HostMount = (ctx) => {
     let steps = 0;
     while (acc >= STEP && steps < maxSteps) {
       for (const s of seated()) readInput(s);
-      arena.step();
+      if (tour) {
+        const t0 = performance.now();
+        arena.step();
+        tour.stepped(performance.now() - t0);
+        tour.observe(arena.events);
+      } else {
+        arena.step();
+      }
       clashCd -= STEP;
       handleEvents();
       acc -= STEP;
@@ -822,6 +836,7 @@ const mount: HostMount = (ctx) => {
     soundFrame();
     fx.update(real);
     renderer.draw(arena, Math.min(1, acc / STEP), fx);
+    frameDrawn(now);
     maybeDrawHud();
   };
 
@@ -831,6 +846,7 @@ const mount: HostMount = (ctx) => {
 
   return {
     dispose() {
+      offPerf();
       sound?.dispose();
       cancelAnimationFrame(raf);
       removeEventListener("resize", fit);

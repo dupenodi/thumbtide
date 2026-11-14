@@ -1,6 +1,6 @@
 import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 /** First LAN IPv4, so the QR code on the TV points somewhere a phone can reach in dev. */
 function lanIp(): string {
@@ -12,6 +12,26 @@ function lanIp(): string {
   return "localhost";
 }
 
+/**
+ * Test-only code (the frame monitor, the perf sandbox's injected scripts) must never ship. Builds without
+ * VITE_PERF=1 fail if any of its markers turn up in the bundle. See tools/perf.
+ */
+function noPerfCode(): Plugin {
+  const markers = ["__thumbtidePerf", "__gpuSlowdown", "__refreshHz", "__probe"];
+  return {
+    name: "thumbtide:no-perf-code",
+    apply: "build",
+    generateBundle(_, bundle) {
+      if (process.env.VITE_PERF === "1") return;
+      for (const [file, chunk] of Object.entries(bundle)) {
+        if (chunk.type !== "chunk") continue;
+        const hit = markers.find((m) => chunk.code.includes(m));
+        if (hit) this.error(`${file} contains perf-test code (${hit}). Keep it behind PERF_BUILD (src/shell/perf.ts).`);
+      }
+    },
+  };
+}
+
 export default defineConfig(({ command, mode }) => {
   // `vite build --mode tv`: the TV page alone, packaged as an LG webOS app (scripts/tv.mjs).
   // It's opened from file://, so paths are relative and everything goes in one plain script:
@@ -19,6 +39,7 @@ export default defineConfig(({ command, mode }) => {
   const tv = mode === "tv";
   return {
     base: tv ? "./" : "/",
+    plugins: [noPerfCode()],
     define: {
       __LAN_IP__: JSON.stringify(command === "serve" ? lanIp() : ""),
     },

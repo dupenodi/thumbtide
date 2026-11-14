@@ -1,0 +1,13 @@
+{
+  "name": "@thumbtide/perf",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Performance tools for Thumbtide on LG webOS TVs: sandbox, TV capture, probe. Never part of the TV app.",
+  "scripts": {
+    "perf": "node cli.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.56.1"
+  }
+}

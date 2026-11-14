@@ -332,8 +332,32 @@ test("tiers: heavier weapons in a class have a heavier striking part, and the sa
   assert.ok(mallet < hammer && hammer < maul, `mallet ${mallet}, hammer ${hammer}, maul ${maul}`);
 });
 
+test("slow motion: a very hard hit on a machine slows time, an ordinary one doesn't, and the toggle turns it off", () => {
+  const hitAt = (speed: number, slomo: number) => {
+    const a = arena();
+    a.tuning.slomo = slomo;
+    const v = a.add({ id: 1, name: "V", color: "#f00", weapon: "hammer", x: 400, y: 270 });
+    const h = a.add({ id: 2, name: "H", color: "#00f", weapon: "krankhammer", x: 400, y: 120 });
+    (a as unknown as { destroy(m: typeof v): void }).destroy(v);
+    let slowed = false;
+    for (let i = 0; i < 30 && !slowed; i++) {
+      const dx = v.hull.x - h.striker.x;
+      const dy = v.hull.y - h.striker.y;
+      const d = Math.hypot(dx, dy) || 1;
+      if (i < 3) h.striker.setVelocity((dx / d) * speed, (dy / d) * speed, 0, 0.02);
+      a.step();
+      if (a.timewarp < 1) slowed = true;
+    }
+    return slowed;
+  };
+  assert.equal(hitAt(1400, 1), true, "a 1400 px/s krank hammer hit");
+  assert.equal(hitAt(250, 1), false, "a 250 px/s tap");
+  assert.equal(hitAt(1400, 0), false, "slow motion off");
+});
+
 test("plates: two per machine, the shield spreads them and halves thrust, a fast hard hit knocks one off", () => {
   const a = arena();
+  a.tuning.slomo = 0;
   const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", plate: "woodlight", x: 400, y: 270 });
   assert.equal(m.plates.length, 2);
   for (let i = 0; i < 60; i++) a.step();

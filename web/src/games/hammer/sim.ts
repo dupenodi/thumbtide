@@ -31,6 +31,12 @@ const BALL_CONTACTS = 5;
 const SHOT_LIFE = 1.5;
 /** At most this many shots in the air (each is a body: they count in the TV's body budget). The oldest goes first. */
 export const MAX_SHOTS = 24;
+/**
+ * Slow-motion limits. The exe uses v > 27 (cut > 4); ours are lower so that about the hardest 1 % of hits on a
+ * machine (impact ≳ 90) slow time. Measured: impacts p99 83, p99.9 117, max 167 in a soak of every melee weapon.
+ */
+export const SLOMO_V = 10;
+export const SLOMO_CUT = 3;
 /** A bullet does 3x damage against monster flesh (the exe tags it 0x6c). */
 const MONSTER_SHOT_BONUS = 3;
 
@@ -753,9 +759,11 @@ export class Arena {
     if (dmg <= 0) return;
     this.damage(victim, dmg, by.m, owned, impact, cut, c.x, c.y);
 
-    // GAME_SLOMO (0x483b94): v = 0.15 · M · (40000/(victimMass + 15001) + 0.25); v > 27, or a fast blade, slows time.
+    // GAME_SLOMO (0x483b94): v = 0.15 · M · (40000/(victimMass + 15001) + 0.25); v > 27, or a fast blade (cut > 4),
+    // slows time. OURS: the limits are SLOMO_V and SLOMO_CUT. With the exe's 27, a hit on a machine needs an impact
+    // of about 243, and in a 30-minute soak of every melee weapon the hardest hit was 167: slow motion never showed.
     const v = 0.15 * impact * (40000 / (vBody.mass + 15001) + 0.25);
-    if ((v > 27 || cut > 4) && this.tuning.slomo >= 1 && this.timewarp === 1) {
+    if ((v > SLOMO_V || cut > SLOMO_CUT) && this.tuning.slomo >= 1 && this.timewarp === 1) {
       this.timewarp = 0.3;
       this.slomoTimer = 2;
     }

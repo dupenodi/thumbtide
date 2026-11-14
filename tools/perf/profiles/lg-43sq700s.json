@@ -1,0 +1,258 @@
+{
+  "name": "LG 43SQ700S-WB",
+  "measured": "2026-11-13T19:28:23.325Z",
+  "hardware": {
+    "model": "43SQ700S-WB",
+    "board": "K8LP_DVB_AJ",
+    "webOS": {
+      "sdk": "7.0.0",
+      "firmware": "03.07.00"
+    },
+    "kernel": "5.4.96-83.17.manas.id.smart.3",
+    "cpu": {
+      "cores": 4,
+      "types": "2× Cortex-A55 + 2× Cortex-A75",
+      "maxMHz": 1000
+    },
+    "memory": {
+      "totalMB": 1255,
+      "availableMB": 148,
+      "swapMB": 900,
+      "ramSpec": "1.5 GB"
+    },
+    "storage": "8 GB",
+    "gpuDriver": "PowerVR (IMG)",
+    "gpu": "PowerVR Rogue BXE-4-32",
+    "browser": "Chrome/87.0.4280.88"
+  },
+  "gpuWeights": {
+    "fill": 1,
+    "alu": 1,
+    "texture": 1
+  },
+  "gpuBias": 3.358,
+  "calibration": {
+    "when": "2026-11-13T19:26:44.385Z",
+    "host": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3050 Laptop GPU (0x000025A2) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "scenarios": {
+      "wetpaint": {
+        "tv": 5.7,
+        "sandbox": 17.9,
+        "bias": 5.97
+      },
+      "cascade-culture": {
+        "tv": 48.8,
+        "sandbox": 59,
+        "bias": 2.3
+      },
+      "cascade-marbles": {
+        "tv": 30.8,
+        "sandbox": 52,
+        "bias": 3.21
+      },
+      "cascade-reactor": {
+        "tv": 51.7,
+        "sandbox": 58.5,
+        "bias": 2.15
+      },
+      "cult": {
+        "tv": 23,
+        "sandbox": 54.7,
+        "bias": 4.52
+      }
+    },
+    "tv": {
+      "lobby": {
+        "fps": 59.3,
+        "p95": 16.7,
+        "worst": 83.3,
+        "longPct": 0.6,
+        "minScale": null,
+        "heapMB": 10,
+        "error": null
+      },
+      "wetpaint": {
+        "fps": 5.7,
+        "p95": 400,
+        "worst": 1116.6,
+        "longPct": 93.8,
+        "minScale": 0.35,
+        "heapMB": 10,
+        "error": null
+      },
+      "cascade-culture": {
+        "fps": 48.8,
+        "p95": 33.3,
+        "worst": 316.7,
+        "longPct": 17.1,
+        "minScale": 0.45000000000000007,
+        "heapMB": 10,
+        "error": null
+      },
+      "cascade-marbles": {
+        "fps": 30.8,
+        "p95": 83.3,
+        "worst": 416.7,
+        "longPct": 57.8,
+        "minScale": 0.45,
+        "heapMB": 11,
+        "error": null
+      },
+      "cascade-reactor": {
+        "fps": 51.7,
+        "p95": 33.3,
+        "worst": 300,
+        "longPct": 9.7,
+        "minScale": 0.55,
+        "heapMB": 10,
+        "error": null
+      },
+      "cult": {
+        "fps": 23,
+        "p95": 300,
+        "worst": 850,
+        "longPct": 13.2,
+        "minScale": null,
+        "heapMB": 10,
+        "error": null
+      }
+    }
+  },
+  "probe": {
+    "when": "2026-11-13T19:28:23.325Z",
+    "env": {
+      "userAgent": "Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36 WebAppManager",
+      "hardwareConcurrency": 4,
+      "deviceMemory": 1,
+      "screen": {
+        "width": 1920,
+        "height": 1080,
+        "availWidth": 1920,
+        "availHeight": 1080
+      },
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "devicePixelRatio": 2,
+      "jsHeapLimitMB": 326,
+      "webOS": true
+    },
+    "cpu": {
+      "math": 144.78,
+      "objects": 104.14,
+      "typed": 101,
+      "json": 60.68,
+      "dom": 206.84
+    },
+    "gpu": {
+      "info": {
+        "vendor": "WebKit",
+        "renderer": "WebKit WebGL",
+        "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)",
+        "glsl": "WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)",
+        "unmaskedVendor": "Imagination Technologies",
+        "unmaskedRenderer": "PowerVR Rogue BXE-4-32",
+        "maxTextureSize": 8192,
+        "maxRenderbufferSize": 8192,
+        "maxViewport": [
+          8192,
+          8192
+        ],
+        "maxTextureUnits": 16,
+        "maxVertexTextureUnits": 16,
+        "maxVaryings": 15,
+        "maxFragmentUniforms": 1024,
+        "maxVertexUniforms": 1024,
+        "fragmentHighp": {
+          "precision": 23,
+          "rangeMin": 127,
+          "rangeMax": 127
+        },
+        "webgl2": true,
+        "maxSamples": 4,
+        "extensions": [
+          "ANGLE_instanced_arrays",
+          "EXT_blend_minmax",
+          "EXT_color_buffer_half_float",
+          "EXT_float_blend",
+          "EXT_shader_texture_lod",
+          "OES_element_index_uint",
+          "OES_fbo_render_mipmap",
+          "OES_standard_derivatives",
+          "OES_texture_float",
+          "OES_texture_half_float",
+          "OES_vertex_array_object",
+          "WEBGL_color_buffer_float",
+          "WEBGL_compressed_texture_astc",
+          "WEBGL_compressed_texture_etc",
+          "WEBGL_compressed_texture_etc1",
+          "WEBGL_debug_renderer_info",
+          "WEBGL_debug_shaders",
+          "WEBGL_depth_texture",
+          "WEBKIT_WEBGL_depth_texture",
+          "WEBGL_draw_buffers",
+          "WEBGL_lose_context",
+          "WEBKIT_WEBGL_lose_context",
+          "WEBGL_multi_draw"
+        ],
+        "extensions2": [
+          "EXT_color_buffer_float",
+          "EXT_color_buffer_half_float",
+          "EXT_float_blend",
+          "WEBGL_compressed_texture_astc",
+          "WEBGL_compressed_texture_etc",
+          "WEBGL_compressed_texture_etc1",
+          "WEBGL_debug_renderer_info",
+          "WEBGL_debug_shaders",
+          "WEBGL_lose_context",
+          "WEBGL_multi_draw"
+        ]
+      },
+      "fill": {
+        "msPerLayer": 1.911,
+        "overheadMs": 4.08,
+        "mpixPerSec": 1085
+      },
+      "alu": {
+        "msPerLayer": 90.506,
+        "overheadMs": 4.56,
+        "mpixPerSec": 23
+      },
+      "texture": {
+        "msPerLayer": 12.74,
+        "overheadMs": 5.53,
+        "mpixPerSec": 163
+      },
+      "drawCalls": {
+        "usPerCall": 2.76
+      },
+      "upload": {
+        "ms1024": 27.8
+      },
+      "compile": {
+        "msPerProgram": 58.8
+      }
+    },
+    "canvas2d": {
+      "msPerFrame": 32.81
+    },
+    "pacing": {
+      "hz": 56,
+      "meanMs": 17.85,
+      "p95Ms": 16.67,
+      "maxMs": 100
+    },
+    "compositing": {
+      "layersMs": {
+        "0": 16.67,
+        "1": 17.25,
+        "2": 16.67,
+        "4": 22.56,
+        "8": 51.15
+      },
+      "msPerLayer": 5.09,
+      "repaintMs": null
+    }
+  }
+}

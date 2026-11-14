@@ -4,6 +4,7 @@
  */
 import { Host, local, type HostPlayer } from "@thumbtide/sdk";
 import { startParam } from "./tv.ts"; // first: the LG TV app's remote, screen saver and fallbacks
+import "./perf.ts"; // the frame monitor for performance tests (off unless the page starts with perf=…)
 import "../style.css";
 import { RELAY_URL } from "../config.ts";
 import { gameById } from "../games/registry.ts";

@@ -8,6 +8,7 @@ import { createBots, isBot } from "./bots.ts";
 import { createFx } from "./fx.ts";
 import { createHud } from "./hud.ts";
 import { PaintView, type Quality } from "./paint/view.ts";
+import { fpsOverride, frameDrawn, setPerfExtras } from "../../shell/perf.ts";
 import { isWebOS } from "../../shell/tv.ts";
 import { gameById } from "../registry.ts";
 import {
@@ -43,7 +44,8 @@ const mount: HostMount = (ctx) => {
   const params = new URLSearchParams(location.search);
   // TVs have phone-class graphics chips that also draw the TV's own menus: go easy on them
   const quality: Quality = params.get("quality") === "low" || (isWebOS && params.get("quality") !== "high") ? "low" : "high";
-  const minFrameMs = isWebOS ? 1000 / 30 - 4 : 0; // 30fps on a TV
+  const fps = fpsOverride() ?? (isWebOS ? 30 : 60); // 30fps on a TV; fps=60 lifts the cap, for tests at the target
+  const minFrameMs = fps < 60 ? 1000 / fps - 4 : 0;
   const simOptions = (s: Settings) => ({
     roundLength: roundOverride() ?? (Number(s.round) || ROUND_SECONDS),
     powerups: s.powerups !== false,
@@ -57,7 +59,8 @@ const mount: HostMount = (ctx) => {
   const wrap = ctx.root.firstElementChild as HTMLElement;
   const sim = new Sim(simOptions(ctx.settings()));
   const view = new PaintView(wrap.querySelector(".wp-stage") as HTMLElement, sim, quality);
-  if (minFrameMs) view.targetMs = 1000 / 30;
+  if (fps < 60) view.targetMs = 1000 / fps;
+  const offPerf = setPerfExtras(() => ({ quality, scale: view.resolution, phase: sim.phase, brushes: sim.brushes.size }));
   const fx = createFx(wrap, view);
   const hud = createHud(wrap, sim, view);
   const bots = createBots(sim);
@@ -295,6 +298,7 @@ const mount: HostMount = (ctx) => {
     if (now - last < minFrameMs) return;
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
+    frameDrawn(now);
     let painted = 0;
     if (!paused) {
       acc += dt;
@@ -363,6 +367,7 @@ const mount: HostMount = (ctx) => {
   return {
     dispose() {
       cancelAnimationFrame(raf);
+      offPerf();
       sfx?.dispose();
       offs.forEach((o) => o());
       fx.dispose();
