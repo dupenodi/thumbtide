@@ -209,14 +209,17 @@ const mount: HostMount = (ctx) => {
   };
   /** Wave n: 1, 2, 2, 3, 4… worms (at most 4 alive); armoured worms from wave 3. They fly in from the sides. */
   const spawnWave = () => {
-    // fit the wave in the body budget (each worm is 10 bodies), but always at least one worm
-    const room = Math.floor(((lite ? BODY_BUDGET_LITE : BODY_BUDGET) - arena.world.bodies.length) / 10);
+    // fit the wave in the body budget (each worm is 10 bodies), but always at least one worm. When heavy weapons
+    // leave no room for a full worm, the one worm is shorter (core + jaw + at least 3 segments) to fit what is left.
+    const free = (lite ? BODY_BUDGET_LITE : BODY_BUDGET) - arena.world.bodies.length;
+    const room = Math.floor(free / 10);
     const n = Math.max(1, Math.min(MAX_MONSTERS, 1 + Math.floor(round / 2), room));
+    const segments = room < 1 ? free - 2 : undefined;
     for (let i = 0; i < n; i++) {
       const left = i % 2 === 0;
       const kind = round >= 3 && i % 2 === 1 ? "armoredworm" : "worm";
       const y = 120 + Math.random() * (VIEW_H - 240);
-      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, x: left ? -40 : VIEW_W + 40, y, dir: left ? 0 : Math.PI }));
+      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, x: left ? -40 : VIEW_W + 40, y, dir: left ? 0 : Math.PI, segments }));
     }
   };
 

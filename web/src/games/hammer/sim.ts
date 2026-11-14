@@ -253,9 +253,9 @@ export class Arena {
    * A monster at (x, y), its head pointing along `dir` (radians). It joins the machines list (it is hit, stunned and
    * knocked out like one) but flies by its own AI and has no weapon.
    */
-  addMonster(o: { id: number; team: number; kind: MonsterKind; x: number; y: number; dir: number; size?: number }): Machine {
+  addMonster(o: { id: number; team: number; kind: MonsterKind; x: number; y: number; dir: number; size?: number; segments?: number }): Machine {
     const size = o.size ?? 0.55 + Math.random() * 0.15;
-    const layout = wormLayout(o.kind, size, 0.35 + Math.random() * 0.65);
+    const layout = wormLayout(o.kind, size, 0.35 + Math.random() * 0.65, o.segments);
     const c = Math.cos(o.dir);
     const sn = Math.sin(o.dir);
     const m = {

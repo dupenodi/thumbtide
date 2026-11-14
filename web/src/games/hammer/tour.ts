@@ -83,6 +83,8 @@ export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | n
       }
       if (steps % JOINT_EVERY) return;
       for (const j of arena.world.joints) {
+        // the dual sets' spacer (type 0, necess 1) can't be met by design: it only pushes the two parts apart
+        if (j.necess <= 1) continue;
         const [ax, ay] = j.a.worldPoint(j.sax, j.say);
         const [bx, by] = j.b.worldPoint(j.sbx, j.sby);
         const len = Math.hypot(bx - ax, by - ay);

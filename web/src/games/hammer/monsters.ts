@@ -45,7 +45,13 @@ const box = (hx: number, hy: number) => [-hx, -hy, hx, -hy, hx, hy, -hx, hy];
 /** Segment scale from head to tail (thin tail). */
 const SEGMENTS = [1.0, 1.1, 1.1, 1.02, 0.86, 0.62, 0.5, 0.5];
 
-export function wormLayout(kind: MonsterKind, s: number, force: number): CreatureLayout {
+/**
+ * `segments` (3-8, default 8): a shorter worm for a tight body budget (the TV). It keeps the tapered tail: the first
+ * segments from the front, then the last two.
+ */
+export function wormLayout(kind: MonsterKind, s: number, force: number, segments = SEGMENTS.length): CreatureLayout {
+  const n = Math.max(3, Math.min(SEGMENTS.length, Math.round(segments)));
+  const segs = n >= SEGMENTS.length ? SEGMENTS : [...SEGMENTS.slice(0, n - 2), ...SEGMENTS.slice(-2)];
   const k = Math.max(0.1, Math.min(1, 1.4 * s));
   const coreHalf = 5 * k;
   const core: CreaturePart = { key: "core", mesh: box(coreHalf, coreHalf), density: 70, sharpness: 1, x: 0, angle: 0, look: "core" };
@@ -60,7 +66,7 @@ export function wormLayout(kind: MonsterKind, s: number, force: number): Creatur
   let prevKey = "core";
   let prevHalf = coreHalf;
   let prevX = 0;
-  SEGMENTS.forEach((v, i) => {
+  segs.forEach((v, i) => {
     const half = 17 * v * s;
     const anchorX = prevX - 0.7 * prevHalf;
     const x = anchorX - half;

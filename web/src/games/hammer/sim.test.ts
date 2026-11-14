@@ -355,6 +355,28 @@ test("slow motion: a very hard hit on a machine slows time, an ordinary one does
   assert.equal(hitAt(1400, 0), false, "slow motion off");
 });
 
+test("a short worm (for a tight body budget) has fewer bodies, holds together and still hunts", () => {
+  const ar = arena();
+  ar.tuning.hover = 1;
+  const m = ar.add({ id: 0, team: 0, name: "a", color: "#f00", weapon: "hammer", x: 700, y: 270 });
+  const before = ar.world.bodies.length;
+  const w = ar.addMonster({ id: 50, team: 9, kind: "worm", x: 200, y: 270, dir: 0, segments: 3 });
+  assert.equal(ar.world.bodies.length - before, 5); // core + jaw + 3 segments
+  let closest = Infinity;
+  let worst = 0;
+  for (let i = 0; i < 250; i++) {
+    ar.step();
+    closest = Math.min(closest, Math.hypot(w.hull.x - m.hull.x, w.hull.y - m.hull.y));
+    for (const j of w.joints) {
+      const [ax, ay] = j.a.worldPoint(j.sax, j.say);
+      const [bx, by] = j.b.worldPoint(j.sbx, j.sby);
+      worst = Math.max(worst, Math.abs(Math.hypot(bx - ax, by - ay) - j.radius));
+    }
+  }
+  assert.ok(closest < 200, `never got closer than ${closest.toFixed(0)} px`);
+  assert.ok(worst < 10, `a joint was off by ${worst.toFixed(1)} px`);
+});
+
 test("plates: two per machine, the shield spreads them and halves thrust, a fast hard hit knocks one off", () => {
   const a = arena();
   a.tuning.slomo = 0;
