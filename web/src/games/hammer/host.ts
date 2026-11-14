@@ -754,8 +754,12 @@ const mount: HostMount = (ctx) => {
     const real = Math.min(0.1, (now - last) / 1000);
     last = now;
     acc += real;
+    // Physics steps this frame. A slow frame means more steps next frame, which makes that frame slower too: on
+    // the TV a heavy scene spiralled down to ~19 fps. Lite stops at 3 steps (the game slows down instead, down to
+    // 20 fps); elsewhere 5. Time it can't catch up on is dropped.
+    const maxSteps = lite ? 3 : 5;
     let steps = 0;
-    while (acc >= STEP && steps < 6) {
+    while (acc >= STEP && steps < maxSteps) {
       for (const s of seated()) readInput(s);
       arena.step();
       clashCd -= STEP;
@@ -763,7 +767,7 @@ const mount: HostMount = (ctx) => {
       acc -= STEP;
       steps++;
     }
-    if (steps === 6) acc = 0;
+    if (acc >= STEP) acc %= STEP;
     tickPhase(real);
     soundFrame();
     fx.update(real);
