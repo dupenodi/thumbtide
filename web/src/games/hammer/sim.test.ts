@@ -355,6 +355,23 @@ test("slow motion: a very hard hit on a machine slows time, an ordinary one does
   assert.equal(hitAt(1400, 0), false, "slow motion off");
 });
 
+test("a worm hunting a machine at the top edge stays mostly in view (it steers back from the edges)", () => {
+  const ar = arena();
+  ar.tuning.hover = 1;
+  ar.tuning.damage = 0;
+  const m = ar.add({ id: 0, team: 0, name: "a", color: "#f00", weapon: "hammer", x: 200, y: 30 });
+  const w = ar.addMonster({ id: 50, team: 9, kind: "worm", x: -40, y: 60, dir: 0 });
+  let outside = 0;
+  const N = 600;
+  for (let i = 0; i < N; i++) {
+    // the machine hovers up at the top, under the score cards
+    m.hull.setVelocity((200 - m.hull.x) * 3, (30 - m.hull.y) * 3, 0, 0.02);
+    ar.step();
+    if (i > 150 && (w.hull.x < 0 || w.hull.x > VIEW_W || w.hull.y < 0)) outside++;
+  }
+  assert.ok(outside < (N - 150) * 0.1, `worm core outside the frame for ${outside} of ${N - 150} steps`);
+});
+
 test("a short worm (for a tight body budget) has fewer bodies, holds together and still hunts", () => {
   const ar = arena();
   ar.tuning.hover = 1;

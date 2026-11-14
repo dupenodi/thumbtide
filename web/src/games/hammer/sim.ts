@@ -11,6 +11,12 @@ import { armedSpec, type GunKind, type GunSpec, MACHINE, type PartSpec, PLATE_CO
 /** The fixed camera frame, px. 16:9. */
 export const VIEW_W = 960;
 export const VIEW_H = 540;
+/**
+ * Where AI fliers (bots, monsters) keep to: EDGE_M px inside the left, right and bottom edges, and below EDGE_TOP
+ * (the score cards cover the top ~75 px of the frame).
+ */
+export const EDGE_M = 60;
+export const EDGE_TOP = 110;
 /** px below the frame after which a falling wreck or weapon leaves play (the soft limit no longer holds it). */
 const OUT_OF_PLAY = 300;
 /** Real seconds per step. Hammerfight runs physics once per frame at GFX_FRAMERATE = 50. */
@@ -659,8 +665,13 @@ export class Arena {
       k = 0.5;
     }
     const wig = Math.sin(t * 5) * 0.6;
-    const ax = (hx * k - hy * wig) * 750 * st.layout.force;
-    const ay = (hy * k + hx * wig) * 750 * st.layout.force;
+    // Not in Hammerfight (its arenas have walls): near an edge, steer back inside the frame so the fight stays in
+    // view. The top margin is bigger: the score cards cover the top of the screen.
+    const edge = (v: number, lo: number, hi: number) => (v < lo ? (lo - v) / EDGE_M : v > hi ? -(v - hi) / EDGE_M : 0);
+    const ex = 2 * Math.max(-1.5, Math.min(1.5, edge(core.x, EDGE_M, VIEW_W - EDGE_M)));
+    const ey = 2 * Math.max(-1.5, Math.min(1.5, edge(core.y, EDGE_TOP, VIEW_H - EDGE_M)));
+    const ax = (hx * k - hy * wig + ex) * 750 * st.layout.force;
+    const ay = (hy * k + hx * wig + ey) * 750 * st.layout.force;
     // pull at the head end: the core and the jaw share the push for the whole body
     let mass = 0;
     for (const b of all) mass += b.mass;
