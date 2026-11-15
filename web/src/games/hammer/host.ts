@@ -92,7 +92,8 @@ const mount: HostMount = (ctx) => {
   const stickGain = spec.tune.stick ?? 150;
   const steer = spec.tune.steer ?? 8;
   const hold = spec.tune.hold ?? 0.5;
-  /** Stick (not in Hammerfight): the tilt sets a target speed; the thrust closes the gap, capped at stickGain. */
+  /** Stick (not in Hammerfight): the tilt sets a target speed; the thrust closes the gap. The cap grows with the tilt (full
+   *  from half tilt), so a thumb that rests near the centre gives a small force, not a full brake, and no step at the dead zone. */
   const stickPush = (m: Machine, x: number, y: number) => {
     const l = Math.hypot(x, y);
     if (l < 0.02) return;
@@ -101,10 +102,11 @@ const mount: HostMount = (ctx) => {
     const ty = (y / l) * top;
     let ix = steer * (tx - m.hull.vx) + hold * tx;
     let iy = steer * (ty - m.hull.vy) + hold * ty;
+    const cap = stickGain * Math.min(1, l / 0.5);
     const il = Math.hypot(ix, iy);
-    if (il > stickGain) {
-      ix *= stickGain / il;
-      iy *= stickGain / il;
+    if (il > cap) {
+      ix *= cap / il;
+      iy *= cap / il;
     }
     arena.pushRaw(m, ix, iy);
   };
