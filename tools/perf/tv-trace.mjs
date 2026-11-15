@@ -15,7 +15,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { device, fail, web } from "../../web/scripts/lib/webos.mjs";
+import { capture, device, fail, web } from "../../web/scripts/lib/webos.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const opts = Object.fromEntries(
@@ -25,6 +25,24 @@ const seconds = Number(opts.seconds) || 8;
 const app = opts.app || "com.thumbtide.tv";
 const label = (opts.label || "").replace(/[^\w.-]/g, "");
 const out = join(here, "captures", `trace-${new Date().toISOString().replace(/[:.]/g, "-")}${label ? `-${label}` : ""}`);
+
+// ---------------------------------------------------------------- the TV lock (as `pnpm perf capture` takes it)
+// DevTools on the TV app is heavy (docs/lg-tv.md: the TV froze once with --inspect): keep traces short, one at a
+// time, and never while someone else measures or plays.
+const LOCK = "/tmp/thumbtide-perf.lock";
+if (!opts.cdp) {
+  const tv = device();
+  const sh = (cmd) => capture("ares-novacom", "-d", tv.name, "-r", cmd).text.replace(/^\[Info\].*\n/gm, "").trim();
+  const lines = sh(`cat ${LOCK} 2>/dev/null; echo; cat /proc/uptime`).split("\n").filter(Boolean);
+  const up = Number(lines[lines.length - 1]?.split(" ")[0]);
+  if (lines.length > 1) {
+    const [who, since] = lines[0].split(" ");
+    const age = up - Number(since);
+    if (age >= 0 && age < 900 && !process.argv.includes("--force")) fail(`The TV is busy: ${who} took it ${Math.round(age)} s ago. Wait, or add --force.`);
+  }
+  sh(`echo "trace-${process.pid} $(cut -d' ' -f1 /proc/uptime)" > ${LOCK}`);
+  process.on("exit", () => capture("ares-novacom", "-d", tv.name, "-r", `rm -f ${LOCK}`));
+}
 
 // ---------------------------------------------------------------- DevTools connection through ares-inspect
 // (--cdp=http://localhost:9222 traces a local Chrome instead: to test this tool without the TV)

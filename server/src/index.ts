@@ -186,9 +186,22 @@ export function startServer(opts: StartOptions = {}) {
     const player = result;
     rec?.({ room: room.code, ev: "phone-open", id: player.info.id, name: player.info.name });
     const limiter = new RateLimiter();
+    let lastSig = "";
+    let lastIn = 0;
     ws.on("message", (raw) => {
       const msg = parseFrame(ws, raw, limiter) as ControllerToServer | null;
-      if (msg && msg.t !== "ping") rec?.({ room: room.code, ev: "phone", id: player.info.id, m: msg });
+      if (msg && msg.t !== "ping" && rec) {
+        // stick input comes ~60 times a second: keep every message whose buttons or mode change, and the stick
+        // itself at most every 100 ms (an hour of 8 phones was ~150-200 MB with every message)
+        const d = msg.t === "in" && msg.d && typeof msg.d === "object" ? (msg.d as Record<string, unknown>) : null;
+        const sig = d ? Object.entries(d).filter(([k]) => k !== "x" && k !== "y").map(([k, v]) => `${k}${v}`).join() : "";
+        const now = Date.now();
+        if (!d || sig !== lastSig || now - lastIn >= 100) {
+          lastSig = sig;
+          lastIn = now;
+          rec({ room: room.code, ev: "phone", id: player.info.id, m: msg });
+        }
+      }
       if (msg && !room.closed) room.onControllerMessage(player, msg);
     });
     ws.on("close", (code) => {

@@ -121,7 +121,7 @@ const mount: HostMount = (ctx) => {
   const lite = isWebOS || !!startParam("lite");
   // lite (the TV): 15 joint passes instead of 30. Heavy chains cost about a third less per step; the mean chain
   // stretch goes from 0.05 to 0.1 px (measured, 4 orb maces + plates + a worm), which nobody can see.
-  // perf A/B (perf builds only): passes=N joint passes, res=W canvas width, hud=off, draw=off (the canvas keeps one picture)
+  // perf A/B (perf builds only): passes=N joint passes, canvasw=W canvas width (min 320), hud=off, draw=off (the canvas keeps one picture)
   const abPasses = import.meta.env.VITE_PERF === "1" ? Number(startParam("passes")) || 0 : 0;
   const abHudOff = import.meta.env.VITE_PERF === "1" && startParam("hud") === "off";
   const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
@@ -161,7 +161,9 @@ const mount: HostMount = (ctx) => {
   const canvas = root.querySelector<HTMLCanvasElement>(".hm-canvas")!;
   const hud = new Hud(root);
   // The TV draws at 1280 x 720 and lets the screen scale it up; its GPU can't afford a 4K canvas.
-  const resAB = import.meta.env.VITE_PERF === "1" ? Number(startParam("res")) || 0 : 0;
+  // canvasw=<px>: the canvas width (perf A/B; `res` is a fraction in other games, so not that name)
+  const resAB = import.meta.env.VITE_PERF === "1" ? Math.max(0, Number(startParam("canvasw")) || 0) : 0;
+  if (resAB && resAB < 320) throw new Error(`canvasw=${resAB}: give the canvas width in pixels (320 or more)`);
   const skipAB = import.meta.env.VITE_PERF === "1" && startParam("skip") ? new Set(startParam("skip")!.split("+")) : undefined;
   const renderer = new Renderer(canvas, { maxDpr: isWebOS ? 1 : 2, maxWidth: resAB || (isWebOS ? 1280 : 4096), names: true, skip: skipAB });
 

@@ -38,7 +38,12 @@ its scenarios (`cascade`). Options: `--seconds=12 --warmup=4 --target=60 --verbo
   like the perf markers. Games mark sections with `profBegin(name)` / `profEnd(name)` (no-ops in other builds).
 - `tv-trace.mjs` writes `tools/perf/captures/trace-*/`: `trace.json` (load it in Chrome DevTools → Performance),
   `layers.json` and `summary.md`. `--cdp=http://localhost:9222` traces a local Chrome instead (to test the tool).
-  The element names in the layer list are approximate (layers change while it reads them).
+  The element names in the layer list are approximate (layers change while it reads them). It takes the TV lock.
+  It uses DevTools on the TV app (ares-inspect), which docs/lg-tv.md warns about (the TV froze once): keep traces
+  short (≤ 10 s) and one at a time.
+- The relay's play-test recorder (`THUMBTIDE_RECORD=<file>`) keeps button changes and the stick at most every
+  100 ms per phone: about 40 MB per hour for 8 phones (a phone sends ~30 stick messages a second; unsampled
+  that was ~15 MB per hour per phone).
 - Every DOM element above the game canvas that the browser can't merge becomes a composited layer, and the TV
   composites each one at 4K every frame: count the layers before you blame a HUD's JavaScript.
 
