@@ -1,12 +1,21 @@
-// Play-test report from a relay recording (THUMBTIDE_RECORD): node tools/perf/playtest-report.mjs <file.jsonl> <room>
+// Play-test report from a relay recording (THUMBTIDE_RECORD): node tools/perf/playtest-report.mjs <file.jsonl> <room> [--player=<id or name>]
 // Timeline (phases, picks, joins), then per round: weapon, damage dealt and taken, K.O., and stick use (touch %, full tilt %,
 // circles per second, direction flips, idle gaps, fire and shield presses). Rotor Brawl only.
 import { readFileSync } from "node:fs";
-const [file, room] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const [file, room] = args.filter((a) => !a.startsWith("--"));
+// --player=<id or name>: whose phone to report (default: the first phone that joined)
+const who = args.find((a) => a.startsWith("--player="))?.slice(9);
 const L = readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((x) => x.room === room);
+if (!L.length) {
+  console.log(`No messages for room ${room} in ${file}.`);
+  process.exit(1);
+}
 const t0 = L[0].ts;
 const T = (ts) => `${String(Math.floor((ts - t0) / 60000)).padStart(2, "0")}:${String(Math.floor(((ts - t0) / 1000) % 60)).padStart(2, "0")}`;
-const me = L.find((x) => x.ev === "phone-open")?.id;
+const phones = L.filter((x) => x.ev === "phone-open");
+const me = (who ? phones.find((x) => x.id === who || x.name === who) : phones[0])?.id;
+if (phones.length) console.log(`Phones: ${[...new Map(phones.map((p) => [p.id, p.name])).entries()].map(([id, n]) => `${n} (${id})`).join(", ")}`);
 
 // rounds from the shared state
 const rounds = [];
