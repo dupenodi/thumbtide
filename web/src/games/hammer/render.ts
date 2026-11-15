@@ -613,6 +613,13 @@ export class Renderer {
     const ctx = this.ctx;
     for (const b of arena.world.bodies) {
       const t = b.data as Tag | null;
+      if (t?.gibUntil !== undefined) {
+        // a wreck's shard: its colour while it can still hurt, then scorched grey
+        this.enter(b, alpha);
+        this.solid(b, { fill: arena.t < t.gibUntil ? t.m.color : "#4a4d57", stroke: "rgba(0,0,0,0.55)" }, 1.5);
+        ctx.restore();
+        continue;
+      }
       if (!t?.plate) continue;
       const pal = PALETTE[PLATES[t.plate].material];
       if (!t.loose && t.m.alive) {

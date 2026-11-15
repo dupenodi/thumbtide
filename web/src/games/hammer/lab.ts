@@ -224,6 +224,9 @@ function handleEvents(): void {
       // nothing to show beyond the weapon snapping on, or the shot itself
     } else if (e.type === "clash") {
       fx.burst(e.x, e.y, 4 + Math.min(10, Math.round(e.impact / 10)), 220, "#cfe3ff", 1.5);
+    } else if (e.type === "slam") {
+      fx.burst(e.x, e.y, 12, 260, "#ffe066", 2);
+      fx.text(e.x, e.y - 20, "SLAM", "#ffe066", 18);
     } else {
       fx.burst(e.x, e.y, 40, 420, "#ffb547", 3);
       fx.burst(e.x, e.y, 16, 200, e.victim.color, 4);

@@ -136,6 +136,73 @@ function hammerHit(speed: number, frames: number, setup?: (ar: Arena, b: ReturnT
   return { ar, a, b };
 }
 
+test("hit types: a weapon pressed slowly against a machine does no damage; the same weapon swung in does", () => {
+  const press = () => {
+    const ar = arena();
+    ar.tuning.slomo = 0;
+    const a = ar.add({ id: 0, name: "a", color: "#f00", weapon: "hammer", x: 300, y: 200 });
+    const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 385, y: 200 });
+    for (let i = 0; i < 5; i++) ar.step();
+    let dmg = 0;
+    // push the head at b's hull at 60 px/s for 2 s (resting, grinding contact)
+    for (let i = 0; i < 100; i++) {
+      const dx = b.hull.x - a.striker.x;
+      const dy = b.hull.y - a.striker.y;
+      const l = Math.hypot(dx, dy) || 1;
+      a.striker.setVelocity((dx / l) * 60, (dy / l) * 60, 0, 0.02);
+      ar.step();
+      for (const e of ar.events) if (e.type === "hit" && e.victim === b) dmg += e.dmg;
+      ar.events.length = 0;
+    }
+    return dmg;
+  };
+  assert.equal(press(), 0);
+  const { b } = hammerHit(600, 30);
+  assert.ok(b.hp < 100, "a swung hammer did no damage");
+});
+
+test("slam: a machine stunned by a hit gets more stun when it then hits the floor", () => {
+  const { ar, b } = hammerHit(800, 6);
+  assert.ok(b.stun > 0 && b.slamUntil > ar.t, "no stun window after a big hit");
+  const before = b.stun;
+  // drive it into the floor
+  b.hull.place(b.hull.x, 520, 0);
+  b.hull.setVelocity(0, 400, 0, 0.02);
+  let slammed = false;
+  for (let i = 0; i < 5; i++) {
+    ar.step();
+    if (ar.events.some((e) => e.type === "slam" && e.m === b)) slammed = true;
+    ar.events.length = 0;
+  }
+  assert.ok(slammed, "no slam event");
+  assert.ok(b.stun > before - 0.2, `stun ${b.stun} (was ${before})`);
+  assert.ok(b.slamUntil === 0, "a slam is once per stunning hit");
+});
+
+test("gibs: a wreck bursts into shards that hurt for a moment, then pass through", () => {
+  const ar = arena();
+  ar.tuning.slomo = 0;
+  const a = ar.add({ id: 0, name: "a", color: "#f00", weapon: "hammer", x: 300, y: 200 });
+  const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 600, y: 200 });
+  ar.wreck(a);
+  const gibs = ar.world.bodies.filter((x) => (x.data as { gibUntil?: number } | null)?.gibUntil !== undefined);
+  assert.equal(gibs.length, DEFAULT_TUNING.gibs);
+  assert.ok(gibs.every((g) => g.solid && Math.hypot(g.vx, g.vy) > 150), "shards fly out, solid");
+  // throw one shard hard at b
+  const g = gibs[0]!;
+  g.place(b.hull.x - 40, b.hull.y, 0);
+  g.setVelocity(700, 0, 0, 0.02);
+  let dmg = 0;
+  for (let i = 0; i < 10; i++) {
+    ar.step();
+    for (const e of ar.events) if (e.type === "hit" && e.victim === b) dmg += e.dmg;
+    ar.events.length = 0;
+  }
+  assert.ok(dmg > 0, "a flying shard did no damage");
+  for (let i = 0; i < 150; i++) ar.step();
+  assert.ok(gibs.every((x) => !x.solid || x.dead), "shards still solid after the harm window");
+});
+
 test("a big hit stuns: the victim's engine stops, then it recovers in about a second", () => {
   const { ar, b } = hammerHit(800, 6);
   assert.ok(b.stun > 0, "no stun after a big hit");

@@ -6,7 +6,8 @@
 //
 // The rest comes from the exe's item factory (0x486ff0, read from the DRM-free v1.004 exe): the weapons it builds in
 // code. Two weapons are ours (the great maul and the wooden flail), made from the original shapes with other densities
-// and sharpness, and are marked OURS below. So are the rod lengths of the blades whose files hold the blade only.
+// and sharpness, and are marked OURS below. For the blades whose files hold the blade only, the factory sets the rod
+// and the side values (see RE_WEAPONS.md §1).
 // Not here: bow1 (only story scripts fire it), the flags (ids 100-198, not weapons).
 
 export type WeaponClass = "hammer" | "axe" | "mace" | "sword" | "dual";
@@ -363,14 +364,17 @@ const linkPart = (i: number, hang: number, density: number, material: Material):
 
 /** chain_large: box 12 × 6.6, density 20 (links joined by type 3, radius 9). */
 const bigLink = (i: number, hang: number): PartSpec => ({ key: `link${i}`, mesh: box(6, 3.3), density: 20, sharpness: 1, bladeable: 0, hang, look: "link", material: "iron" });
-/** n links from `from` to `to` (each joined to the one before with a rope of `r`). */
-function chain(n: number, first: number, step: number, big: boolean): { parts: PartSpec[]; joints: JointSpec[] } {
+/**
+ * n links from `from` to `to` (each joined to the one before with a rope of `r`). `firstDensity`: a heavy first link
+ * (stix2 60, claw 57; RE_WEAPONS.md §5.4).
+ */
+function chain(n: number, first: number, step: number, big: boolean, firstDensity = 20): { parts: PartSpec[]; joints: JointSpec[] } {
   const parts: PartSpec[] = [];
   const joints: JointSpec[] = [];
   for (let i = 0; i < n; i++) {
     // only the first link is a full chain_large: a whole chain of them folds up in this engine (the krank mace and the
     // spiked flail do the same), so the rest use the small link mesh at the large spacing
-    parts.push(big && i === 0 ? bigLink(i, first + i * step) : linkPart(i, first + i * step, 20, "iron"));
+    parts.push(big && i === 0 ? bigLink(i, first + i * step) : linkPart(i, first + i * step, i === 0 ? firstDensity : 20, "iron"));
     if (i > 0) joints.push({ a: `link${i - 1}`, b: `link${i}`, type: 3, radius: big ? 9 : 7, necess: 999 });
   }
   return { parts, joints };
@@ -503,17 +507,19 @@ const list: WeaponSpec[] = [
     sby: -3,
     part: { mesh: box(8.999, 11.498), density: 65, sharpness: 3, sharpnessU: 1.5, bladeable: 1, bladeableU: 0, look: "axe", material: "iron" },
   }),
-  // axe_berdish.seria (blade only): 31 × 19, density 60, sharpness 3. Rod 70 is OURS ("long-handled axes are slower");
-  // the one-edge blade values follow the other axes.
+  // axe_berdish.seria (blade only): 31 × 19, density 60. The factory (id 223, 0x48808c) sets sharpness 3 (back 0.5),
+  // bladeable_u 0, rod 60, m_jrad_y −5 (RE_WEAPONS.md §1).
   rodWeapon("berdish", "axe", {
     tier: 3,
     label: "Berdish",
     blurb: "Long pole-axe. Slow, deep cuts.",
-    rod: 70,
+    rod: 60,
+    sby: -5,
     part: {
       mesh: hull([-7.481, -11.216, -16.159, 2.702, -5.535, 8.194, 8.234, 7.963, 14.591, 0.565, 10.351, -10.706]),
       density: 60,
       sharpness: 3,
+      sharpnessU: 1.5,
       bladeable: 1,
       bladeableU: 0,
       look: "axe",
@@ -554,13 +560,15 @@ const list: WeaponSpec[] = [
   },
 
   // Swords: "light as a feather, sharp as the sophit's jaws"; deadly sliding cuts, weak against armour.
-  // blade_kathib.seria (blade only): density 40, sharpness 3.1. Rod 36 is OURS (like the katar's 38).
+  // blade_kathib.seria (blade only): density 40. The factory (id 227) sets sharpness 3.4, bladeable_u 0.6, rod 47,
+  // m_jrad_y 2 (RE_WEAPONS.md §1).
   rodWeapon("kathib", "sword", {
     tier: 1,
     label: "Kathib",
     blurb: "Light bodyguard's sword. Quick.",
-    rod: 36,
-    part: { mesh: hull([-20.1, 7.8, 5.1, 7.2, 18.9, 1.8, 20.7, -7.8, -20.7, -1.8]), density: 40, sharpness: 3.1, bladeable: 1, look: "blade", material: "steel" },
+    rod: 47,
+    sby: 2,
+    part: { mesh: hull([-20.1, 7.8, 5.1, 7.2, 18.9, 1.8, 20.7, -7.8, -20.7, -1.8]), density: 40, sharpness: 3.4, bladeable: 1, bladeableU: 0.6, look: "blade", material: "steel" },
   }),
   // katar.seria: rod 38 (shiftB_y 1), density 40, sharpness 3.4, bladeable_u 0.6
   rodWeapon("sword", "sword", {
@@ -598,62 +606,69 @@ const list: WeaponSpec[] = [
       material: "steel",
     },
   }),
-  // ---- more swords from Objects/Weapons (blade only: their rod lengths are OURS unless noted)
-  // blade_claw.seria: density 35, sharpness 6 (the sharpest edge in the game); rod 37 from double_01.seria
+  // ---- more swords from Objects/Weapons (blade only: the item factory sets their rods and side values,
+  // RE_WEAPONS.md §1)
+  // blade_claw.seria: density 35, sharpness 6 (the sharpest edge in the game), bladeable_u 0.6; factory (id 226) rod 42,
+  // m_jrad_y 3
   rodWeapon("claw", "sword", {
     tier: 1,
     label: "Claw",
     blurb: "Tiny hooked blade. Sharpest edge.",
-    rod: 37,
+    rod: 42,
     sby: 3,
     part: { mesh: hull([-18.564, 2.757, 18.564, -7.772, 10.964, 2.551, -17.685, 7.772]), density: 35, sharpness: 6, bladeable: 1, bladeableU: 0.6, look: "blade", material: "steel" },
   }),
-  // blade_severn.seria: 55 × 13, density 30, sharpness 3.5; rod 42 OURS
+  // blade_severn.seria: 55 × 13, density 30; factory (id 232) sharpness 3.5 (back 0.3), bladeable_u 0, rod 42
   rodWeapon("severn", "sword", {
     tier: 2,
     label: "Severn",
     blurb: "Long, thin and light.",
     rod: 42,
-    part: { mesh: hull([-27.429, 6.658, -26.361, -6.658, 27.429, -6.488, 15.865, 5.002]), density: 30, sharpness: 3.5, bladeable: 1, look: "blade", material: "steel" },
+    part: { mesh: hull([-27.429, 6.658, -26.361, -6.658, 27.429, -6.488, 15.865, 5.002]), density: 30, sharpness: 3.5, sharpnessU: 1.05, bladeable: 1, bladeableU: 0, look: "blade", material: "steel" },
   }),
-  // blade_innata.seria: 60 × 13, density 30, sharpness 4.5; rod 44 OURS
+  // blade_innata.seria: 60 × 13, density 30; factory (id 237) sharpness 4.5, bladeable_u 0.7, rod 46
   rodWeapon("innata", "sword", {
     tier: 2,
     label: "Innata",
     blurb: "The longest blade. Very sharp.",
-    rod: 44,
-    part: { mesh: hull([-29.841, 6.314, 5.79, 5.547, 22.692, 0.322, 29.841, -6.314, -29.154, 0.628]), density: 30, sharpness: 4.5, bladeable: 1, look: "blade", material: "steel" },
+    rod: 46,
+    part: { mesh: hull([-29.841, 6.314, 5.79, 5.547, 22.692, 0.322, 29.841, -6.314, -29.154, 0.628]), density: 30, sharpness: 4.5, bladeable: 1, bladeableU: 0.7, look: "blade", material: "steel" },
   }),
-  // pishal.seria broad_blade: 44 × 17, density 42, sharpness 2.7, rod 43.2 (without the pishal's mortar)
+  // broad_blade (id 229): 44 × 17, density 42, sharpness 2.7, rod 49 (RE_WEAPONS.md §1; pishal.seria has 43.2)
   rodWeapon("broadblade", "sword", {
     tier: 2,
     label: "Broad blade",
     blurb: "Straight and heavy. Cuts both ways.",
-    rod: 43.2,
+    rod: 49,
     part: { mesh: box(21.997, 8.499), density: 42, sharpness: 2.7, bladeable: 1, look: "blade", material: "steel" },
   }),
-  // blade_saian.seria: m_fDensity 0 with m_fDensity2 40 (we use 40), sharpness 4; rod 40 OURS
+  // blade_saian.seria: m_fDensity 0 with m_fDensity2 40 (we use 40); factory (id 230) sharpness 5 (back 0.5),
+  // bladeable_u 0.5, rod 43, m_jrad_y 2
   rodWeapon("saian", "sword", {
     tier: 2,
     label: "Saian",
     blurb: "Curved and keen.",
-    rod: 40,
-    part: { mesh: hull([-21.997, 8.483, -6.36, 7.952, 7.488, 2.186, 23.323, -7.424, 11.263, -12.723, -21.534, 1.791]), density: 40, sharpness: 4, bladeable: 1, look: "blade", material: "steel" },
+    rod: 43,
+    sby: 2,
+    part: { mesh: hull([-21.997, 8.483, -6.36, 7.952, 7.488, 2.186, 23.323, -7.424, 11.263, -12.723, -21.534, 1.791]), density: 40, sharpness: 5, sharpnessU: 2.5, bladeable: 1, bladeableU: 0.5, look: "blade", material: "steel" },
   }),
-  // blade_silver.seria: 57 × 21, density 45, sharpness 3.5; rod 44 OURS
+  // blade_silver.seria: 57 × 21, density 45; factory (id 234) sharpness 3.5 (back 0.5), bladeable_u 0.5, rod 48,
+  // m_jrad_y 3
   rodWeapon("silverblade", "sword", {
     tier: 3,
     label: "Silver blade",
     blurb: "A noble's sword. Long and heavy.",
-    rod: 44,
-    part: { mesh: hull([-26.878, -0.3, -26.975, 8.339, -6.806, 7.605, 15.369, -0.788, 29.887, -11.186, 9.739, -12.372]), density: 45, sharpness: 3.5, bladeable: 1, look: "blade", material: "silver" },
+    rod: 48,
+    sby: 3,
+    part: { mesh: hull([-26.878, -0.3, -26.975, 8.339, -6.806, 7.605, 15.369, -0.788, 29.887, -11.186, 9.739, -12.372]), density: 45, sharpness: 3.5, sharpnessU: 1.75, bladeable: 1, bladeableU: 0.5, look: "blade", material: "silver" },
   }),
-  // blade_palash.seria / double_01.seria: density 45, sharpness 3 (back 0.5), bladeable_u 0.5; rod 35 from double_01
+  // blade_palash.seria (mesh ×0.95, as the factory scales it; area ≈ 713): density 45, sharpness 3 (back 0.5),
+  // bladeable_u 0.5; factory (id 233) rod 40, m_jrad_y 3
   rodWeapon("palash", "sword", {
     tier: 3,
     label: "Palash",
     blurb: "Broad sabre. Shatters shields.",
-    rod: 35,
+    rod: 40,
     sby: 3,
     part: {
       mesh: hull([-25.08, 12.54, -5.13, 11.97, 13.11, 6.27, 26.22, -5.13, 18.24, -12.54, -26.22, 2.85]),
@@ -769,7 +784,8 @@ const list: WeaponSpec[] = [
     part: { mesh: box(22, 7), density: 35, sharpness: 3.5, bladeable: 1, look: "blade", material: "gold" },
   }),
   // mace_sharp (id 216): 4 chain_large links (the first 12 × 6.6), 3 spiked links (15 × 20, 16 × 21, 17 × 22,
-  // sharpness 4, bladeable), handle 31 × 9, ball an octagon 30 × 30, density 30, sharpness 3.5, bladeable 1
+  // sharpness 3 = Body default 1 + 2, bladeable 1; RE_WEAPONS.md §1), handle 31 × 9, ball an octagon 30 × 30,
+  // density 30, sharpness 3.5, bladeable 1
   {
     kind: "spikedflail",
     cls: "mace",
@@ -782,9 +798,9 @@ const list: WeaponSpec[] = [
       linkPart(1, 19, 20, "iron"),
       linkPart(2, 28, 20, "iron"),
       linkPart(3, 37, 20, "iron"),
-      { key: "spike3", mesh: box(7.5, 10), density: 20, sharpness: 4, bladeable: 1, hang: 47, look: "spike", material: "iron" },
-      { key: "spike2", mesh: box(8, 10.5), density: 20, sharpness: 4, bladeable: 1, hang: 59, look: "spike", material: "iron" },
-      { key: "spike1", mesh: box(8.5, 11), density: 20, sharpness: 4, bladeable: 1, hang: 73, look: "spike", material: "iron" },
+      { key: "spike3", mesh: box(7.5, 10), density: 20, sharpness: 3, bladeable: 1, hang: 47, look: "spike", material: "iron" },
+      { key: "spike2", mesh: box(8, 10.5), density: 20, sharpness: 3, bladeable: 1, hang: 59, look: "spike", material: "iron" },
+      { key: "spike1", mesh: box(8.5, 11), density: 20, sharpness: 3, bladeable: 1, hang: 73, look: "spike", material: "iron" },
       { key: "handle", mesh: box(15.5, 4.5), density: 30, sharpness: 1, bladeable: 0, hang: 90, look: "handle", material: "wood" },
       { key: "ball", mesh: ngon(8, 30, 30), density: 30, sharpness: 3.5, bladeable: 1, hang: 101, look: "ball", material: "iron" },
     ],
@@ -912,7 +928,8 @@ const list: WeaponSpec[] = [
     part: { mesh: box(24, 10), density: 30, sharpness: 3.5, bladeable: 1, look: "blade", material: "gold" },
   }),
   // cyclon_blade (245): a 10-gon disc 29 × 29 (density 20, sharpness 3) on a short rod (12), and cyclon_arm (box
-  // 50 × 10, density 20) hung from the disc by a type 0 joint (radius 5, shiftA_x 22, necess 30): it whirls round.
+  // 50 × 10, density 20, sharpness 1: a Body-class part keeps the default; RE_WEAPONS.md §1) hung from the disc by a
+  // type 0 joint (radius 5, shiftA_x 22, necess 30): it whirls round.
   {
     kind: "cyclone",
     cls: "sword",
@@ -922,7 +939,7 @@ const list: WeaponSpec[] = [
     striker: "arm",
     parts: [
       { key: "head", mesh: ngon(10, 29, 29), density: 20, sharpness: 3, bladeable: 1, hang: 12, look: "ball", material: "steel", rod: true },
-      { key: "arm", mesh: box(25, 5), density: 20, sharpness: 2, bladeable: 0, hang: 39, angle: -Math.PI / 2, look: "handle", material: "iron" },
+      { key: "arm", mesh: box(25, 5), density: 20, sharpness: 1, bladeable: 0, hang: 39, angle: -Math.PI / 2, look: "handle", material: "iron" },
     ],
     joints: [
       { a: "hull", b: "head", type: 2, radius: 12, necess: 5 },
@@ -969,7 +986,7 @@ const list: WeaponSpec[] = [
     ],
   },
   // mace_star (212): mace_hand on a rod (13), 6 chain_small links, an 8-gon ball 25 × 25, density 70, sharpness 3.9
-  // (spiked) on a type 5 (radius 10)
+  // (spiked) on a type 5 (radius 10). The mount joint keeps the constructor's necess 999 (RE_WEAPONS.md §1).
   {
     kind: "starmace",
     cls: "mace",
@@ -979,7 +996,7 @@ const list: WeaponSpec[] = [
     striker: "ball",
     parts: [maceHand(13), ...chain(6, 30, 7, false).parts, { key: "ball", mesh: ngon(8, 25, 25), density: 70, sharpness: 3.9, bladeable: 0, hang: 75, look: "ball", material: "iron" }],
     joints: [
-      { a: "hull", b: "hand", type: 2, radius: 13, necess: 5 },
+      { a: "hull", b: "hand", type: 2, radius: 13, necess: 999 },
       { a: "hand", b: "link0", type: 5, radius: 5, sax: 12, necess: 999 },
       { a: "hand", b: "link0", type: 3, radius: 5, sax: 12, necess: 999 },
       ...chain(6, 30, 7, false).joints,
@@ -987,7 +1004,7 @@ const list: WeaponSpec[] = [
     ],
   },
   // mace_stix2 (209): mace_hand on a rod (13), 5 chain_small links, a bar 35 × 9, density 70, sharpness 3 on a type 5
-  // (radius 1, shiftB_x -26)
+  // (radius 1, shiftB_x -26). The first link has density 60; the mount joint keeps necess 999 (RE_WEAPONS.md §1).
   {
     kind: "stixmace",
     cls: "mace",
@@ -995,12 +1012,12 @@ const list: WeaponSpec[] = [
     label: "Stix",
     blurb: "A heavy bar on a short chain.",
     striker: "ball",
-    parts: [maceHand(13), ...chain(5, 30, 7, false).parts, { key: "ball", mesh: box(17.5, 4.5), density: 70, sharpness: 3, bladeable: 0, hang: 85, look: "handle", material: "iron" }],
+    parts: [maceHand(13), ...chain(5, 30, 7, false, 60).parts, { key: "ball", mesh: box(17.5, 4.5), density: 70, sharpness: 3, bladeable: 0, hang: 85, look: "handle", material: "iron" }],
     joints: [
-      { a: "hull", b: "hand", type: 2, radius: 13, necess: 5 },
+      { a: "hull", b: "hand", type: 2, radius: 13, necess: 999 },
       { a: "hand", b: "link0", type: 5, radius: 5, sax: 12, necess: 999 },
       { a: "hand", b: "link0", type: 3, radius: 5, sax: 12, necess: 999 },
-      ...chain(5, 30, 7, false).joints,
+      ...chain(5, 30, 7, false, 60).joints,
       { a: "link4", b: "ball", type: 5, radius: 1, sbx: -26, necess: 999 },
     ],
   },
@@ -1026,7 +1043,8 @@ const list: WeaponSpec[] = [
     ],
   },
   // mace_claw (211): mace_claw_hand (box 48 × 8) on a rod (20), 3 chain_small links, then two jaws on a hinge:
-  // claw_01 (box 10 × 30, density 57, sharpness 1.5) and claw_02 (box 20 × 30, density 60, sharpness 1.5), type 2, r 15
+  // claw_01 (box 10 × 30, density 57, sharpness 0.5 = Body default 1 − 0.5) and claw_02 (box 20 × 30, density 60,
+  // sharpness 1.5), type 2, r 15. The first link has density 57; the mount joint keeps necess 999 (RE_WEAPONS.md §1).
   {
     kind: "clawmace",
     cls: "mace",
@@ -1036,15 +1054,15 @@ const list: WeaponSpec[] = [
     striker: "ball",
     parts: [
       maceHand(20, 48),
-      ...chain(3, 46, 7, false).parts,
-      { key: "jaw", mesh: box(5, 15), density: 57, sharpness: 1.5, bladeable: 0, hang: 81, look: "spike", material: "iron" },
+      ...chain(3, 46, 7, false, 57).parts,
+      { key: "jaw", mesh: box(5, 15), density: 57, sharpness: 0.5, bladeable: 0, hang: 81, look: "spike", material: "iron" },
       { key: "ball", mesh: box(10, 15), density: 60, sharpness: 1.5, bladeable: 0, hang: 96, look: "spike", material: "iron" },
     ],
     joints: [
-      { a: "hull", b: "hand", type: 2, radius: 20, necess: 5 },
+      { a: "hull", b: "hand", type: 2, radius: 20, necess: 999 },
       { a: "hand", b: "link0", type: 5, radius: 5, sax: 21, necess: 999 },
       { a: "hand", b: "link0", type: 3, radius: 5, sax: 21, necess: 999 },
-      ...chain(3, 46, 7, false).joints,
+      ...chain(3, 46, 7, false, 57).joints,
       { a: "link2", b: "jaw", type: 5, radius: 1, sbx: -20, necess: 999 },
       { a: "jaw", b: "ball", type: 2, radius: 15, necess: 999 },
     ],

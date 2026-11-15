@@ -752,6 +752,13 @@ const mount: HostMount = (ctx) => {
         clashCd = 0.06;
         const n = 4 + Math.min(10, Math.round(e.impact / 10));
         fx.burst(e.x, e.y, lite ? Math.ceil(n / 2) : n, 220, "#cfe3ff", 1.5);
+      } else if (e.type === "slam") {
+        // a reeling machine smashed into something: more stun
+        sound?.clash(e.impact);
+        fx.burst(e.x, e.y, lite ? 6 : 12, 260, "#ffe066", 2);
+        fx.shake = Math.min(12, fx.shake + 4);
+        const s = byMachine.get(e.m);
+        if (s?.human) host.send(s.id, { type: "hurt", dmg: 0 });
       } else {
         fx.burst(e.x, e.y, 40, 420, "#ffb547", 3);
         fx.burst(e.x, e.y, 16, 200, e.victim.color, 4);
