@@ -172,7 +172,10 @@ const mount: HostMount = (ctx) => {
   const abPasses = import.meta.env.VITE_PERF === "1" ? Number(startParam("passes")) || 0 : 0;
   const abHudOff = import.meta.env.VITE_PERF === "1" && startParam("hud") === "off";
   const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
-  const tuning = { ...DEFAULT_TUNING, ...(lite ? { passes: 15, gibs: 3 } : {}), ...(abPasses ? { passes: abPasses } : {}) };
+  // kos=burst (perf builds): every 6 s in a fight, wreck 3 machines at once (the worst moment for shards and coins)
+  const abKoBurst = import.meta.env.VITE_PERF === "1" && startParam("kos") === "burst";
+  let koBurstAt = 6;
+  const tuning = { ...DEFAULT_TUNING, ...(lite ? { passes: 15, gibs: 3 } : {}), ...(abPasses ? { passes: abPasses } : {}), ...(import.meta.env.VITE_PERF === "1" && startParam("gibs") !== null ? { gibs: Number(startParam("gibs")) || 0 } : {}) };
   const arena = new Arena(tuning);
   // the weapon tours (TV tests only): every melee weapon, or every gun and plate, in turn, with physics, draw and
   // fight numbers in each perf report
@@ -981,6 +984,10 @@ const mount: HostMount = (ctx) => {
     for (const s of seats.values()) {
       if (!s.human || !s.m) continue;
       if (gunSig(s.m) !== s.gunSig) pushOwn(s);
+    }
+    if (abKoBurst && phase === "fight" && arena.t > koBurstAt) {
+      koBurstAt = arena.t + 6;
+      for (const m of arena.machines.filter((x) => x.alive && !x.monster).slice(0, 3)) arena.wreck(m);
     }
     tickPhase(real);
     soundFrame();
