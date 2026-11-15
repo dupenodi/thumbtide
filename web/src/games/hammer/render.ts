@@ -237,14 +237,16 @@ export class Renderer {
     g.fillStyle = color;
     g.fillText(text, w / 2, asc);
     t = { c, w, h, asc };
-    // keep it only once the font is in (else the fallback font would stick)
-    if (document.fonts?.check?.(font) ?? true) {
+    // keep it once the font is in (else the fallback font would stick); if the font never loads, keep the
+    // fallback after 120 misses rather than paint a new canvas for every number in every frame
+    if ((document.fonts?.check?.(font) ?? true) || ++this.fontMisses > 120) {
       if (this.texts.size > 96) this.texts.clear();
       this.texts.set(key, t);
     }
     return t;
   }
   private textScale = 0;
+  private fontMisses = 0;
 
   /** Coin pictures: 3 metals × COIN_FRAMES spin widths, painted once per scale (paths per coin cost the TV). */
   private coinAtlas: HTMLCanvasElement | null = null;

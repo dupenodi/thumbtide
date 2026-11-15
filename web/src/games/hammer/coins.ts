@@ -148,7 +148,7 @@ export class Coins {
 
 const touches = (x: number, y: number, rad: number, cx: number, cy: number, r: number) => (x - cx) ** 2 + (y - cy) ** 2 < (rad + r) ** 2;
 
-export const valueOf =(c: { metal: Metal; big: boolean }): number => DENOMS.find((d) => d.metal === c.metal && d.big === c.big)?.value ?? 1;
+export const valueOf = (c: { metal: Metal; big: boolean }): number => DENOMS.find((d) => d.metal === c.metal && d.big === c.big)?.value ?? 1;
 
 /** Fill and rim colours per metal. */
 export const COIN_LOOK: { fill: string; rim: string }[] = [

@@ -397,6 +397,8 @@ const mount: HostMount = (ctx) => {
   let left = FIRST_PICK_S;
   /** This warm-up's full length (the first one is longer), for the countdown bar and while waiting for players. */
   let pickTotal = FIRST_PICK_S;
+  /** A 3-2-1 between rounds with "Each match only": everyone keeps their weapon (no picks, bots keep theirs). */
+  let readyOnly = false;
   /** Real seconds in the current phase. */
   let phaseFor = 0;
   let lastWhole = -1;
@@ -467,7 +469,8 @@ const mount: HostMount = (ctx) => {
     tuning.damage = 0; // warm-up: fly and swing, no damage
     tuning.slomo = 0;
     applyToggles();
-    for (const s of bots()) s.weapon = randomWeapon();
+    readyOnly = seconds === READY_S && round > 1;
+    if (!readyOnly) for (const s of bots()) s.weapon = randomWeapon();
     syncBots();
     fillSeats();
     for (const s of seated()) spawn(s);
@@ -626,6 +629,8 @@ const mount: HostMount = (ctx) => {
       if (isSys(d) || !d || typeof d !== "object") return;
       const s = seats.get(p.id);
       if (!s) return;
+      // "Each match only": the loadout is fixed between the rounds of a match
+      if (readyOnly && phase === "pick") return;
       if (d.type === "weapon" && WEAPON_KINDS.includes(d.weapon)) s.weapon = d.weapon;
       else if (d.type === "gun" && (d.gun === null || GUN_KINDS.includes(d.gun))) s.sidearm = d.gun;
       else if (d.type === "plate" && (d.plate === null || PLATE_KINDS.includes(d.plate))) s.plate = d.plate;
