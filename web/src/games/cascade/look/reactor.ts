@@ -4,9 +4,11 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { NOISE, SDF, WORLD_VS } from "./glsl.ts";
-import { FLY, PieceLook, damp, hash, upload, type CameraSpec, type LookInfo, type Piece } from "./look.ts";
+import { FLY, PieceLook, cheerEnd, damp, hash, upload, type CameraSpec, type LookInfo, type Piece } from "./look.ts";
 
 const TILE = 0.9;
+/** One wave of the win celebration (sin(t * 5)), in seconds. */
+const WIN_WAVE = (2 * Math.PI) / 5;
 const TILE_H = 0.14;
 const CORE_R = 0.12;
 const LIFT = 0.25;
@@ -448,7 +450,9 @@ export class ReactorLook extends PieceLook {
       z += Math.cos(t * 1.13) * 0.012;
       y += Math.sin(t * 0.87) * 0.01;
     }
-    if (this.winner >= 0 && this.winT > p.hop) y += Math.max(0, Math.sin((this.winT - p.hop) * 5)) * 0.12;
+    if (this.winner >= 0 && this.winT > p.hop && this.winT < p.hop + cheerEnd(WIN_WAVE)) {
+      y += Math.max(0, Math.sin((this.winT - p.hop) * 5)) * 0.12;
+    }
     out.set(x, y, z);
   }
 
@@ -585,6 +589,7 @@ export class ReactorLook extends PieceLook {
 
     // tiles: lift, heat and the light underneath
     const hov = this.hoverCell;
+    let heatChanged = false;
     for (let c = 0; c < w * h; c++) {
       const list = this.cells[c]!;
       const n = list.length;
@@ -595,8 +600,8 @@ export class ReactorLook extends PieceLook {
       this.pulse[c] = this.pulse[c]! * Math.exp(-dt * 4);
       let win = 0;
       if (this.winner >= 0) {
-        const d = Math.hypot(this.cx(c), this.cz(c));
-        win = Math.max(0, Math.sin((this.winT - d * 0.12) * 5)) * 0.6;
+        const u = this.winT - Math.hypot(this.cx(c), this.cz(c)) * 0.12;
+        if (u < cheerEnd(WIN_WAVE)) win = Math.max(0, Math.sin(u * 5)) * 0.6;
       }
       v1.set(this.cx(c), -TILE_H / 2 + this.lift[c]!, this.cz(c));
       this.tiles.setMatrixAt(c, m4.compose(v1, qi, ONE));
@@ -608,10 +613,18 @@ export class ReactorLook extends PieceLook {
       this.tFx.setXY(c, heat, this.pulse[c]! + win);
       const hk = owner >= 0 ? (crit ? 0.55 + 0.25 * flicker : (0.12 * n) / this.cap(c)) : 0;
       const hc = this.palette[Math.max(0, owner)]!;
-      this.heatData[c * 4] = Math.min(255, hc.r * hk * 255);
-      this.heatData[c * 4 + 1] = Math.min(255, hc.g * hk * 255);
-      this.heatData[c * 4 + 2] = Math.min(255, hc.b * hk * 255);
-      this.heatData[c * 4 + 3] = 255;
+      // the heat texture goes to the graphics chip only when a texel changed (most idle frames, none do)
+      const hr = Math.min(255, hc.r * hk * 255) | 0;
+      const hg = Math.min(255, hc.g * hk * 255) | 0;
+      const hb = Math.min(255, hc.b * hk * 255) | 0;
+      const hk4 = c * 4;
+      if (this.heatData[hk4] !== hr || this.heatData[hk4 + 1] !== hg || this.heatData[hk4 + 2] !== hb || this.heatData[hk4 + 3] !== 255) {
+        this.heatData[hk4] = hr;
+        this.heatData[hk4 + 1] = hg;
+        this.heatData[hk4 + 2] = hb;
+        this.heatData[hk4 + 3] = 255;
+        heatChanged = true;
+      }
 
       // arcs in a full cell
       if (crit && hash(Math.floor(this.time * 22) + c * 13.1) > 0.25) {
@@ -627,7 +640,7 @@ export class ReactorLook extends PieceLook {
     this.tiles.instanceMatrix.needsUpdate = true;
     this.tCol.needsUpdate = true;
     this.tFx.needsUpdate = true;
-    this.heat.needsUpdate = true;
+    if (heatChanged) this.heat.needsUpdate = true;
 
     // cores and their halos; trails behind the ones in flight
     let k = 0;
