@@ -46,6 +46,20 @@
   margin: 0 0.8vw;
 }
 
+/* 5–8 players: four narrower cards a side */
+.hm-hud.many .hm-card {
+  width: 10.6vw;
+  margin: 0 0.5vw;
+}
+
+.hm-hud.many .hm-name {
+  font-size: 1.9vh;
+}
+
+.hm-hud.many .hm-p {
+  font-size: 1.7vh;
+}
+
 .hm-plate {
   position: relative;
   display: flex;

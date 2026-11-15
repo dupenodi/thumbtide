@@ -32,6 +32,8 @@ export interface ManagerOptions {
   maxRooms?: number;
   playerGraceMs?: number;
   hostGraceMs?: number;
+  /** A dropped seat can go to a newcomer in a full room only after it has been empty this long (default 10 s). */
+  ghostMinMs?: number;
 }
 
 interface Player {
@@ -39,8 +41,12 @@ interface Player {
   token: string;
   conn: Conn | null;
   graceTimer: ReturnType<typeof setTimeout> | null;
+  /** When the socket dropped (Date.now()), 0 while connected. */
+  droppedAt: number;
   ownState: unknown;
 }
+
+const cleanName = (raw: string) => raw.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, LIMITS.maxNameLength);
 
 const token = () => randomBytes(18).toString("base64url");
 const shortId = () => randomBytes(4).toString("hex");
@@ -146,27 +152,44 @@ export class Room {
     // Reconnect with a known token → take over the existing slot.
     if (playerToken) {
       for (const p of this.players.values()) {
-        if (p.token !== playerToken) continue;
-        if (p.conn && p.conn !== conn) p.conn.close(CLOSE_CODES.replaced, "replaced by a newer connection");
-        if (p.graceTimer) clearTimeout(p.graceTimer);
-        p.graceTimer = null;
-        p.conn = conn;
-        p.info.connected = true;
-        this.welcomeCtl(p, true);
-        if (this.host) sendHost(this.host, { t: "rejoin", p: p.info });
-        return p;
+        if (p.token === playerToken) return this.resume(p, conn);
       }
       // Unknown/expired token: fall through and join as a new player.
     }
 
+    // A locked room lets nobody in without a token (also not by name: anyone can read a name off the TV).
     if (this.config.locked) return CLOSE_CODES.roomLocked;
-    if (this.players.size >= this.config.maxPlayers) return CLOSE_CODES.roomFull;
+
+    // No usable token, but a disconnected player has this name: it's the same person back without their token
+    // (the QR code opened a new tab, or the browser dropped the tab). Give them their seat back instead of a
+    // second seat ("Sam 2") next to their own ghost. New token, so the old tab can't take it back.
+    const wanted = cleanName(name).toLowerCase();
+    if (wanted) {
+      for (const p of this.players.values()) {
+        if (p.conn || p.info.name.toLowerCase() !== wanted) continue;
+        p.token = token();
+        return this.resume(p, conn);
+      }
+    }
+
+    if (this.players.size >= this.config.maxPlayers) {
+      // Full, but some seats may belong to phones that dropped and are still in their grace period.
+      // A real person at the door beats a ghost: free the seat that has been empty longest, if it has been empty
+      // for ghostMinMs (a phone whose Wi-Fi blips for a second keeps its seat).
+      let ghost: Player | null = null;
+      for (const p of this.players.values()) {
+        if (!p.conn && Date.now() - p.droppedAt >= this.mgr.ghostMinMs && (!ghost || p.droppedAt < ghost.droppedAt)) ghost = p;
+      }
+      if (!ghost) return CLOSE_CODES.roomFull;
+      this.removePlayer(ghost, "timeout");
+    }
 
     const p: Player = {
       info: { id: shortId(), name: this.uniqueName(name), index: this.nextIndex++, connected: true },
       token: token(),
       conn,
       graceTimer: null,
+      droppedAt: 0,
       ownState: null,
     };
     this.players.set(p.info.id, p);
@@ -175,9 +198,22 @@ export class Room {
     return p;
   }
 
+  private resume(p: Player, conn: Conn): Player {
+    if (p.conn && p.conn !== conn) p.conn.close(CLOSE_CODES.replaced, "replaced by a newer connection");
+    if (p.graceTimer) clearTimeout(p.graceTimer);
+    p.graceTimer = null;
+    p.conn = conn;
+    p.droppedAt = 0;
+    p.info.connected = true;
+    this.welcomeCtl(p, true);
+    if (this.host) sendHost(this.host, { t: "rejoin", p: p.info });
+    return p;
+  }
+
   detachController(p: Player, conn: Conn) {
     if (p.conn !== conn) return; // an old socket closing after a reconnect
     p.conn = null;
+    p.droppedAt = Date.now();
     p.info.connected = false;
     if (!this.players.has(p.info.id)) return;
     if (this.host) sendHost(this.host, { t: "drop", id: p.info.id });
@@ -254,9 +290,7 @@ export class Room {
   }
 
   private uniqueName(raw: string): string {
-    const base =
-      raw.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, LIMITS.maxNameLength) ||
-      `Player ${this.nextIndex + 1}`;
+    const base = cleanName(raw) || `Player ${this.nextIndex + 1}`;
     const taken = new Set([...this.players.values()].map((p) => p.info.name.toLowerCase()));
     if (!taken.has(base.toLowerCase())) return base;
     for (let n = 2; ; n++) {
@@ -289,11 +323,13 @@ export class RoomManager {
   readonly maxRooms: number;
   readonly playerGraceMs: number;
   readonly hostGraceMs: number;
+  readonly ghostMinMs: number;
 
   constructor(opts: ManagerOptions = {}) {
     this.maxRooms = opts.maxRooms ?? 5000;
     this.playerGraceMs = opts.playerGraceMs ?? LIMITS.playerGraceMs;
     this.hostGraceMs = opts.hostGraceMs ?? LIMITS.hostGraceMs;
+    this.ghostMinMs = opts.ghostMinMs ?? 10_000;
   }
 
   create(): Room | null {

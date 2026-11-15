@@ -72,6 +72,8 @@ export class Hud {
     const layout = seats.map((s) => `${s.id}:${s.slot}:${s.name}:${s.color}`).join("|");
     if (layout !== this.layoutKey) {
       this.layoutKey = layout;
+      // 5–8 players: smaller cards, 4 a side
+      this.el.classList.toggle("many", seats.length > 4);
       this.left.innerHTML = "";
       this.right.innerHTML = "";
       this.cards.clear();

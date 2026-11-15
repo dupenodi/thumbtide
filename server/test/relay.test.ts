@@ -8,7 +8,7 @@ let url = "";
 const cleanup: Array<{ close?: () => void; leave?: () => void }> = [];
 
 before(async () => {
-  server = startServer({ port: 0, playerGraceMs: 400, hostGraceMs: 400 });
+  server = startServer({ port: 0, playerGraceMs: 400, hostGraceMs: 400, ghostMinMs: 0 });
   url = `ws://127.0.0.1:${await server.ready}`;
 });
 after(async () => {
@@ -50,6 +50,11 @@ async function newController(host: Host, name = "Sam") {
 function blipPlayer(host: Host, playerId: string) {
   const room = server.rooms.get(host.code)!;
   room.players.get(playerId)!.conn!.close(1012, "blip");
+}
+
+/** The phone's tab goes away (closed, or the browser dropped it): no leave message, no reconnect. */
+function closeTab(ctl: Controller) {
+  (ctl as any).link.close();
 }
 
 describe("relay", () => {
@@ -159,6 +164,126 @@ describe("relay", () => {
     await newController(host, "A");
     const late = new Controller({ server: url, room: host.code, name: "B", persist: false });
     assert.equal(await next(late, "closed"), "room-full");
+  });
+
+  test("a full room frees the seat of a dropped phone for a new player", async () => {
+    const host = await newHost({ maxPlayers: 2 });
+    await sleep(50);
+    const a = await newController(host, "A");
+    await newController(host, "B");
+    // A's phone goes away (closed tab): its seat is held in the grace period
+    const dropped = next(host, "drop");
+    closeTab(a);
+    await dropped;
+    const left = next(host, "leave");
+    const c = await newController(host, "C");
+    const [gone, reason] = await left;
+    assert.equal(gone.id, a.me!.id);
+    assert.equal(reason, "timeout");
+    assert.equal(c.me?.name, "C");
+    assert.deepEqual(host.list.map((p) => p.name), ["B", "C"]);
+  });
+
+  test("a full room of connected phones still refuses a new player", async () => {
+    const host = await newHost({ maxPlayers: 2 });
+    await sleep(50);
+    await newController(host, "A");
+    await newController(host, "B");
+    const late = new Controller({ server: url, room: host.code, name: "C", persist: false });
+    assert.equal(await next(late, "closed"), "room-full");
+    assert.equal(host.players.size, 2);
+  });
+
+  test("a phone back without its token gets its own seat back by name", async () => {
+    const host = await newHost({ maxPlayers: 2 });
+    await sleep(50);
+    const a = await newController(host, "Sam");
+    await newController(host, "B");
+    const id = a.me!.id;
+    const oldToken = server.rooms.get(host.code)!.players.get(id)!.token;
+    const dropped = next(host, "drop");
+    closeTab(a);
+    await dropped;
+    const rejoined = next(host, "rejoin");
+    const back = new Controller({ server: url, room: host.code, name: " sam ", persist: false });
+    cleanup.push({ close: () => back.leave() });
+    const ready = await next(back, "ready");
+    assert.equal(ready.you.id, id);
+    assert.equal(ready.resumed, true);
+    assert.equal((await rejoined).id, id);
+    assert.equal(host.players.size, 2);
+    // the seat has a new token, so the old tab can't take it back
+    assert.notEqual(server.rooms.get(host.code)!.players.get(id)!.token, oldToken);
+  });
+
+  test("a locked room refuses a phone without its token, also by name", async () => {
+    const host = await newHost({ maxPlayers: 2 });
+    await sleep(50);
+    const a = await newController(host, "Sam");
+    host.lock(true);
+    const dropped = next(host, "drop");
+    closeTab(a);
+    await dropped;
+    const back = new Controller({ server: url, room: host.code, name: "Sam", persist: false });
+    cleanup.push({ close: () => back.leave() });
+    assert.equal(await next(back, "closed"), "room-locked");
+  });
+
+  test("a connected player's name is not taken over", async () => {
+    const host = await newHost();
+    const a = await newController(host, "Sam");
+    const b = await newController(host, "Sam");
+    assert.notEqual(b.me!.id, a.me!.id);
+    assert.equal(b.me!.name, "Sam 2");
+    assert.equal(host.players.get(a.me!.id)!.connected, true);
+  });
+
+  test("locked rooms still refuse strangers even when a seat is a ghost", async () => {
+    const host = await newHost({ maxPlayers: 2 });
+    await sleep(50);
+    const a = await newController(host, "A");
+    await newController(host, "B");
+    host.lock(true);
+    const dropped = next(host, "drop");
+    closeTab(a);
+    await dropped;
+    const late = new Controller({ server: url, room: host.code, name: "C", persist: false });
+    assert.equal(await next(late, "closed"), "room-locked");
+    assert.equal(host.players.size, 2);
+  });
+
+  test("a resumed host pushes its seat limit to the room", async () => {
+    const host = await newHost({ maxPlayers: 16 });
+    await sleep(50);
+    const room = server.rooms.get(host.code)!;
+    assert.equal(room.config.maxPlayers, 16);
+    // the room still has an older page's limit when the host reconnects and resumes it
+    room.config.maxPlayers = 8;
+    const resumed = next(host, "room");
+    room.host!.close(1012, "blip");
+    assert.equal((await resumed).resumed, true);
+    await sleep(50);
+    assert.equal(room.config.maxPlayers, 16);
+  });
+
+  test("a host can fan sticky state out to 16 phones joining at once", async () => {
+    const host = await newHost({ maxPlayers: 16 });
+    await sleep(50);
+    let limited = 0;
+    host.on("error", (code) => code === "rate-limited" && limited++);
+    // like the lobby: on every join, refresh every phone's own state twice
+    host.on("join", () => {
+      for (let k = 0; k < 2; k++) for (const p of host.players.values()) host.setOwn(p.id, { k });
+    });
+    const ctls = Array.from({ length: 16 }, (_, i) => {
+      const c = new Controller({ server: url, room: host.code, name: `P${i}`, persist: false });
+      cleanup.push({ close: () => c.leave() });
+      return next(c, "ready");
+    });
+    await Promise.all(ctls);
+    await sleep(300);
+    assert.equal(limited, 0);
+    assert.equal(host.players.size, 16);
   });
 
   test("kick removes the player and tells their phone", async () => {

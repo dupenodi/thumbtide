@@ -22,5 +22,10 @@ buzz
   win          40 40 40 40 120
 
 tune
-  # input units per frame at full tilt; the TV cubes the stick (Hammerfight's gamepad: 100 · stick³)
+  # input units per frame at most (the cap on the thrust)
   stick        600
+  # Not in Hammerfight: the stick sets a target speed (tilt x top speed), and the thrust closes the gap.
+  # steer: input units per px/s of speed error; hold: input units per px/s of target speed (against the drag).
+  # Measured (stickprobe): turn-round at half tilt 500-780 ms with the old stick-cubed map, 120-160 ms with this.
+  steer        8
+  hold         0.5

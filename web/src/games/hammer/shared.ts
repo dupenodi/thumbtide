@@ -42,7 +42,7 @@ export interface HammerGame {
   };
   own: {
     color: string;
-    /** Seat number shown as P1–P4, or −1 while waiting. */
+    /** Seat number shown as P1–P8, or −1 while waiting. */
     slot: number;
     /** Team number, and its name in team modes ("Red", "Blue", "Players"), or "" in free-for-all. */
     team: number;
@@ -58,7 +58,7 @@ export interface HammerGame {
     hp: number;
     alive: boolean;
     wins: number;
-    /** False while waiting for the next round (joined mid-fight, or more than 4 players). */
+    /** False while waiting for the next round (joined mid-fight, or more than 8 players). */
     seated: boolean;
   };
 }

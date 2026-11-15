@@ -1,4 +1,4 @@
-// Rotor Brawl on the TV: up to 4 machines, last one flying wins the round, first to N rounds wins the match.
+// Rotor Brawl on the TV: up to 8 machines, last one flying wins the round, first to N rounds wins the match.
 // Rounds: warm-up and weapon pick (no damage) → fight → result → (match winner) → next warm-up.
 // Physics: sim.ts, which follows Hammerfight's model (HAMMERFIGHT_PHYSICS.md).
 
@@ -15,25 +15,31 @@ import { type Bot, driveBot, makeBot } from "./bots.ts";
 import "./hammer.css";
 import { loadGameFont } from "./font.ts";
 import { Hud, type SeatView } from "./hud.ts";
+import { COIN_LOOK, type Pickup } from "./coins.ts";
 import { Fx, Renderer } from "./render.ts";
 import type { HammerGame, Mode, Phase } from "./shared.ts";
 import { Arena, type Machine, STEP, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
 import { GUN_KINDS, type GunKind, MACHINE, type Material, PLATE_KINDS, type PlateKind, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
-const MAX_SEATS = 4;
+const MAX_SEATS = 8;
 const SPAWNS: [number, number][] = [
   [220, 170],
   [740, 170],
   [220, 370],
   [740, 370],
+  // seats 5-8: even slots (left HUD side, Red) on the left half, odd on the right
+  [110, 270],
+  [850, 270],
+  [390, 400],
+  [570, 400],
 ];
 /** Computer players: colours away from the first human colours, and never white (white is the hit flash). */
-const BOT_COLORS = ["#c18cff", "#ff9f43", "#2de2c9", "#a3e048"];
-/** Team modes: Red is P1 + P3 (the left HUD side), Blue is P2 + P4; each member gets a shade of the team colour. */
+const BOT_COLORS = ["#c18cff", "#ff9f43", "#2de2c9", "#a3e048", "#ff7eb6", "#ffd84a", "#7ee0ff", "#b8c0d0"];
+/** Team modes: Red is the odd players P1, P3, P5, P7 (the left HUD side), Blue the even ones; each member gets a shade of the team colour. */
 const TEAMS = [
-  { name: "Red", color: "#ff4d5e", shades: ["#ff5d73", "#ff9f43"] },
-  { name: "Blue", color: "#3ec5ff", shades: ["#3ec5ff", "#7c8cff"] },
+  { name: "Red", color: "#ff4d5e", shades: ["#ff5d73", "#ff9f43", "#ff4fae", "#ffc94d"] },
+  { name: "Blue", color: "#3ec5ff", shades: ["#3ec5ff", "#7c8cff", "#3ef0d0", "#b18cff"] },
 ];
 const PVE_TEAMS = [
   { name: "Players", color: "#7cf29a" },
@@ -90,6 +96,26 @@ const mount: HostMount = (ctx) => {
   const spec = gameById("hammer")!.controls!;
   const gain = spec.tune.gain ?? 6;
   const stickGain = spec.tune.stick ?? 150;
+  const steer = spec.tune.steer ?? 8;
+  const hold = spec.tune.hold ?? 0.5;
+  /** Stick (not in Hammerfight): the tilt sets a target speed; the thrust closes the gap. The cap grows with the tilt (full
+   *  from half tilt), so a thumb that rests near the centre gives a small force, not a full brake, and no step at the dead zone. */
+  const stickPush = (m: Machine, x: number, y: number) => {
+    const l = Math.hypot(x, y);
+    if (l < 0.02) return;
+    const top = arena.tuning.speedClip * Math.min(1, l);
+    const tx = (x / l) * top;
+    const ty = (y / l) * top;
+    let ix = steer * (tx - m.hull.vx) + hold * tx;
+    let iy = steer * (ty - m.hull.vy) + hold * ty;
+    const cap = stickGain * Math.min(1, l / 0.5);
+    const il = Math.hypot(ix, iy);
+    if (il > cap) {
+      ix *= cap / il;
+      iy *= cap / il;
+    }
+    arena.pushRaw(m, ix, iy);
+  };
 
   const lite = isWebOS || !!startParam("lite");
   // lite (the TV): 15 joint passes instead of 30. Heavy chains cost about a third less per step; the mean chain
@@ -101,9 +127,12 @@ const mount: HostMount = (ctx) => {
   const tourKind = startParam("tour");
   const tour =
     import.meta.env.VITE_PERF === "1" && (tourKind === "melee" || tourKind === "guns")
-      ? makeTour(arena, Math.max(2, Math.min(4, Number(startParam("bots")) || 3)), audio(), Number(startParam("tourfrom")) || 1, tourKind)
+      ? makeTour(arena, Math.max(2, Math.min(MAX_SEATS, Number(startParam("bots")) || 3)), audio(), Number(startParam("tourfrom")) || 1, tourKind)
       : null;
-  const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite") });
+  // perf A/B (perf builds only): audio=synth (no samples, no file music), nomusic (no file music), nosamples
+  const coinsOff = import.meta.env.VITE_PERF === "1" && startParam("coins") === "off";
+  const audioAB = import.meta.env.VITE_PERF === "1" ? startParam("audio") : null;
+  const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite"), samples: audioAB !== "synth" && audioAB !== "nosamples", fileMusic: audioAB !== "synth" && audioAB !== "nomusic" });
   const sound = tour ? tour.wrapSound(sound0) : sound0;
   sound?.setMusicOn(ctx.settings().music !== false);
   /** The material of a machine's striking part, for the hit sound. */
@@ -113,7 +142,8 @@ const mount: HostMount = (ctx) => {
     return (w.parts.find((p) => p.key === w.striker) ?? w.parts[0]!).material;
   };
   // the TV strokes each spark separately on a weak CPU: fewer at once
-  const fx = new Fx(lite ? 80 : 240);
+  const fx = new Fx(lite ? 80 : 240, lite ? 48 : 90);
+  const coinPickups: Pickup[] = [];
 
   // ---- DOM ---------------------------------------------------------------------------------------
   const root = document.createElement("div");
@@ -196,7 +226,8 @@ const mount: HostMount = (ctx) => {
   const teamName = (t: number): string =>
     t === MONSTER_TEAM ? "The worms" : mode === "teams" ? TEAMS[t]!.name : mode === "pve" || mode === "pvm" ? PVE_TEAMS[t]!.name : "";
   const teamColor = (t: number): string => (t === MONSTER_TEAM ? MONSTER_COLOR : mode === "teams" ? TEAMS[t]!.color : PVE_TEAMS[t]!.color);
-  const colorOf = (s: Seat): string => (mode === "teams" ? TEAMS[s.slot % 2]!.shades[s.slot >= 2 ? 1 : 0]! : s.color);
+  // a waiting player (slot −1) has no team yet: their own colour
+  const colorOf = (s: Seat): string => (mode === "teams" && s.slot >= 0 ? TEAMS[s.slot % 2]!.shades[Math.floor(s.slot / 2)]! : s.color);
   /** Computer players wanted: the setting, but at least one enemy in co-op. */
   const botsWanted = () => {
     const n = Number(ctx.settings().bots) || 0;
@@ -371,7 +402,7 @@ const mount: HostMount = (ctx) => {
       color: colorOf(s),
       slot: s.slot,
       team: teamOf(s),
-      teamName: mode === "ffa" ? "" : teamName(teamOf(s)),
+      teamName: mode === "ffa" || s.slot < 0 ? "" : teamName(teamOf(s)),
       weapon: s.weapon,
       sidearm: s.sidearm,
       gun: g,
@@ -415,6 +446,7 @@ const mount: HostMount = (ctx) => {
     phaseFor = 0;
     lastWhole = -1;
     arena.resetTime(); // the last round may have ended in slow motion
+    fx.coins.clear();
     winner = null;
     callAt = -1;
     tuning.damage = 0; // warm-up: fly and swing, no damage
@@ -629,7 +661,7 @@ const mount: HostMount = (ctx) => {
     if (inp.g === 1) arena.shield(m);
     if (inp.k === 1) {
       s.k = 1;
-      arena.pushRaw(m, stickGain * inp.x ** 3, stickGain * inp.y ** 3);
+      stickPush(m, inp.x, inp.y);
       return;
     }
     if (inp.s !== s.s || s.k !== 0) {
@@ -657,6 +689,8 @@ const mount: HostMount = (ctx) => {
       if (e.type === "hit") {
         sound?.hit(e.dmg, e.impact, e.cut, materialOf(e.attacker));
         hitFx(e.x, e.y, e.dmg, e.cut, e.victim.color);
+        const coins = coinsOff ? 0 : fx.coins.spill(e.x, e.y, e.dmg);
+        if (coins) sound?.coin(coins);
         const a = byMachine.get(e.attacker);
         const v = byMachine.get(e.victim);
         if (e.dmg > 0) {
@@ -810,6 +844,7 @@ const mount: HostMount = (ctx) => {
     // Paused: the canvas keeps its last picture. Drawing on under the pause menu made the TV redraw the
     // canvas and redo the menu's full-screen backdrop blur every frame, for a still screen.
     if (paused) return;
+    const f0 = tour ? performance.now() : 0;
     const cap = capFps();
     if (cap && now - last < 1000 / cap - 4) return;
     const real = Math.min(0.1, (now - last) / 1000);
@@ -820,6 +855,7 @@ const mount: HostMount = (ctx) => {
     // 20 fps); elsewhere 5. Time it can't catch up on is dropped.
     const maxSteps = lite ? 3 : 5;
     let steps = 0;
+    const l0 = tour ? performance.now() : 0;
     while (acc >= STEP && steps < maxSteps) {
       for (const s of seated()) readInput(s);
       if (tour) {
@@ -836,6 +872,7 @@ const mount: HostMount = (ctx) => {
       steps++;
     }
     if (acc >= STEP) acc %= STEP;
+    const l1 = tour ? performance.now() : 0;
     // the phone shows the ammo: send a gun's state when it changes (a shot, the reload, a lost weapon)
     for (const s of seats.values()) {
       if (!s.human || !s.m) continue;
@@ -844,19 +881,26 @@ const mount: HostMount = (ctx) => {
     tickPhase(real);
     soundFrame();
     fx.update(real);
+    fx.coins.update(real * arena.timewarp, arena.machines, coinPickups);
+    for (const c of coinPickups) {
+      sound?.coin(0);
+      fx.burst(c.x, c.y, lite ? 2 : 5, 90, COIN_LOOK[c.metal]!.fill, 1.5);
+    }
+    coinPickups.length = 0;
     const d0 = tour ? performance.now() : 0;
     renderer.draw(arena, Math.min(1, acc / STEP), fx);
+    const d1 = tour ? performance.now() : 0;
     frameDrawn(now);
     maybeDrawHud();
     if (tour) {
       const end = performance.now();
-      tour.framed(steps, end - d0, end - now);
+      tour.framed(steps, end - d0, end - now, { delay: f0 - now, loop: l1 - l0, mid: d0 - l1, hud: end - d1 });
     }
   };
 
   startPick(FIRST_PICK_S);
   raf = requestAnimationFrame(frame);
-  if (import.meta.env.DEV) (window as unknown as { __rotor: unknown }).__rotor = { host, arena, seats, phase: () => phase, sound, audioCtx: audio() };
+  if (import.meta.env.DEV) (window as unknown as { __rotor: unknown }).__rotor = { host, arena, seats, phase: () => phase, sound, fx, audioCtx: audio() };
 
   return {
     dispose() {

@@ -11,12 +11,15 @@ import {
   type ErrorCode,
   type HostToServer,
 } from "@thumbtide/protocol";
+import { keepAwake } from "./keep-awake.ts";
 import { RoomManager, type Conn, type Room } from "./rooms.ts";
 
 export interface StartOptions {
   port?: number;
   playerGraceMs?: number;
   hostGraceMs?: number;
+  /** See RoomManager (tests use 0). */
+  ghostMinMs?: number;
   /** Comma-separated allowlist; empty = allow all origins. */
   allowedOrigins?: string[];
 }
@@ -25,12 +28,18 @@ const HEARTBEAT_MS = 15_000;
 
 /** Token bucket per socket. */
 class RateLimiter {
-  private tokens: number = LIMITS.rateBurst;
+  private tokens: number;
   private last = Date.now();
   private warned = 0;
+  constructor(
+    private readonly perSec: number = LIMITS.ratePerSec,
+    private readonly burst: number = LIMITS.rateBurst,
+  ) {
+    this.tokens = burst;
+  }
   take(): boolean {
     const now = Date.now();
-    this.tokens = Math.min(LIMITS.rateBurst, this.tokens + ((now - this.last) / 1000) * LIMITS.ratePerSec);
+    this.tokens = Math.min(this.burst, this.tokens + ((now - this.last) / 1000) * this.perSec);
     this.last = now;
     if (this.tokens < 1) return false;
     this.tokens -= 1;
@@ -79,7 +88,7 @@ function parseFrame(ws: WebSocket, raw: Buffer | ArrayBuffer | Buffer[], limiter
 }
 
 export function startServer(opts: StartOptions = {}) {
-  const rooms = new RoomManager({ playerGraceMs: opts.playerGraceMs, hostGraceMs: opts.hostGraceMs });
+  const rooms = new RoomManager({ playerGraceMs: opts.playerGraceMs, hostGraceMs: opts.hostGraceMs, ghostMinMs: opts.ghostMinMs });
   const allowed = new Set(opts.allowedOrigins?.filter(Boolean) ?? []);
 
   const http = createServer((req, res) => {
@@ -139,7 +148,7 @@ export function startServer(opts: StartOptions = {}) {
 
     const r = room;
     r.attachHost(conn, resumed);
-    const limiter = new RateLimiter();
+    const limiter = new RateLimiter(LIMITS.hostRatePerSec, LIMITS.hostRateBurst);
     ws.on("message", (raw) => {
       const msg = parseFrame(ws, raw, limiter) as HostToServer | null;
       if (msg && !r.closed) r.onHostMessage(msg);
@@ -214,7 +223,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",").map((s) => s.trim()),
   });
   server.ready.then((p) => console.log(`[thumbtide] relay listening on :${p}`));
-  const shutdown = () => server.close().then(() => process.exit(0));
+  const stopKeepAwake = keepAwake();
+  const shutdown = () => {
+    stopKeepAwake?.();
+    return server.close().then(() => process.exit(0));
+  };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }

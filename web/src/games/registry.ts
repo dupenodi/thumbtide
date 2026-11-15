@@ -67,7 +67,7 @@ export const GAMES: GameDef[] = [
       {
         key: "bots",
         label: "Extra computer players",
-        options: [0, 1, 2, 3].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
         default: 0,
       },
     ],
@@ -151,7 +151,7 @@ export const GAMES: GameDef[] = [
     title: "Rotor Brawl",
     tagline: "Fly a tiny machine. Swing a huge weapon. Last one flying wins.",
     minPlayers: 1,
-    maxPlayers: 4,
+    maxPlayers: 8,
     colors: ["#ffb547", "#3ec5ff"],
     glyph: "action",
     controls: parsePad(hammerPad, "hammer.pad"),
@@ -161,7 +161,7 @@ export const GAMES: GameDef[] = [
         label: "Mode",
         options: [
           { value: "ffa", label: "Free for all" },
-          { value: "teams", label: "Teams 2v2" },
+          { value: "teams", label: "Teams (odd vs even)" },
           { value: "pve", label: "Co-op vs CPU" },
           { value: "pvm", label: "Co-op vs monsters" },
         ],

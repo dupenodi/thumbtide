@@ -95,7 +95,8 @@ const mount: HostMount = ({ host, root }) => {
     }
 
     // seats: everyone who's here, then the empty ones
-    const max = Math.max(host.config.maxPlayers, players.length);
+    // the room takes up to 16, but 16 empty circles would crowd the TV: show 8, and more as people arrive
+    const max = Math.max(Math.min(host.config.maxPlayers, 8), players.length);
     $(".lb-seats").innerHTML = [
       ...players.map((p) => {
         const isNew = !seen.has(p.id);

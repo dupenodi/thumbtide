@@ -3,6 +3,17 @@
 
 import type { Body } from "./engine.ts";
 import { type Arena, lerpBody, type Machine, type Tag, VIEW_H, VIEW_W } from "./sim.ts";
+import { COIN_FADE, COIN_LOOK, Coins } from "./coins.ts";
+
+/** The hull picture's box (world units): the 25×33 body plus its outline. */
+const HULL_SW = 30;
+const HULL_SH = 38;
+/** Name label box: height and the text baseline from its top (world units). */
+const NAME_H = 16;
+const NAME_ASC = 12;
+
+/** Spin widths in the coin atlas. */
+const COIN_FRAMES = 6;
 import { MONSTER_LOOK } from "./monsters.ts";
 import { MACHINE, type Material, PLATES, WEAPONS } from "./weapons.ts";
 
@@ -33,7 +44,11 @@ export class Fx {
   floats: Float[] = [];
   shake = 0;
   /** At most this many sparks live at once (each is a separate stroke; a long grind could add hundreds). */
-  constructor(readonly maxSparks = 240) {}
+  /** Coins from hard hits (draw-only). */
+  readonly coins: Coins;
+  constructor(readonly maxSparks = 240, maxCoins = 90) {
+    this.coins = new Coins(VIEW_W, VIEW_H, maxCoins, Math.min(30, maxCoins));
+  }
   /** Recent striker tip positions per machine, for the swing trail. */
   trails = new Map<Machine, { x: number; y: number }[]>();
 
@@ -122,6 +137,7 @@ export class Renderer {
     for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
     if (arena.shots.length) this.shots(arena, alpha);
     this.plates(arena, alpha);
+    if (fx.coins.list.length) this.coins(fx.coins);
 
     ctx.lineCap = "round";
     for (const p of fx.sparks) {
@@ -149,6 +165,51 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
     for (const m of arena.machines) this.offscreen(m, alpha);
+  }
+
+  /** Coin pictures: 3 metals × COIN_FRAMES spin widths, painted once per scale (paths per coin cost the TV). */
+  private coinAtlas: HTMLCanvasElement | null = null;
+  private coinAtlasScale = 0;
+  private coinCell = 0;
+
+  /** Every coin is one drawImage from the atlas; the frame follows its spin (a flipping ellipse). */
+  private coins(coins: Coins): void {
+    const ctx = this.ctx;
+    if (!this.coinAtlas || this.coinAtlasScale !== this.scale) this.paintCoins();
+    const atlas = this.coinAtlas!;
+    const cell = this.coinCell;
+    for (const c of coins.list) {
+      if (c.age > COIN_FADE - 1 && Math.floor(c.age * 8) % 2) continue; // blink out in the last second
+      const r = c.big ? 6 : 4.5;
+      const f = Math.min(COIN_FRAMES - 1, Math.floor(Math.abs(Math.cos(c.spin)) * COIN_FRAMES));
+      ctx.drawImage(atlas, f * cell, c.metal * cell, cell, cell, c.x - r - 1, c.y - r - 1, 2 * r + 2, 2 * r + 2);
+    }
+  }
+
+  private paintCoins(): void {
+    const s = this.scale;
+    // a cell holds a big coin (r 6) plus a 1 px margin, at the canvas's pixel scale
+    const cell = Math.ceil(14 * s);
+    const c = document.createElement("canvas");
+    c.width = cell * COIN_FRAMES;
+    c.height = cell * 3;
+    const g = c.getContext("2d")!;
+    const k = cell / 14;
+    g.lineWidth = 1.2 * k;
+    for (let metal = 0; metal < 3; metal++) {
+      for (let f = 0; f < COIN_FRAMES; f++) {
+        const rx = Math.max(0.8, 6 * ((f + 0.5) / COIN_FRAMES)) * k;
+        g.beginPath();
+        g.ellipse(f * cell + cell / 2, metal * cell + cell / 2, rx, 6 * k, 0, 0, Math.PI * 2);
+        g.fillStyle = COIN_LOOK[metal]!.fill;
+        g.fill();
+        g.strokeStyle = COIN_LOOK[metal]!.rim;
+        g.stroke();
+      }
+    }
+    this.coinAtlas = c;
+    this.coinAtlasScale = s;
+    this.coinCell = cell;
   }
 
   private sky(): void {
@@ -192,19 +253,25 @@ export class Renderer {
     const speed = Math.hypot(b.vx, b.vy);
     const k0 = Math.min(1, Math.max(0, (speed - 200) / 500));
     if (k0 <= 0) return;
+    // two strokes, not one per segment (each stroke costs the TV): a faint thin tail and a brighter, wider head
     const ctx = this.ctx;
     ctx.lineCap = "round";
-    for (let i = 1; i < pts.length; i++) {
-      const p0 = pts[i - 1]!;
-      const p1 = pts[i]!;
-      const k = i / pts.length;
-      ctx.strokeStyle = `rgba(255,255,255,${0.35 * k0 * k})`;
-      ctx.lineWidth = 10 * k;
-      ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y);
-      ctx.lineTo(p1.x, p1.y);
-      ctx.stroke();
-    }
+    ctx.lineJoin = "round";
+    const half = pts.length >> 1;
+    ctx.globalAlpha = 0.14 * k0;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(pts[0]!.x, pts[0]!.y);
+    for (let i = 1; i <= half; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+    ctx.stroke();
+    ctx.globalAlpha = 0.3 * k0;
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(pts[half]!.x, pts[half]!.y);
+    for (let i = half + 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 
   private weapon(m: Machine, alpha: number): void {
@@ -618,19 +685,8 @@ export class Renderer {
       ctx.fillRect(-1.5, -HULL_R - 7, 3, 7);
     }
 
-    ctx.fillStyle = m.flash > 0 ? "#ffffff" : m.alive ? m.color : "#3b3b44";
-    ctx.strokeStyle = "rgba(0,0,0,0.45)";
-    ctx.lineWidth = 2.5;
-    roundRect(ctx, -12.5, -16.5, 25, 33, 9);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "rgba(0,0,0,0.18)";
-    roundRect(ctx, -12.5, 4, 25, 12.5, 6);
-    ctx.fill();
-    ctx.fillStyle = "rgba(225,240,255,0.9)";
-    ctx.beginPath();
-    ctx.ellipse(m.hull.vx >= 0 ? 4 : -4, -6, 5.5, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // the hull is one picture (body, shade, window), made once per colour and facing
+    ctx.drawImage(this.hullSprite(m.flash > 0 ? "#ffffff" : m.alive ? m.color : "#3b3b44", m.hull.vx >= 0), -HULL_SW / 2, -HULL_SH / 2, HULL_SW, HULL_SH);
     ctx.restore();
     ctx.globalAlpha = 1;
 
@@ -650,24 +706,91 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
 
+    // health bar: two rectangles (no paths); the name is a cached picture (text is slow on the TV)
     const w = 40;
-    const frac = m.hp / MACHINE.health;
+    const frac = Math.max(0, m.hp / MACHINE.health);
     const by = y - HULL_R - 22;
     ctx.fillStyle = "rgba(10,12,20,0.6)";
-    roundRect(ctx, x - w / 2 - 1, by, w + 2, 6, 3);
-    ctx.fill();
+    ctx.fillRect(x - w / 2 - 1, by, w + 2, 6);
     ctx.fillStyle = frac > 0.5 ? "#7dffa3" : frac > 0.2 ? "#ffd166" : "#ff5d73";
-    roundRect(ctx, x - w / 2, by + 1, w * frac, 4, 2);
-    ctx.fill();
+    ctx.fillRect(x - w / 2, by + 1, w * frac, 4);
     if (this.opts.names) {
-      ctx.font = `11px "Russo One", system-ui, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "rgba(10,12,20,0.8)";
-      ctx.strokeText(m.name, x, by - 4);
-      ctx.fillStyle = m.color;
-      ctx.fillText(m.name, x, by - 4);
+      const label = this.nameSprite(m.name, m.color);
+      ctx.drawImage(label.c, x - label.w / 2, by - 4 - NAME_ASC, label.w, NAME_H);
     }
+  }
+
+  private hulls = new Map<string, HTMLCanvasElement>();
+  private hullScale = 0;
+  /** The hull (body, shade and window) for one colour and facing, at the canvas's pixel scale. */
+  private hullSprite(fill: string, right: boolean): HTMLCanvasElement {
+    if (this.hullScale !== this.scale) {
+      this.hulls.clear();
+      this.names.clear();
+      this.hullScale = this.scale;
+    }
+    const key = `${fill}|${right ? 1 : 0}`;
+    let c = this.hulls.get(key);
+    if (c) return c;
+    const s = this.scale;
+    c = document.createElement("canvas");
+    c.width = Math.ceil(HULL_SW * s);
+    c.height = Math.ceil(HULL_SH * s);
+    const g = c.getContext("2d")!;
+    g.setTransform((c.width / HULL_SW), 0, 0, c.height / HULL_SH, (c.width / HULL_SW) * (HULL_SW / 2), (c.height / HULL_SH) * (HULL_SH / 2));
+    g.fillStyle = fill;
+    g.strokeStyle = "rgba(0,0,0,0.45)";
+    g.lineWidth = 2.5;
+    roundRect(g, -12.5, -16.5, 25, 33, 9);
+    g.fill();
+    g.stroke();
+    g.fillStyle = "rgba(0,0,0,0.18)";
+    roundRect(g, -12.5, 4, 25, 12.5, 6);
+    g.fill();
+    g.fillStyle = "rgba(225,240,255,0.9)";
+    g.beginPath();
+    g.ellipse(right ? 4 : -4, -6, 5.5, 4, 0, 0, Math.PI * 2);
+    g.fill();
+    if (this.hulls.size > 64) this.hulls.clear(); // colours come and go with players
+    this.hulls.set(key, c);
+    return c;
+  }
+
+  private names = new Map<string, { c: HTMLCanvasElement; w: number }>();
+  /** A machine's name label (outlined text), drawn once per name, colour and scale. */
+  private nameSprite(name: string, color: string): { c: HTMLCanvasElement; w: number } {
+    if (this.hullScale !== this.scale) {
+      this.hulls.clear();
+      this.names.clear();
+      this.hullScale = this.scale;
+    }
+    const key = `${name}|${color}`;
+    let l = this.names.get(key);
+    if (l) return l;
+    const s = this.scale;
+    const font = `11px "Russo One", system-ui, sans-serif`;
+    const probe = this.ctx;
+    probe.font = font;
+    const w = Math.ceil(probe.measureText(name).width) + 6;
+    const c = document.createElement("canvas");
+    c.width = Math.ceil(w * s);
+    c.height = Math.ceil(NAME_H * s);
+    const g = c.getContext("2d")!;
+    g.scale(c.width / w, c.height / NAME_H);
+    g.font = font;
+    g.textAlign = "center";
+    g.lineWidth = 3;
+    g.strokeStyle = "rgba(10,12,20,0.8)";
+    g.strokeText(name, w / 2, NAME_ASC);
+    g.fillStyle = color;
+    g.fillText(name, w / 2, NAME_ASC);
+    l = { c, w };
+    // keep it only once the font is in (else the fallback font would stick)
+    if (document.fonts?.check?.(font) ?? true) {
+      if (this.names.size > 64) this.names.clear();
+      this.names.set(key, l);
+    }
+    return l;
   }
 
   private offscreen(m: Machine, alpha: number): void {
