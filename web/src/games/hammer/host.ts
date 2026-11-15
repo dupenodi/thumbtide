@@ -7,6 +7,7 @@ import { colorFor } from "../../config.ts";
 import { audio } from "../../shell/sound.ts";
 import { isWebOS, startParam } from "../../shell/tv.ts";
 import { frameDrawn, setPerfExtras } from "../../shell/perf.ts";
+import { profBegin, profEnd } from "../../shell/profiler.ts";
 import { makeTour } from "./tour.ts";
 import { createGameAudio } from "./audio.ts";
 import { gameById } from "../registry.ts";
@@ -120,7 +121,11 @@ const mount: HostMount = (ctx) => {
   const lite = isWebOS || !!startParam("lite");
   // lite (the TV): 15 joint passes instead of 30. Heavy chains cost about a third less per step; the mean chain
   // stretch goes from 0.05 to 0.1 px (measured, 4 orb maces + plates + a worm), which nobody can see.
-  const tuning = { ...DEFAULT_TUNING, ...(lite ? { passes: 15 } : {}) };
+  // perf A/B (perf builds only): passes=N joint passes, res=W canvas width, hud=off, draw=off (the canvas keeps one picture)
+  const abPasses = import.meta.env.VITE_PERF === "1" ? Number(startParam("passes")) || 0 : 0;
+  const abHudOff = import.meta.env.VITE_PERF === "1" && startParam("hud") === "off";
+  const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
+  const tuning = { ...DEFAULT_TUNING, ...(lite ? { passes: 15 } : {}), ...(abPasses ? { passes: abPasses } : {}) };
   const arena = new Arena(tuning);
   // the weapon tours (TV tests only): every melee weapon, or every gun and plate, in turn, with physics, draw and
   // fight numbers in each perf report
@@ -149,12 +154,16 @@ const mount: HostMount = (ctx) => {
   const root = document.createElement("div");
   // hm-lite: the TV skips filters, gradient text and endless animations, which it repaints slowly
   root.className = lite ? "hm-root hm-lite" : "hm-root";
+  // HUD layer A/B on the TV (perf builds only): hudfix=layer+noskew (see hammer.css)
+  if (import.meta.env.VITE_PERF === "1") for (const f of (startParam("hudfix") ?? "").split("+").filter(Boolean)) root.classList.add(`hm-ab-${f}`);
   root.innerHTML = `<canvas class="hm-canvas"></canvas>`;
   ctx.root.appendChild(root);
   const canvas = root.querySelector<HTMLCanvasElement>(".hm-canvas")!;
   const hud = new Hud(root);
   // The TV draws at 1280 x 720 and lets the screen scale it up; its GPU can't afford a 4K canvas.
-  const renderer = new Renderer(canvas, { maxDpr: isWebOS ? 1 : 2, maxWidth: isWebOS ? 1280 : 4096, names: true });
+  const resAB = import.meta.env.VITE_PERF === "1" ? Number(startParam("res")) || 0 : 0;
+  const skipAB = import.meta.env.VITE_PERF === "1" && startParam("skip") ? new Set(startParam("skip")!.split("+")) : undefined;
+  const renderer = new Renderer(canvas, { maxDpr: isWebOS ? 1 : 2, maxWidth: resAB || (isWebOS ? 1280 : 4096), names: true, skip: skipAB });
 
   const fit = () => {
     const W = root.clientWidth;
@@ -836,6 +845,8 @@ const mount: HostMount = (ctx) => {
   let acc = 0;
   let last = performance.now();
   let raf = 0;
+  let drewOnce = false;
+  if (abHudOff) hud.el.style.display = "none";
   let clashCd = 0;
   /** Frame rate cap for the current state: none while anyone can fight; 30 fps once a result is on screen. */
   const capFps = () => ((phase === "result" || phase === "match") && phaseFor > 1.5 ? 30 : 0);
@@ -856,6 +867,7 @@ const mount: HostMount = (ctx) => {
     const maxSteps = lite ? 3 : 5;
     let steps = 0;
     const l0 = tour ? performance.now() : 0;
+    profBegin("physics");
     while (acc >= STEP && steps < maxSteps) {
       for (const s of seated()) readInput(s);
       if (tour) {
@@ -872,6 +884,7 @@ const mount: HostMount = (ctx) => {
       steps++;
     }
     if (acc >= STEP) acc %= STEP;
+    profEnd("physics");
     const l1 = tour ? performance.now() : 0;
     // the phone shows the ammo: send a gun's state when it changes (a shot, the reload, a lost weapon)
     for (const s of seats.values()) {
@@ -888,10 +901,15 @@ const mount: HostMount = (ctx) => {
     }
     coinPickups.length = 0;
     const d0 = tour ? performance.now() : 0;
-    renderer.draw(arena, Math.min(1, acc / STEP), fx);
+    profBegin("draw");
+    if (!abDrawOff || !drewOnce) renderer.draw(arena, Math.min(1, acc / STEP), fx);
+    profEnd("draw");
+    drewOnce = true;
     const d1 = tour ? performance.now() : 0;
     frameDrawn(now);
-    maybeDrawHud();
+    profBegin("hud");
+    if (!abHudOff) maybeDrawHud();
+    profEnd("hud");
     if (tour) {
       const end = performance.now();
       tour.framed(steps, end - d0, end - now, { delay: f0 - now, loop: l1 - l0, mid: d0 - l1, hud: end - d1 });

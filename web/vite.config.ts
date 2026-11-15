@@ -25,16 +25,22 @@ function lanIp(): string {
  * VITE_PERF=1 fail if any of its markers turn up in the bundle. See tools/perf.
  */
 function noPerfCode(): Plugin {
-  const markers = ["__thumbtidePerf", "__gpuSlowdown", "__refreshHz", "__probe"];
+  // each kind of test code has its own switch: a build without the switch fails if the kind's markers turn up
+  const kinds = [
+    { flag: "VITE_PERF", markers: ["__thumbtidePerf", "__gpuSlowdown", "__refreshHz", "__probe"], gate: "PERF_BUILD (src/shell/perf.ts)" },
+    { flag: "VITE_PROFILE", markers: ["__thumbtideProfile"], gate: "PROFILE_BUILD (src/shell/profiler.ts)" },
+  ];
   return {
     name: "thumbtide:no-perf-code",
     apply: "build",
     generateBundle(_, bundle) {
-      if (process.env.VITE_PERF === "1") return;
-      for (const [file, chunk] of Object.entries(bundle)) {
-        if (chunk.type !== "chunk") continue;
-        const hit = markers.find((m) => chunk.code.includes(m));
-        if (hit) this.error(`${file} contains perf-test code (${hit}). Keep it behind PERF_BUILD (src/shell/perf.ts).`);
+      for (const kind of kinds) {
+        if (process.env[kind.flag] === "1") continue;
+        for (const [file, chunk] of Object.entries(bundle)) {
+          if (chunk.type !== "chunk") continue;
+          const hit = kind.markers.find((m) => chunk.code.includes(m));
+          if (hit) this.error(`${file} contains test code (${hit}) without ${kind.flag}=1. Keep it behind ${kind.gate}.`);
+        }
       }
     },
   };

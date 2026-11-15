@@ -26,6 +26,22 @@ its scenarios (`cascade`). Options: `--seconds=12 --warmup=4 --target=60 --verbo
 --cpu=N --gpu=N --fps=30`. Any other `--key=value` goes to the game as a start option (`--look=reactor`,
 `--board=huge`, `--bots=7`, `--quality=low`). Exit code 1 means a scenario is below target.
 
+## Profiling (why a frame is slow)
+
+| Need | Command |
+|---|---|
+| Our calls per frame: canvas calls by method, game sections (ms), page changes, long tasks | `pnpm tv --perf=hammer --profile …` (reports print and go to `web/dist-tv/profile-*.jsonl`) |
+| The browser's own work on the TV (style, layout, paint, raster, compositing, GPU) and the composited layers | start a `--perf` run, then `node tools/perf/tv-trace.mjs --seconds=8 --label=<arm>` |
+
+- The call profiler (`web/src/shell/profiler.ts`) has its own build switch, `VITE_PROFILE=1`, set only by
+  `--profile`. `vite.config.ts` fails any build without the switch that contains its marker (`__thumbtideProfile`),
+  like the perf markers. Games mark sections with `profBegin(name)` / `profEnd(name)` (no-ops in other builds).
+- `tv-trace.mjs` writes `tools/perf/captures/trace-*/`: `trace.json` (load it in Chrome DevTools → Performance),
+  `layers.json` and `summary.md`. `--cdp=http://localhost:9222` traces a local Chrome instead (to test the tool).
+  The element names in the layer list are approximate (layers change while it reads them).
+- Every DOM element above the game canvas that the browser can't merge becomes a composited layer, and the TV
+  composites each one at 4K every frame: count the layers before you blame a HUD's JavaScript.
+
 ## Reading results
 
 - **fps** over the measured window, **95% under** (p95 frame time), **slowest**, **stutters** (% of frames over

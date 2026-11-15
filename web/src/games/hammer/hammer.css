@@ -24,6 +24,16 @@
   pointer-events: none;
 }
 
+/* TV A/B (perf builds add these classes from `hudfix=layer+noskew`): the whole HUD as one composited layer;
+   text in a plate that leans with it (a counter-skewed child of a skewed, clipped plate can't share a layer) */
+.hm-ab-layer .hm-hud {
+  will-change: transform;
+}
+
+.hm-ab-noskew .hm-plate > * {
+  transform: none;
+}
+
 /* ---- player cards */
 .hm-side {
   position: absolute;
@@ -467,6 +477,12 @@
   box-shadow: none;
 }
 
+/* the health bar jumps on the TV: a running transition makes the bar a layer of its own (and with 8 machines
+   some bar is nearly always moving) */
+.hm-lite .hm-hp,
+.hm-lite .hm-chip {
+  transition: none;
+}
 /* ================================================================= phone */
 .hmc {
   --c: #7c5cff;
