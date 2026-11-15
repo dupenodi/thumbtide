@@ -235,6 +235,8 @@ export class Arena {
   /** Static obstacles (OURS; Hammerfight's multiplayer arenas have none, its story ARENA has crates and cages). */
   obstacles: Obstacle[] = [];
   private obstacleOf = new Map<Body, Obstacle>();
+  /** Crates broken during this step's collisions, removed after it. */
+  private brokenBodies: Body[] = [];
   private slomoTimer = 0;
   /** Wrecks that fell far below the frame: out of the physics until they respawn (they can't come back). */
   readonly parked = new Set<Machine>();
@@ -446,6 +448,10 @@ export class Arena {
 
     this.world.commonForces(tn.gravity);
     this.world.step({ dt, dtPrev: this.dtPrev, gravity: tn.gravity, passes: tn.passes, onContact: this.onContact });
+    if (this.brokenBodies.length) {
+      for (const b of this.brokenBodies) this.world.remove(b);
+      this.brokenBodies.length = 0;
+    }
     if (tn.walls) for (const m of this.machines) if (m.alive && !m.monster) this.verticalWalls(m, dt);
     this.dtPrev = dt;
     this.t += dt;
@@ -817,11 +823,13 @@ export class Arena {
     o.hp -= dmg;
     this.events.push({ type: "crack", by: by.m, obstacle: o, dmg, x: c.x, y: c.y });
     if (o.hp > 0) return;
-    this.world.remove(o.body);
+    // this runs inside the collision loop: switch the body off now and take it out of the world after the step
+    o.body.solid = false;
+    this.brokenBodies.push(o.body);
     this.obstacles = this.obstacles.filter((x) => x !== o);
     this.obstacleOf.delete(o.body);
     // splinters fly from the crate and hurt the others for a moment (they are the breaker's: not the breaker)
-    this.shards(by.m, o.body.x, o.body.y, Math.min(o.hw, o.hh), 4, byBody.vx * 0.3, byBody.vy * 0.3, true);
+    this.shards(by.m, o.body.x, o.body.y, Math.min(o.hw, o.hh), 4, byBody.vx * 0.3, byBody.vy * 0.3, true, by.credit ?? by.m);
     this.events.push({ type: "break", by: by.m, obstacle: o, x: o.body.x, y: o.body.y });
   }
 
