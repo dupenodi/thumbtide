@@ -1,4 +1,4 @@
-// Rotor Brawl on the TV: up to 4 machines, last one flying wins the round, first to N rounds wins the match.
+// Rotor Brawl on the TV: up to 8 machines, last one flying wins the round, first to N rounds wins the match.
 // Rounds: warm-up and weapon pick (no damage) → fight → result → (match winner) → next warm-up.
 // Physics: sim.ts, which follows Hammerfight's model (HAMMERFIGHT_PHYSICS.md).
 
@@ -22,19 +22,24 @@ import { Arena, type Machine, STEP, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
 import { GUN_KINDS, type GunKind, MACHINE, type Material, PLATE_KINDS, type PlateKind, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
-const MAX_SEATS = 4;
+const MAX_SEATS = 8;
 const SPAWNS: [number, number][] = [
   [220, 170],
   [740, 170],
   [220, 370],
   [740, 370],
+  // seats 5-8: even slots (left HUD side, Red) on the left half, odd on the right
+  [110, 270],
+  [850, 270],
+  [390, 440],
+  [570, 440],
 ];
 /** Computer players: colours away from the first human colours, and never white (white is the hit flash). */
-const BOT_COLORS = ["#c18cff", "#ff9f43", "#2de2c9", "#a3e048"];
-/** Team modes: Red is P1 + P3 (the left HUD side), Blue is P2 + P4; each member gets a shade of the team colour. */
+const BOT_COLORS = ["#c18cff", "#ff9f43", "#2de2c9", "#a3e048", "#ff7eb6", "#ffd84a", "#7ee0ff", "#b8c0d0"];
+/** Team modes: Red is the odd players P1, P3, P5, P7 (the left HUD side), Blue the even ones; each member gets a shade of the team colour. */
 const TEAMS = [
-  { name: "Red", color: "#ff4d5e", shades: ["#ff5d73", "#ff9f43"] },
-  { name: "Blue", color: "#3ec5ff", shades: ["#3ec5ff", "#7c8cff"] },
+  { name: "Red", color: "#ff4d5e", shades: ["#ff5d73", "#ff9f43", "#ff4fae", "#ffc94d"] },
+  { name: "Blue", color: "#3ec5ff", shades: ["#3ec5ff", "#7c8cff", "#3ef0d0", "#b18cff"] },
 ];
 const PVE_TEAMS = [
   { name: "Players", color: "#7cf29a" },
@@ -122,7 +127,7 @@ const mount: HostMount = (ctx) => {
   const tourKind = startParam("tour");
   const tour =
     import.meta.env.VITE_PERF === "1" && (tourKind === "melee" || tourKind === "guns")
-      ? makeTour(arena, Math.max(2, Math.min(4, Number(startParam("bots")) || 3)), audio(), Number(startParam("tourfrom")) || 1, tourKind)
+      ? makeTour(arena, Math.max(2, Math.min(MAX_SEATS, Number(startParam("bots")) || 3)), audio(), Number(startParam("tourfrom")) || 1, tourKind)
       : null;
   // perf A/B (perf builds only): audio=synth (no samples, no file music), nomusic (no file music), nosamples
   const coinsOff = import.meta.env.VITE_PERF === "1" && startParam("coins") === "off";
@@ -221,7 +226,7 @@ const mount: HostMount = (ctx) => {
   const teamName = (t: number): string =>
     t === MONSTER_TEAM ? "The worms" : mode === "teams" ? TEAMS[t]!.name : mode === "pve" || mode === "pvm" ? PVE_TEAMS[t]!.name : "";
   const teamColor = (t: number): string => (t === MONSTER_TEAM ? MONSTER_COLOR : mode === "teams" ? TEAMS[t]!.color : PVE_TEAMS[t]!.color);
-  const colorOf = (s: Seat): string => (mode === "teams" ? TEAMS[s.slot % 2]!.shades[s.slot >= 2 ? 1 : 0]! : s.color);
+  const colorOf = (s: Seat): string => (mode === "teams" ? TEAMS[s.slot % 2]!.shades[Math.floor(s.slot / 2)]! : s.color);
   /** Computer players wanted: the setting, but at least one enemy in co-op. */
   const botsWanted = () => {
     const n = Number(ctx.settings().bots) || 0;
