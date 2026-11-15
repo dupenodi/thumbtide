@@ -62,7 +62,7 @@ export interface Tour {
   /** Physics step done (and how long it took). */
   stepped(ms: number): void;
   /** A frame done: physics steps in it, the draw time and the whole frame's script time. */
-  framed(steps: number, drawMs: number, frameMs: number): void;
+  framed(steps: number, drawMs: number, frameMs: number, parts?: { delay: number; loop: number; mid: number; hud: number }): void;
   /** This step's events, before the host handles them. */
   observe(events: SimEvent[]): void;
   /** The numbers for this report window (then they start again). */
@@ -79,6 +79,8 @@ export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | n
   let drawWorst = 0;
   let frameMs = 0;
   let frameWorst = 0;
+  /** Frame parts (ms, summed): rAF callback delay, the step loop (input + physics + events), between loop and draw, the HUD. */
+  const part = { delay: 0, loop: 0, mid: 0, hud: 0 };
   // `from` (1-based) starts the tour at a later set, to repeat the end of a run
   let setIdx = Math.max(0, Math.min(sets.length, from) - 1) - 1;
   let setT = SET_S;
@@ -145,7 +147,8 @@ export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | n
         }
       }
     },
-    framed(n, draw, total) {
+    framed(n, draw, total, p) {
+      if (p) for (const k of Object.keys(part) as (keyof typeof part)[]) part[k] += p[k];
       frames++;
       stepsIn += n;
       drawMs += draw;
@@ -176,6 +179,10 @@ export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | n
         drawWorstMs: Math.round(drawWorst * 10) / 10,
         frameMs: frames ? Math.round((frameMs / frames) * 100) / 100 : 0,
         frameWorstMs: Math.round(frameWorst * 10) / 10,
+        delayMs: frames ? Math.round((part.delay / frames) * 100) / 100 : 0,
+        loopMs: frames ? Math.round((part.loop / frames) * 100) / 100 : 0,
+        midMs: frames ? Math.round((part.mid / frames) * 100) / 100 : 0,
+        hudMs: frames ? Math.round((part.hud / frames) * 100) / 100 : 0,
         jointPx: Math.round(jointWorst * 10) / 10,
         jointWho,
         topSpeed: Math.round(speedWorst),
@@ -187,7 +194,7 @@ export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | n
         impactMax: Math.round(impactMax),
         sounds: Object.entries(sounds).map(([k, v]) => `${k}:${v}`).join(",") || "-",
         soundErrors,
-        samples: inner?.samples(),
+        samples: ((s) => (s ? `${s.loaded} ok ${s.failed} failed, music ${s.music}` : "none"))(inner?.samples()),
         audio: audioCtx?.state ?? "none",
       };
       steps = 0;
@@ -198,6 +205,7 @@ export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | n
       drawMs = 0;
       drawWorst = 0;
       frameMs = 0;
+      part.delay = part.loop = part.mid = part.hud = 0;
       frameWorst = 0;
       jointWorst = 0;
       jointWho = "";

@@ -69,7 +69,7 @@ export class Coins {
       const metal: Metal = r < gold ? 0 : r < gold + 0.35 ? 1 : 2;
       const a = -Math.PI / 2 + (Math.random() * 2 - 1) * (36 * Math.PI) / 180;
       const sp = 200 * (0.5 + Math.random());
-      if (this.list.length >= this.max) this.list.shift();
+      if (this.list.length >= this.max) this.dropOldest();
       this.list.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, age: 0, metal, big: Math.random() < 0.4, spin: Math.random() * Math.PI * 2, spinRate: 6 + Math.random() * 8 });
     }
     return n;
@@ -106,6 +106,15 @@ export class Coins {
         cs.pop();
       }
     }
+  }
+
+  /** The list is not in age order (swap-remove), so find the oldest. */
+  private dropOldest(): void {
+    const cs = this.list;
+    let o = 0;
+    for (let j = 1; j < cs.length; j++) if (cs[j]!.age > cs[o]!.age) o = j;
+    cs[o] = cs[cs.length - 1]!;
+    cs.pop();
   }
 
   clear(): void {

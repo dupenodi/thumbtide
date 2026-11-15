@@ -40,9 +40,9 @@ export interface Tuning {
 
 export const DEFAULT_TUNING: Tuning = {
   mouseSpeed: 2.12,
-  thrust: 360000, // Hammerfight 300000, +20 % by request
+  thrust: 504000, // Hammerfight 300000; +20 % by request, then x1.4 (2026-11-15: "it looks like slow motion")
   resist: 300,
-  speedClip: 420, // Hammerfight 350, +20 % by request
+  speedClip: 550, // Hammerfight 350; +20 % by request, then 550 (+31 %) with the thrust
   gravity: 100,
   passes: 30,
   cor: 0.3,

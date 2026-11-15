@@ -64,7 +64,7 @@ const BASS: (number | null)[] = [0, null, 0, 12, null, 0, 7, null, 0, null, 10, 
 const hz = (semis: number, base = 55) => base * 2 ** (semis / 12);
 
 /** lite (the TV): no hi-hats and a single partial for metal rings, to save audio-thread time. */
-export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean } = {}): GameAudio | null {
+export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean; samples?: boolean; fileMusic?: boolean } = {}): GameAudio | null {
   if (!ctx) return null;
   const c = ctx;
   const lite = !!opts.lite;
@@ -116,7 +116,7 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
   const bank = new Map<string, AudioBuffer>();
   let failed = 0;
   let disposed = false;
-  void (async () => {
+  if (opts.samples !== false) void (async () => {
     // one at a time: a small memory peak on the TV
     for (const name of EFFECTS) {
       if (disposed) return;
@@ -124,7 +124,8 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
       try {
         if (!url) throw new Error(`${name}: missing`);
         const data = await loadBytes(url);
-        bank.set(name, await new Promise<AudioBuffer>((res, rej) => c.decodeAudioData(data, res, rej)));
+        const buf = await new Promise<AudioBuffer>((res, rej) => c.decodeAudioData(data, res, rej));
+        if (!disposed) bank.set(name, buf);
       } catch {
         failed++;
       }
@@ -251,7 +252,7 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
   const TRACKS: Record<Exclude<MusicMood, "off">, string> = { warm: "battle_small_01", fight: "battle_mid_02" };
   let el: HTMLAudioElement | null = null;
   /** False once a track failed to load: the synth groove takes over for good. */
-  let fileMusic = !!soundUrl(TRACKS.fight) && typeof Audio !== "undefined";
+  let fileMusic = opts.fileMusic !== false && !!soundUrl(TRACKS.fight) && typeof Audio !== "undefined";
   let track = "";
   const syncMusic = () => {
     if (!fileMusic) return;
@@ -342,7 +343,7 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
       tone("square", 660, 660, t + 0.06, 0.05, 0.08);
     },
     coin(n) {
-      if (!allow(n ? 2 : 1)) return;
+      if (!allow(n ? 3 : 1)) return; // a spill plays up to 3 samples (or 5 synth pings)
       const t = now();
       // Hammerfight: gold_01 / gold_02 on a pickup (volume 50) and when coins bounce
       if (n === 0 && play(pick("gold", 2), 0.5, 0.95 + Math.random() * 0.1, t)) return;

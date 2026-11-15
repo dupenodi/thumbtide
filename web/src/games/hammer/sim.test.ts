@@ -290,7 +290,8 @@ test("every weapon builds, hangs below its machine and keeps its joints together
       }
     }
     assert.ok(Number.isFinite(m.hull.x) && Number.isFinite(m.striker.x), `${weapon}: blew up`);
-    assert.ok(worst < 3, `${weapon}: a joint stretched ${worst.toFixed(1)} px`);
+    // 4 px: the x1.4 thrust (2026-11-15) whips harder; the starmace reached 3.3 px (was under 3)
+    assert.ok(worst < 4, `${weapon}: a joint stretched ${worst.toFixed(1)} px`);
   }
 });
 

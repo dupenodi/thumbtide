@@ -124,7 +124,10 @@ const mount: HostMount = (ctx) => {
     import.meta.env.VITE_PERF === "1" && (tourKind === "melee" || tourKind === "guns")
       ? makeTour(arena, Math.max(2, Math.min(4, Number(startParam("bots")) || 3)), audio(), Number(startParam("tourfrom")) || 1, tourKind)
       : null;
-  const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite") });
+  // perf A/B (perf builds only): audio=synth (no samples, no file music), nomusic (no file music), nosamples
+  const coinsOff = import.meta.env.VITE_PERF === "1" && startParam("coins") === "off";
+  const audioAB = import.meta.env.VITE_PERF === "1" ? startParam("audio") : null;
+  const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite"), samples: audioAB !== "synth" && audioAB !== "nosamples", fileMusic: audioAB !== "synth" && audioAB !== "nomusic" });
   const sound = tour ? tour.wrapSound(sound0) : sound0;
   sound?.setMusicOn(ctx.settings().music !== false);
   /** The material of a machine's striking part, for the hit sound. */
@@ -680,7 +683,7 @@ const mount: HostMount = (ctx) => {
       if (e.type === "hit") {
         sound?.hit(e.dmg, e.impact, e.cut, materialOf(e.attacker));
         hitFx(e.x, e.y, e.dmg, e.cut, e.victim.color);
-        const coins = fx.coins.spill(e.x, e.y, e.dmg);
+        const coins = coinsOff ? 0 : fx.coins.spill(e.x, e.y, e.dmg);
         if (coins) sound?.coin(coins);
         const a = byMachine.get(e.attacker);
         const v = byMachine.get(e.victim);
@@ -835,6 +838,7 @@ const mount: HostMount = (ctx) => {
     // Paused: the canvas keeps its last picture. Drawing on under the pause menu made the TV redraw the
     // canvas and redo the menu's full-screen backdrop blur every frame, for a still screen.
     if (paused) return;
+    const f0 = tour ? performance.now() : 0;
     const cap = capFps();
     if (cap && now - last < 1000 / cap - 4) return;
     const real = Math.min(0.1, (now - last) / 1000);
@@ -845,6 +849,7 @@ const mount: HostMount = (ctx) => {
     // 20 fps); elsewhere 5. Time it can't catch up on is dropped.
     const maxSteps = lite ? 3 : 5;
     let steps = 0;
+    const l0 = tour ? performance.now() : 0;
     while (acc >= STEP && steps < maxSteps) {
       for (const s of seated()) readInput(s);
       if (tour) {
@@ -861,6 +866,7 @@ const mount: HostMount = (ctx) => {
       steps++;
     }
     if (acc >= STEP) acc %= STEP;
+    const l1 = tour ? performance.now() : 0;
     // the phone shows the ammo: send a gun's state when it changes (a shot, the reload, a lost weapon)
     for (const s of seats.values()) {
       if (!s.human || !s.m) continue;
@@ -872,16 +878,17 @@ const mount: HostMount = (ctx) => {
     fx.coins.update(real * arena.timewarp, arena.machines, coinPickups);
     for (const c of coinPickups) {
       sound?.coin(0);
-      fx.burst(c.x, c.y, 5, 90, COIN_LOOK[c.metal]!.fill, 1.5);
+      fx.burst(c.x, c.y, lite ? 2 : 5, 90, COIN_LOOK[c.metal]!.fill, 1.5);
     }
     coinPickups.length = 0;
     const d0 = tour ? performance.now() : 0;
     renderer.draw(arena, Math.min(1, acc / STEP), fx);
+    const d1 = tour ? performance.now() : 0;
     frameDrawn(now);
     maybeDrawHud();
     if (tour) {
       const end = performance.now();
-      tour.framed(steps, end - d0, end - now);
+      tour.framed(steps, end - d0, end - now, { delay: f0 - now, loop: l1 - l0, mid: d0 - l1, hud: end - d1 });
     }
   };
 

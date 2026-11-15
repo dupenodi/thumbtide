@@ -4,6 +4,9 @@
 import type { Body } from "./engine.ts";
 import { type Arena, lerpBody, type Machine, type Tag, VIEW_H, VIEW_W } from "./sim.ts";
 import { COIN_FADE, COIN_LOOK, Coins } from "./coins.ts";
+
+/** Spin widths in the coin atlas. */
+const COIN_FRAMES = 6;
 import { MONSTER_LOOK } from "./monsters.ts";
 import { MACHINE, type Material, PLATES, WEAPONS } from "./weapons.ts";
 
@@ -157,28 +160,49 @@ export class Renderer {
     for (const m of arena.machines) this.offscreen(m, alpha);
   }
 
-  /** All coins in 3 fills and 3 strokes (one path per metal); a coin is an ellipse whose width follows its spin. */
+  /** Coin pictures: 3 metals × COIN_FRAMES spin widths, painted once per scale (paths per coin cost the TV). */
+  private coinAtlas: HTMLCanvasElement | null = null;
+  private coinAtlasScale = 0;
+  private coinCell = 0;
+
+  /** Every coin is one drawImage from the atlas; the frame follows its spin (a flipping ellipse). */
   private coins(coins: Coins): void {
     const ctx = this.ctx;
-    ctx.lineWidth = 1.2;
-    for (let metal = 0; metal < 3; metal++) {
-      ctx.beginPath();
-      let any = false;
-      for (const c of coins.list) {
-        if (c.metal !== metal) continue;
-        if (c.age > COIN_FADE - 1 && Math.floor(c.age * 8) % 2) continue; // blink out in the last second
-        const r = c.big ? 6 : 4.5;
-        const rx = Math.max(0.8, r * Math.abs(Math.cos(c.spin)));
-        ctx.moveTo(c.x + rx, c.y);
-        ctx.ellipse(c.x, c.y, rx, r, 0, 0, Math.PI * 2);
-        any = true;
-      }
-      if (!any) continue;
-      ctx.fillStyle = COIN_LOOK[metal]!.fill;
-      ctx.fill();
-      ctx.strokeStyle = COIN_LOOK[metal]!.rim;
-      ctx.stroke();
+    if (!this.coinAtlas || this.coinAtlasScale !== this.scale) this.paintCoins();
+    const atlas = this.coinAtlas!;
+    const cell = this.coinCell;
+    for (const c of coins.list) {
+      if (c.age > COIN_FADE - 1 && Math.floor(c.age * 8) % 2) continue; // blink out in the last second
+      const r = c.big ? 6 : 4.5;
+      const f = Math.min(COIN_FRAMES - 1, Math.floor(Math.abs(Math.cos(c.spin)) * COIN_FRAMES));
+      ctx.drawImage(atlas, f * cell, c.metal * cell, cell, cell, c.x - r - 1, c.y - r - 1, 2 * r + 2, 2 * r + 2);
     }
+  }
+
+  private paintCoins(): void {
+    const s = this.scale;
+    // a cell holds a big coin (r 6) plus a 1 px margin, at the canvas's pixel scale
+    const cell = Math.ceil(14 * s);
+    const c = document.createElement("canvas");
+    c.width = cell * COIN_FRAMES;
+    c.height = cell * 3;
+    const g = c.getContext("2d")!;
+    const k = cell / 14;
+    g.lineWidth = 1.2 * k;
+    for (let metal = 0; metal < 3; metal++) {
+      for (let f = 0; f < COIN_FRAMES; f++) {
+        const rx = Math.max(0.8, 6 * ((f + 0.5) / COIN_FRAMES)) * k;
+        g.beginPath();
+        g.ellipse(f * cell + cell / 2, metal * cell + cell / 2, rx, 6 * k, 0, 0, Math.PI * 2);
+        g.fillStyle = COIN_LOOK[metal]!.fill;
+        g.fill();
+        g.strokeStyle = COIN_LOOK[metal]!.rim;
+        g.stroke();
+      }
+    }
+    this.coinAtlas = c;
+    this.coinAtlasScale = s;
+    this.coinCell = cell;
   }
 
   private sky(): void {
