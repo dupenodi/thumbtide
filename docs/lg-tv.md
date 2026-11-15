@@ -117,8 +117,11 @@ What's in `web/tv/webos/appinfo.json`:
 Other things about the packaged app:
 
 - **Images** in `web/public/` are copied into the app and load from there.
-- **Sound files** (Cascade's) are built into the script as data, so nothing has to be fetched from `file://`.
+- **Sound files:** Cascade's are built into the script as data. Rotor Brawl's `.ogg` files are copied into the app's
+  `assets/` folder and loaded with XHR (`audio.ts`), because `fetch()` refuses `file://`; an XHR from `file://`
+  answers with status 0, which counts as success.
 - **Fonts** come from Google Fonts, so the TV needs internet access. Without it, text falls back to the TV's own fonts.
+  Rotor Brawl's Russo One is bundled in the app (`hammer/fonts/`, loaded by `font.ts`).
 
 ## What changes when the page runs on a TV
 
@@ -132,7 +135,10 @@ Other things about the packaged app:
   on a TV. `game` opens a game directly, `bots` sets computer players, and any game setting works with a value from
   its option list (`look=reactor`, `board=xl`, `timer=0`). Also:
   - `res=0.55` sets Cascade's starting resolution
-  - `perf=<url>` makes Cascade send its frame-rate reports to that address (`pnpm tv --perf` sets this up)
+  - `perf=<url>` sends frame-rate reports to that address, only in builds with `VITE_PERF=1` (`pnpm tv --perf` and
+    `pnpm perf --tv` set this up). Wet Paint, Cascade and Rotor Brawl report; Cult and the lobby don't yet
+  - `fps=60` lifts the 30fps cap of Wet Paint and Cascade, to test at the target
+  - `lite=1` turns on Rotor Brawl's TV mode in a desktop browser
 - **Sound.** The app tries to start sound straight away. Any press on the remote switches it on too.
 
 Each game also has a **lighter mode** on webOS:
@@ -145,30 +151,32 @@ Each game also has a **lighter mode** on webOS:
   - if frames run long for over a second, it drops resolution in 10% steps, down to 45%
   - after 8 seconds of fast frames it tries 5% higher, and stays below any step that didn't hold
   - it ignores the first 2 seconds after a board appears, while shaders compile and textures upload
+- **Rotor Brawl** (`lite` in `hammer/host.ts`): 15 physics joint passes instead of 30, fewer particles, simpler synth
+  sounds (no hi-hats, one partial per metal ring), and the `hm-lite` class, which drops CSS filters, gradient text and endless animations. In
+  Co-op vs monsters, waves stop growing once the arena holds 48 bodies.
 
-To preview the lighter mode on a laptop, open the TV page with `?quality=low`. `?quality=high` turns it off in a
-TV's web browser. Both work only in the page address, not as launch options, so the app always uses the lighter mode.
+To preview the lighter mode of Wet Paint and Cascade on a laptop, open the TV page with `?quality=low`.
+`?quality=high` turns it off in a TV's web browser. Both work only in the page address, not as launch options, so the
+app always uses the lighter mode. Rotor Brawl uses `?lite=1` instead.
 
 ## Performance on our TV
 
-Measured with `pnpm tv --perf=cascade` on 2026-11-13:
+Measure with `pnpm perf --tv` or `pnpm perf capture` (see [Performance](../README.md#performance) and
+`.claude/skills/tv-perf/SKILL.md`). The first full capture is in
+`tools/perf/baselines/2026-11-13-lg-43sq700s.md`. With the 30fps caps lifted, no game held 60 fps then: the lobby
+ran at 29, Cascade at 30–46, and Wet Paint and Cult at about 9.
 
-| Look | Holds | Resolution it settles at |
-|---|---|---|
-| Culture | 29–30 fps | 55% |
-| Reactor | 28–30 fps | 75% |
-| Marbles | not measured yet | |
-
-- The game's own code takes 2.5–5ms a frame with 3–8 draw calls, so the **graphics chip is the limit, not
-  JavaScript**. To make a game faster on the TV, draw fewer pixels and simpler shaders, not less code.
-- Only the default board sizes were measured. The bigger boards (14 × 8 up to 20 × 12) haven't been tried on the TV.
-- What made the difference:
+- The main costs are **memory pressure** (the TV has about 100–180 MB free and swaps all the time), **4K
+  compositing** (the page is drawn at devicePixelRatio 2, about 5 ms per full-screen layer) and full-screen repaints.
+  Fewer layers and smaller repaints help more than faster JavaScript.
+- Rotor Brawl is the exception: its physics runs on the CPU, so the number of bodies sets the frame rate. Chains drawn
+  as one path brought heavy chain sets to 53–58 fps, but 7–8 machines still drop to 21–31 fps.
+- Cascade's bigger boards (14 × 8 up to 20 × 12) haven't been tried on the TV.
+- What made Cascade faster:
   - static detail (agar, walnut grain, table) baked once into textures (`look/bake.ts`) instead of computed every frame
   - Culture's colonies drawn as one instanced mesh instead of one per cell, and only the used part of instance buffers uploaded
   - every shader compiled when the board is set up, so the first chain reaction doesn't stutter
   - the 30fps cap and the automatic resolution
-- **Wet Paint** plays smoothly in its TV mode (checked by eye). It doesn't send `--perf` reports yet, and neither
-  does Cult.
 
 ## Freezes and other problems
 
@@ -204,6 +212,7 @@ build time.
 - **Running without the computer.** The app still needs `pnpm dev` on a computer for the relay and the phone page.
   The plan: put the relay on Cloudflare Workers with Durable Objects (`server/src/rooms.ts` is written to move
   there) and the site on Cloudflare Pages, then build the app with `VITE_RELAY_URL` and `VITE_JOIN_URL`.
-- Frame-rate reports for Wet Paint and Cult, and measurements for Marbles and the big Cascade boards.
+- Frame-rate reports for Cult and the lobby, and measurements for the big Cascade boards.
+- 60 fps on our TV: no game holds it yet (see [Performance on our TV](#performance-on-our-tv)).
 - Other TV platforms (Samsung Tizen, Android/Google TV) haven't been tried as apps. The TV page itself runs in any
   TV browser that can reach `pnpm dev`.
