@@ -1,7 +1,7 @@
 // Coins that burst out of a machine on a hard hit, after Hammerfight (exe 0x410b41, spill 0x4b9a50, factory 0x495a20):
 // a hit with more than 5 damage spills coins (at most 30), 200 px/s up within ±36°, speed ±50 %.
 // They fall at the game's gravity (100 px/s²) and are picked up by touching a machine (not in the first 0.3 s,
-// not while stunned). Hammerfight: gold 20 / 10, silver 4 / 2, copper 1, coins worth damage / 2.
+// not while stunned). OURS (play test): the held weapon picks them up too, so a swing through a spill collects. Hammerfight: gold 20 / 10, silver 4 / 2, copper 1, coins worth damage / 2.
 //
 // OURS: coins are draw-only particles, not physics bodies (the TV's body budget); one coin per 2 damage; they
 // bounce off the frame sides (CoR 0.3), fall out of the bottom (no floor) and blink out after 8 s; no score.
@@ -78,6 +78,28 @@ export class Coins {
   /** Move the coins; machines that touch one pick it up. */
   update(dt: number, machines: readonly Machine[], out: Pickup[]): void {
     const cs = this.list;
+    // each machine's reach (hull and held weapon), once per frame, so most coins skip its parts quickly
+    const box = this.box;
+    box.length = machines.length * 4;
+    for (let k = 0; k < machines.length; k++) {
+      const m = machines[k]!;
+      let x0 = m.hull.x - HULL_R;
+      let y0 = m.hull.y - HULL_R;
+      let x1 = m.hull.x + HULL_R;
+      let y1 = m.hull.y + HULL_R;
+      if (m.armed) {
+        for (const b of m.parts) {
+          x0 = Math.min(x0, b.x - b.radius);
+          y0 = Math.min(y0, b.y - b.radius);
+          x1 = Math.max(x1, b.x + b.radius);
+          y1 = Math.max(y1, b.y + b.radius);
+        }
+      }
+      box[k * 4] = x0;
+      box[k * 4 + 1] = y0;
+      box[k * 4 + 2] = x1;
+      box[k * 4 + 3] = y1;
+    }
     for (let i = cs.length - 1; i >= 0; i--) {
       const c = cs[i]!;
       c.age += dt;
@@ -90,11 +112,11 @@ export class Coins {
       let gone = c.age > LIFE || c.y > this.h + 20;
       if ((c.x < r && c.vx < 0) || (c.x > this.w - r && c.vx > 0)) c.vx = -c.vx * COR;
       if (!gone && c.age > PICKUP_AFTER) {
-        for (const m of machines) {
+        for (let k = 0; k < machines.length; k++) {
+          const m = machines[k]!;
           if (!m.alive || m.monster || m.stun > 0) continue;
-          const dx = m.hull.x - c.x;
-          const dy = m.hull.y - c.y;
-          if (dx * dx + dy * dy < (HULL_R + r) ** 2) {
+          if (c.x < box[k * 4]! - r || c.x > box[k * 4 + 2]! + r || c.y < box[k * 4 + 1]! - r || c.y > box[k * 4 + 3]! + r) continue;
+          if (touches(m.hull.x, m.hull.y, HULL_R, c.x, c.y, r) || (m.armed && m.parts.some((b) => touches(b.x, b.y, b.radius, c.x, c.y, r)))) {
             out.push({ x: c.x, y: c.y, metal: c.metal, value: valueOf(c), by: m });
             gone = true;
             break;
@@ -107,6 +129,8 @@ export class Coins {
       }
     }
   }
+
+  private readonly box: number[] = [];
 
   /** The list is not in age order (swap-remove), so find the oldest. */
   private dropOldest(): void {
@@ -122,7 +146,9 @@ export class Coins {
   }
 }
 
-export const valueOf = (c: { metal: Metal; big: boolean }): number => DENOMS.find((d) => d.metal === c.metal && d.big === c.big)?.value ?? 1;
+const touches = (x: number, y: number, rad: number, cx: number, cy: number, r: number) => (x - cx) ** 2 + (y - cy) ** 2 < (rad + r) ** 2;
+
+export const valueOf =(c: { metal: Metal; big: boolean }): number => DENOMS.find((d) => d.metal === c.metal && d.big === c.big)?.value ?? 1;
 
 /** Fill and rim colours per metal. */
 export const COIN_LOOK: { fill: string; rim: string }[] = [

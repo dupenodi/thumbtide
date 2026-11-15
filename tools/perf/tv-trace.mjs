@@ -12,7 +12,7 @@
 //   summary.md   time per second by kind of work and thread, and the layer list
 // The trace slows the TV a little: compare traces with traces, not with fps from untraced runs.
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { capture, device, fail, web } from "../../web/scripts/lib/webos.mjs";
@@ -25,6 +25,12 @@ const seconds = Number(opts.seconds) || 8;
 const app = opts.app || "com.thumbtide.tv";
 const label = (opts.label || "").replace(/[^\w.-]/g, "");
 const out = join(here, "captures", `trace-${new Date().toISOString().replace(/[:.]/g, "-")}${label ? `-${label}` : ""}`);
+
+if (opts.summarize) {
+  const d = opts.summarize;
+  summarize(d, JSON.parse(readFileSync(join(d, "trace.json"), "utf8")).traceEvents, JSON.parse(readFileSync(join(d, "layers.json"), "utf8")));
+  process.exit(0);
+}
 
 // ---------------------------------------------------------------- the TV lock (as `pnpm perf capture` takes it)
 // DevTools on the TV app is heavy (docs/lg-tv.md: the TV froze once with --inspect): keep traces short, one at a
@@ -151,13 +157,19 @@ mkdirSync(out, { recursive: true });
 writeFileSync(join(out, "trace.json"), JSON.stringify({ traceEvents: events }));
 const layerRows = layers.map((l) => ({ id: l.layerId, w: Math.round(l.width), h: Math.round(l.height), draws: l.drawsContent, paints: l.paintCount, owner: owners[l.layerId] ?? "", reasons: reasons[l.layerId] }));
 writeFileSync(join(out, "layers.json"), JSON.stringify(layerRows, null, 1));
+summarize(out, events, layerRows);
+process.exit(0);
+
+/** Writes summary.md for a trace (also for a saved one: --summarize=<capture folder>). */
+function summarize(dir, events, layerRows) {
 
 const threads = new Map();
 for (const e of events) if (e.ph === "M" && e.name === "thread_name") threads.set(`${e.pid}:${e.tid}`, e.args.name);
 let t0 = Infinity;
 let t1 = -Infinity;
 for (const e of events) {
-  if (!e.ts) continue;
+  // timed work only: async and snapshot events can carry old times
+  if (!e.ts || (e.ph !== "X" && e.ph !== "B" && e.ph !== "E")) continue;
   if (e.ts < t0) t0 = e.ts;
   if (e.ts > t1) t1 = e.ts;
 }
@@ -179,7 +191,7 @@ for (const e of events) {
     }
   }
 }
-const frames = events.filter((e) => e.name === "ProxyMain::BeginMainFrame" && (e.ph === "X" || e.ph === "B")).length;
+const frames = events.filter((e) => (e.name === "ProxyMain::BeginMainFrame" || e.name === "ThreadProxy::BeginMainFrame") && (e.ph === "X" || e.ph === "B")).length;
 // the work a page causes outside its own script: per thread, the classic DevTools timeline kinds
 const KEY = ["FunctionCall", "FireAnimationFrame", "UpdateLayoutTree", "Layout", "PrePaint", "Paint", "UpdateLayerTree", "Layerize", "CompositeLayers", "Commit", "RasterTask", "ImageDecodeTask", "DecodeImage", "GPUTask", "DrawFrame", "Display::DrawAndSwap", "SkiaOutputSurfaceImplOnGpu::SwapBuffers", "Scheduler::RunTask"];
 const keyRows = [...totals].filter(([k]) => KEY.includes(k.split(" | ")[1])).sort((a, b) => b[1] - a[1]);
@@ -214,7 +226,7 @@ const md = [
   ...layerRows.sort((a, b) => b.w * b.h - a.w * a.h).map((l) => `| ${l.owner} | ${l.w} × ${l.h} | ${l.draws ? "yes" : ""} | ${l.paints ?? ""} | ${[].concat(l.reasons).join(", ")} |`),
   "",
 ];
-writeFileSync(join(out, "summary.md"), md.join("\n"));
+writeFileSync(join(dir, "summary.md"), md.join("\n"));
 console.log(md.slice(0, 30).join("\n"));
-console.log(`\nWritten to ${out}`);
-process.exit(0);
+console.log(`\nWritten to ${dir}`);
+}

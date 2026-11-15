@@ -11,6 +11,9 @@ import { armedSpec, type GunKind, type GunSpec, MACHINE, type PartSpec, PLATE_CO
 /** The fixed camera frame, px. 16:9. */
 export const VIEW_W = 960;
 export const VIEW_H = 540;
+/** A live hull's centre stays this far inside the top edge (hull half height 16.5 + the rotor) and the bottom. */
+const WALL_TOP = 30;
+const WALL_BOTTOM = 18;
 /**
  * Where AI fliers (bots, monsters) keep to: EDGE_M px inside the left, right and bottom edges, and below EDGE_TOP
  * (the score cards cover the top ~75 px of the frame).
@@ -390,6 +393,7 @@ export class Arena {
 
     this.world.commonForces(tn.gravity);
     this.world.step({ dt, dtPrev: this.dtPrev, gravity: tn.gravity, passes: tn.passes, onContact: this.onContact });
+    if (tn.walls) for (const m of this.machines) if (m.alive && !m.monster) this.verticalWalls(m, dt);
     this.dtPrev = dt;
     this.t += dt;
     if (this.shots.length) this.ageShots();
@@ -688,7 +692,25 @@ export class Arena {
     }
   }
 
-  /** Not in Hammerfight: a stiff spring a little outside the fixed camera frame. */
+  /**
+   * Hard top and bottom walls for a live hull, so a machine (with its rotor) never leaves the frame up or down
+   * (the play test: machines went out of view at the top and bottom; the sides keep the soft limit). The hull
+   * bounces off with the game's restitution (0.3).
+   */
+  private verticalWalls(m: Machine, dt: number): void {
+    const h = m.hull;
+    const top = WALL_TOP;
+    const bottom = VIEW_H - WALL_BOTTOM;
+    if (h.y >= top && h.y <= bottom) return;
+    const vy = (h.y - h.py) / dt;
+    h.y = h.y < top ? top : bottom;
+    const out = h.y === top ? vy < 0 : vy > 0;
+    // the speed into the wall turns round at 0.3; a speed already away from it is kept
+    h.py = h.y - (out ? -0.3 * vy : vy) * dt;
+    h.vy = out ? -0.3 * vy : vy;
+  }
+
+  /** Not in Hammerfight: a stiff spring a little outside the fixed camera frame (only the sides now). */
   private limit(m: Machine): void {
     if (!m.alive) return;
     const tn = this.tuning;
@@ -702,8 +724,7 @@ export class Arena {
       return 0;
     };
     const ax = axis(h.x, h.vx, -tn.limit, VIEW_W + tn.limit);
-    const ay = axis(h.y, h.vy, -tn.limit, VIEW_H + tn.limit);
-    if (ax || ay) h.applyForce(ax * h.mass, ay * h.mass);
+    if (ax) h.applyForce(ax * h.mass, 0);
   }
 
   private onContact = (c: ContactReport): void => {

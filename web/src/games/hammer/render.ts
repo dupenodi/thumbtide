@@ -43,6 +43,8 @@ const ROTOR_FRAMES = 8;
 const ROTOR_W = 54;
 const ROTOR_Y = -HULL_R - 12;
 const ROTOR_H = 13;
+/** Sparks fade in this many steps (each step of each colour is one stroke). */
+const SPARK_LEVELS = 3;
 
 export class Fx {
   sparks: Spark[] = [];
@@ -158,32 +160,91 @@ export class Renderer {
     if (fx.coins.list.length) this.coins(fx.coins);
 
     ctx.lineCap = "round";
-    if (!skip?.has("sparks")) for (const p of fx.sparks) {
-      const k = p.life / p.max;
-      ctx.strokeStyle = p.color;
-      ctx.globalAlpha = Math.min(1, k * 1.5);
-      ctx.lineWidth = p.w * k + 0.5;
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    ctx.textAlign = "center";
-    let font = "";
-    if (!skip?.has("floats")) for (const f of fx.floats) {
-      ctx.globalAlpha = Math.min(1, f.life * 2);
-      const want = `${f.size}px "Russo One", system-ui, sans-serif`;
-      if (want !== font) ctx.font = font = want; // setting a font parses it
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = "rgba(10,12,20,0.85)";
-      ctx.strokeText(f.text, f.x, f.y);
-      ctx.fillStyle = f.color;
-      ctx.fillText(f.text, f.x, f.y);
+    if (!skip?.has("sparks")) this.sparks(fx);
+    if (!skip?.has("floats")) {
+      // damage numbers: a cached picture each (outlined text cost the TV two text draws per number per frame)
+      for (const f of fx.floats) {
+        const t = this.textSprite(f.text, f.color, f.size);
+        ctx.globalAlpha = Math.min(1, f.life * 2);
+        ctx.drawImage(t.c, f.x - t.w / 2, f.y - t.asc, t.w, t.h);
+      }
     }
     ctx.globalAlpha = 1;
     for (const m of arena.machines) this.offscreen(m, alpha);
   }
+
+  /**
+   * Sparks in a few strokes, not one each: grouped by colour and by one of SPARK_LEVELS brightness (and width)
+   * steps of their remaining life. With 8 machines there were up to ~55 separate strokes a frame.
+   */
+  private sparkPaths = new Map<string, number[]>();
+  private sparks(fx: Fx): void {
+    const ctx = this.ctx;
+    const groups = this.sparkPaths;
+    for (const g of groups.values()) g.length = 0;
+    for (const p of fx.sparks) {
+      const k = p.life / p.max;
+      const level = Math.min(SPARK_LEVELS - 1, Math.floor(k * SPARK_LEVELS));
+      const key = `${p.color}|${p.w}|${level}`;
+      let g = groups.get(key);
+      if (!g) groups.set(key, (g = []));
+      g.push(p.x, p.y, p.x - p.vx * 0.03, p.y - p.vy * 0.03);
+    }
+    for (const [key, g] of groups) {
+      if (!g.length) continue;
+      const [color, w, lv] = key.split("|");
+      const k = (Number(lv) + 0.5) / SPARK_LEVELS;
+      ctx.strokeStyle = color!;
+      ctx.globalAlpha = Math.min(1, k * 1.5);
+      ctx.lineWidth = Number(w) * k + 0.5;
+      ctx.beginPath();
+      for (let i = 0; i < g.length; i += 4) {
+        ctx.moveTo(g[i]!, g[i + 1]!);
+        ctx.lineTo(g[i + 2]!, g[i + 3]!);
+      }
+      ctx.stroke();
+    }
+    if (groups.size > 64) groups.clear(); // colours come and go with players
+  }
+
+  private texts = new Map<string, { c: HTMLCanvasElement; w: number; h: number; asc: number }>();
+  /** An outlined damage number (or word), drawn once per text, colour, size and scale. */
+  private textSprite(text: string, color: string, size: number): { c: HTMLCanvasElement; w: number; h: number; asc: number } {
+    if (this.textScale !== this.scale) {
+      this.texts.clear();
+      this.textScale = this.scale;
+    }
+    const key = `${text}|${color}|${size}`;
+    let t = this.texts.get(key);
+    if (t) return t;
+    const s = this.scale;
+    const font = `${size}px "Russo One", system-ui, sans-serif`;
+    this.ctx.font = font;
+    const w = Math.ceil(this.ctx.measureText(text).width) + 8;
+    const h = Math.ceil(size * 1.3) + 6;
+    const asc = Math.ceil(size * 0.95) + 3;
+    const c = document.createElement("canvas");
+    c.width = Math.ceil(w * s);
+    c.height = Math.ceil(h * s);
+    const g = c.getContext("2d")!;
+    g.scale(c.width / w, c.height / h);
+    g.font = font;
+    g.textAlign = "center";
+    g.lineJoin = "round";
+    g.lineWidth = 4;
+    g.strokeStyle = "rgba(10,12,20,0.85)";
+    g.strokeText(text, w / 2, asc);
+    g.fillStyle = color;
+    g.fillText(text, w / 2, asc);
+    t = { c, w, h, asc };
+    // keep it only once the font is in (else the fallback font would stick)
+    if (document.fonts?.check?.(font) ?? true) {
+      if (this.texts.size > 96) this.texts.clear();
+      this.texts.set(key, t);
+    }
+    return t;
+  }
+  private textScale = 0;
 
   /** Coin pictures: 3 metals × COIN_FRAMES spin widths, painted once per scale (paths per coin cost the TV). */
   private coinAtlas: HTMLCanvasElement | null = null;

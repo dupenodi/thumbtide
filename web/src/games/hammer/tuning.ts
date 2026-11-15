@@ -36,6 +36,8 @@ export interface Tuning {
   limit: number;
   /** Stiffness of the soft limit, Hz. */
   limitHz: number;
+  /** Not in Hammerfight: 1 = hard top and bottom walls keep a live hull inside the frame (0 = off). */
+  walls: number;
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -56,6 +58,7 @@ export const DEFAULT_TUNING: Tuning = {
   hitstop: 0,
   limit: 70,
   limitHz: 7,
+  walls: 1,
 };
 
 export interface TuningField {

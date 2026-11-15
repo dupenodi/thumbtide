@@ -50,8 +50,12 @@ const PVE_TEAMS = [
 const MONSTER_TEAM = 9;
 const MAX_MONSTERS = 4;
 const MONSTER_COLOR = "#c8995a";
-const PICK_S = 8;
-const FIRST_PICK_S = 12;
+// The warm-up (weapon pick, no damage). Shorter after the play test: with ~15 s rounds, 4 s of result and 8 s of
+// pick were nearly half the session.
+const PICK_S = 5;
+const FIRST_PICK_S = 10;
+/** Between the rounds of a match when the weapon pick is "Each match only": just the 3-2-1. */
+const READY_S = 3;
 const RESULT_S = 4;
 const MATCH_S = 7;
 /** Real seconds after the last KO before the round is called (let the wreck fall). */
@@ -594,7 +598,7 @@ const mount: HostMount = (ctx) => {
     }
     if (left > 0) return;
     if (phase === "pick") startFight();
-    else if (phase === "result") startPick();
+    else if (phase === "result") startPick(ctx.settings().warmup === "match" ? READY_S : PICK_S);
     else {
       for (const s of seats.values()) s.wins = 0;
       round = 0;

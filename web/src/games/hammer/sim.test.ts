@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Body, joint, World } from "./engine.ts";
-import { Arena, VIEW_W } from "./sim.ts";
+import { Arena, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
 import { MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
@@ -46,6 +46,7 @@ test("with no input the weapon's weight pulls the machine down at sqrt(weight/dr
   for (const weapon of WEAPON_KINDS) {
     const ar = arena();
     ar.tuning.limit = 1e5;
+    ar.tuning.walls = 0;
     const m = ar.add({ id: 0, name: "a", color: "#f00", weapon, x: 300, y: 100 });
     for (let i = 0; i < 600; i++) ar.step();
     const weight = m.parts.reduce((s, p) => s + p.mass, 0) * DEFAULT_TUNING.gravity;
@@ -54,6 +55,26 @@ test("with no input the weapon's weight pulls the machine down at sqrt(weight/dr
     assert.ok(Math.abs(m.hull.vy - terminal) < terminal * 0.2, `${weapon}: vy ${m.hull.vy}, want ${terminal}`);
     assert.ok(m.striker.y > m.hull.y + 20, `${weapon}: weapon not below`);
   }
+});
+
+test("the top and bottom walls keep a live hull inside the frame", () => {
+  const ar = arena();
+  const m = ar.add({ id: 0, name: "a", color: "#f00", weapon: "orbmace", x: 300, y: 100 });
+  let maxY = 0;
+  // the heaviest weapon pulls it down for 12 s with no input
+  for (let i = 0; i < 600; i++) {
+    ar.step();
+    maxY = Math.max(maxY, m.hull.y);
+  }
+  assert.ok(maxY <= VIEW_H - 18 + 0.01, `bottom: ${maxY}`);
+  // thrown upwards hard
+  m.hull.setVelocity(0, -2000, 0, 0.02);
+  let minY = 1e9;
+  for (let i = 0; i < 50; i++) {
+    ar.step();
+    minY = Math.min(minY, m.hull.y);
+  }
+  assert.ok(minY >= 30 - 0.01, `top: ${minY}`);
 });
 
 test("hover assist 1 cancels the weapon's weight", () => {
