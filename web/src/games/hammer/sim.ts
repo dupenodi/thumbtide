@@ -42,6 +42,8 @@ const EXTRA_SHOCK = 1;
 const SLAM_S = 0.8;
 /** A wreck's pieces hurt for this long, then fall through everything (OURS). */
 const GIB_HARM_S = 2.5;
+/** A stunned machine must hit the floor or ceiling at least this fast (px/s) for a slam (not a slow fall). */
+const WALL_SLAM_V = 150;
 /** Not in Hammerfight: how close a weaponless hull must fly to a loose weapon's grip to take it, px. */
 const PICKUP_RANGE = 34;
 /** Not in Hammerfight: seconds after losing a weapon before a machine can take one. */
@@ -83,6 +85,8 @@ export interface Tag {
   loose?: boolean;
   /** A piece of a wrecked machine: it hurts like an owned weapon until this arena time (OURS). */
   gibUntil?: number;
+  /** Whose hit it is when this body hurts someone (a wreck shard: whoever wrecked it). */
+  credit?: Machine | null;
   /** A crate's splinter (drawn as wood). */
   wood?: boolean;
   spec: PartSpec | null;
@@ -763,7 +767,7 @@ export class Arena {
     h.py = h.y - (out ? -0.3 * vy : vy) * dt;
     h.vy = out ? -0.3 * vy : vy;
     // a stunned machine knocked into the floor or ceiling: a slam (the impact as a hull-on-wall collision would give)
-    if (out) this.slam(m, (h.mass * 1.3 * Math.abs(vy)) * 1e-5, h.x, h.y);
+    if (out && Math.abs(vy) > WALL_SLAM_V) this.slam(m, (h.mass * 1.3 * Math.abs(vy)) * 1e-5, h.x, h.y);
   }
 
   /** Not in Hammerfight: a stiff spring a little outside the fixed camera frame (only the sides now). */
@@ -906,7 +910,7 @@ export class Arena {
     // (speeds at the contact point, before the impulse: collide.ts)
     if (cut > 1 && c.rel < tn.cutMinV) cut = 1;
     const blunt = cut <= 1;
-    if (blunt && !by.shot && c.approach < tn.bluntMinV) return;
+    if (blunt && !by.shot && !by.jaws && c.approach < tn.bluntMinV) return; // (a monster bite is not a blow)
     if (blunt && bladeable > 0) sharpness *= tn.bladeRam;
 
     // Shock: big hits switch the victim's engine off for a moment (only M > 30, +0.01·M; m_extra_shock on the
@@ -923,7 +927,7 @@ export class Arena {
     // a bite (0x410340): m_jaws adds rand(0.3, 3) × jaws
     if (by.jaws && dmg > 0) dmg += Math.round((0.3 + Math.random() * 2.7) * by.jaws);
     if (dmg <= 0) return;
-    this.damage(victim, dmg, by.m, owned, impact, cut, c.x, c.y);
+    this.damage(victim, dmg, by.credit ?? by.m, owned, impact, cut, c.x, c.y);
 
     // GAME_SLOMO (0x483b94): v = 0.15 · M · (40000/(victimMass + 15001) + 0.25); v > 27, or a fast blade (cut > 4),
     // slows time. OURS: the limits are SLOMO_V and SLOMO_CUT. With the exe's 27, a hit on a machine needs an impact
@@ -1082,11 +1086,11 @@ export class Arena {
    * and go with the other debris after 4 s.
    */
   private gibs(m: Machine): void {
-    this.shards(m, m.hull.x, m.hull.y, 10, Math.max(0, Math.round(this.tuning.gibs)), m.hull.vx, m.hull.vy);
+    this.shards(m, m.hull.x, m.hull.y, 10, Math.max(0, Math.round(this.tuning.gibs)), m.hull.vx, m.hull.vy, false, m.lastHitBy);
   }
 
   /** `n` flying shards from (x, y), owned by `owner` (they don't hit it), harmful for GIB_HARM_S. */
-  private shards(owner: Machine, x: number, y: number, r: number, n: number, vx: number, vy: number, wood = false): void {
+  private shards(owner: Machine, x: number, y: number, r: number, n: number, vx: number, vy: number, wood = false, credit: Machine | null = owner): void {
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + Math.random() * 0.8;
       const w = 4 + Math.random() * 3;
@@ -1097,7 +1101,7 @@ export class Arena {
       const s = 280 + Math.random() * 220;
       b.setVelocity(vx + Math.cos(a) * s, vy + Math.sin(a) * s - 120, (Math.random() - 0.5) * 30, STEP * this.timewarp);
       b.group = owner.id; // they start inside the wreck: not against it, nor each other
-      b.data = { m: owner, hull: false, striker: false, sharpness: 3, bladeable: 0, bladeableU: 0, sharpnessU: 3, spec: null, gibUntil: this.t + GIB_HARM_S, ...(wood ? { wood: true } : {}) } satisfies Tag;
+      b.data = { m: owner, hull: false, striker: false, sharpness: 3, bladeable: 0, bladeableU: 0, sharpnessU: 3, spec: null, gibUntil: this.t + GIB_HARM_S, credit, ...(wood ? { wood: true } : {}) } satisfies Tag;
       this.world.add(b);
       this.debris.push({ body: b, at: this.t });
     }

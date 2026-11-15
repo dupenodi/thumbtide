@@ -114,6 +114,8 @@ const BODY_BUDGET = 90;
 interface Seat {
   /** Real seconds since this player last moved the stick; an autopilot bot flies the machine while they're away. */
   idle: number;
+  /** Fought a round of this match (its loadout is fixed with "Weapon pick: each match only"). */
+  fought?: boolean;
   auto: Bot | null;
   id: string;
   name: string;
@@ -170,7 +172,7 @@ const mount: HostMount = (ctx) => {
   const abPasses = import.meta.env.VITE_PERF === "1" ? Number(startParam("passes")) || 0 : 0;
   const abHudOff = import.meta.env.VITE_PERF === "1" && startParam("hud") === "off";
   const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
-  const tuning = { ...DEFAULT_TUNING, ...(lite ? { passes: 15 } : {}), ...(abPasses ? { passes: abPasses } : {}) };
+  const tuning = { ...DEFAULT_TUNING, ...(lite ? { passes: 15, gibs: 3 } : {}), ...(abPasses ? { passes: abPasses } : {}) };
   const arena = new Arena(tuning);
   // the weapon tours (TV tests only): every melee weapon, or every gun and plate, in turn, with physics, draw and
   // fight numbers in each perf report
@@ -473,6 +475,7 @@ const mount: HostMount = (ctx) => {
       alive: !!s.m && s.m.alive,
       wins: s.wins,
       seated: s.slot >= 0,
+      fixed: readyOnly && s.fought,
     });
   };
   const pushShared = () => {
@@ -527,6 +530,7 @@ const mount: HostMount = (ctx) => {
     tuning.slomo = 0;
     applyToggles();
     readyOnly = seconds === READY_S && round > 1;
+    if (round === 1) for (const s of seats.values()) s.fought = false;
     if (!readyOnly) for (const s of bots()) s.weapon = randomWeapon();
     syncBots();
     fillSeats();
@@ -550,6 +554,7 @@ const mount: HostMount = (ctx) => {
 
   const startFight = () => {
     phase = "fight";
+    for (const s of seated()) s.fought = true;
     arena.suddenDeath = false;
     if (mode === "pvm") spawnWave();
     phaseFor = 0;
@@ -687,7 +692,8 @@ const mount: HostMount = (ctx) => {
       const s = seats.get(p.id);
       if (!s) return;
       // "Each match only": the loadout is fixed between the rounds of a match
-      if (readyOnly && phase === "pick") return;
+      // (a player who hasn't fought in this match yet, e.g. one who just joined, still picks once)
+      if (readyOnly && phase === "pick" && s.fought) return;
       if (d.type === "weapon" && WEAPON_KINDS.includes(d.weapon)) s.weapon = d.weapon;
       else if (d.type === "gun" && (d.gun === null || GUN_KINDS.includes(d.gun))) s.sidearm = d.gun;
       else if (d.type === "plate" && (d.plate === null || PLATE_KINDS.includes(d.plate))) s.plate = d.plate;
