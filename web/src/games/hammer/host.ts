@@ -226,7 +226,8 @@ const mount: HostMount = (ctx) => {
   const teamName = (t: number): string =>
     t === MONSTER_TEAM ? "The worms" : mode === "teams" ? TEAMS[t]!.name : mode === "pve" || mode === "pvm" ? PVE_TEAMS[t]!.name : "";
   const teamColor = (t: number): string => (t === MONSTER_TEAM ? MONSTER_COLOR : mode === "teams" ? TEAMS[t]!.color : PVE_TEAMS[t]!.color);
-  const colorOf = (s: Seat): string => (mode === "teams" ? TEAMS[s.slot % 2]!.shades[Math.floor(s.slot / 2)]! : s.color);
+  // a waiting player (slot −1) has no team yet: their own colour
+  const colorOf = (s: Seat): string => (mode === "teams" && s.slot >= 0 ? TEAMS[s.slot % 2]!.shades[Math.floor(s.slot / 2)]! : s.color);
   /** Computer players wanted: the setting, but at least one enemy in co-op. */
   const botsWanted = () => {
     const n = Number(ctx.settings().bots) || 0;
@@ -401,7 +402,7 @@ const mount: HostMount = (ctx) => {
       color: colorOf(s),
       slot: s.slot,
       team: teamOf(s),
-      teamName: mode === "ffa" ? "" : teamName(teamOf(s)),
+      teamName: mode === "ffa" || s.slot < 0 ? "" : teamName(teamOf(s)),
       weapon: s.weapon,
       sidearm: s.sidearm,
       gun: g,

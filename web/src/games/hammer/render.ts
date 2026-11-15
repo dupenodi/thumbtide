@@ -253,7 +253,7 @@ export class Renderer {
     const speed = Math.hypot(b.vx, b.vy);
     const k0 = Math.min(1, Math.max(0, (speed - 200) / 500));
     if (k0 <= 0) return;
-    // two strokes, not one per segment (each stroke costs the TV): a faint wide tail and a brighter head
+    // two strokes, not one per segment (each stroke costs the TV): a faint thin tail and a brighter, wider head
     const ctx = this.ctx;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";

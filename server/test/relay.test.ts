@@ -8,7 +8,7 @@ let url = "";
 const cleanup: Array<{ close?: () => void; leave?: () => void }> = [];
 
 before(async () => {
-  server = startServer({ port: 0, playerGraceMs: 400, hostGraceMs: 400 });
+  server = startServer({ port: 0, playerGraceMs: 400, hostGraceMs: 400, ghostMinMs: 0 });
   url = `ws://127.0.0.1:${await server.ready}`;
 });
 after(async () => {
@@ -199,7 +199,6 @@ describe("relay", () => {
     await sleep(50);
     const a = await newController(host, "Sam");
     await newController(host, "B");
-    host.lock(true); // mid-game: strangers can't join, but Sam is no stranger
     const id = a.me!.id;
     const oldToken = server.rooms.get(host.code)!.players.get(id)!.token;
     const dropped = next(host, "drop");
@@ -215,6 +214,19 @@ describe("relay", () => {
     assert.equal(host.players.size, 2);
     // the seat has a new token, so the old tab can't take it back
     assert.notEqual(server.rooms.get(host.code)!.players.get(id)!.token, oldToken);
+  });
+
+  test("a locked room refuses a phone without its token, also by name", async () => {
+    const host = await newHost({ maxPlayers: 2 });
+    await sleep(50);
+    const a = await newController(host, "Sam");
+    host.lock(true);
+    const dropped = next(host, "drop");
+    closeTab(a);
+    await dropped;
+    const back = new Controller({ server: url, room: host.code, name: "Sam", persist: false });
+    cleanup.push({ close: () => back.leave() });
+    assert.equal(await next(back, "closed"), "room-locked");
   });
 
   test("a connected player's name is not taken over", async () => {

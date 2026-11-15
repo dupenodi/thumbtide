@@ -32,6 +32,8 @@ export interface ManagerOptions {
   maxRooms?: number;
   playerGraceMs?: number;
   hostGraceMs?: number;
+  /** A dropped seat can go to a newcomer in a full room only after it has been empty this long (default 10 s). */
+  ghostMinMs?: number;
 }
 
 interface Player {
@@ -155,6 +157,9 @@ export class Room {
       // Unknown/expired token: fall through and join as a new player.
     }
 
+    // A locked room lets nobody in without a token (also not by name: anyone can read a name off the TV).
+    if (this.config.locked) return CLOSE_CODES.roomLocked;
+
     // No usable token, but a disconnected player has this name: it's the same person back without their token
     // (the QR code opened a new tab, or the browser dropped the tab). Give them their seat back instead of a
     // second seat ("Sam 2") next to their own ghost. New token, so the old tab can't take it back.
@@ -167,13 +172,13 @@ export class Room {
       }
     }
 
-    if (this.config.locked) return CLOSE_CODES.roomLocked;
     if (this.players.size >= this.config.maxPlayers) {
       // Full, but some seats may belong to phones that dropped and are still in their grace period.
-      // A real person at the door beats a ghost: free the seat that has been empty longest.
+      // A real person at the door beats a ghost: free the seat that has been empty longest, if it has been empty
+      // for ghostMinMs (a phone whose Wi-Fi blips for a second keeps its seat).
       let ghost: Player | null = null;
       for (const p of this.players.values()) {
-        if (!p.conn && (!ghost || p.droppedAt < ghost.droppedAt)) ghost = p;
+        if (!p.conn && Date.now() - p.droppedAt >= this.mgr.ghostMinMs && (!ghost || p.droppedAt < ghost.droppedAt)) ghost = p;
       }
       if (!ghost) return CLOSE_CODES.roomFull;
       this.removePlayer(ghost, "timeout");
@@ -318,11 +323,13 @@ export class RoomManager {
   readonly maxRooms: number;
   readonly playerGraceMs: number;
   readonly hostGraceMs: number;
+  readonly ghostMinMs: number;
 
   constructor(opts: ManagerOptions = {}) {
     this.maxRooms = opts.maxRooms ?? 5000;
     this.playerGraceMs = opts.playerGraceMs ?? LIMITS.playerGraceMs;
     this.hostGraceMs = opts.hostGraceMs ?? LIMITS.hostGraceMs;
+    this.ghostMinMs = opts.ghostMinMs ?? 10_000;
   }
 
   create(): Room | null {

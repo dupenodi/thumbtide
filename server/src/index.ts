@@ -18,6 +18,8 @@ export interface StartOptions {
   port?: number;
   playerGraceMs?: number;
   hostGraceMs?: number;
+  /** See RoomManager (tests use 0). */
+  ghostMinMs?: number;
   /** Comma-separated allowlist; empty = allow all origins. */
   allowedOrigins?: string[];
 }
@@ -86,7 +88,7 @@ function parseFrame(ws: WebSocket, raw: Buffer | ArrayBuffer | Buffer[], limiter
 }
 
 export function startServer(opts: StartOptions = {}) {
-  const rooms = new RoomManager({ playerGraceMs: opts.playerGraceMs, hostGraceMs: opts.hostGraceMs });
+  const rooms = new RoomManager({ playerGraceMs: opts.playerGraceMs, hostGraceMs: opts.hostGraceMs, ghostMinMs: opts.ghostMinMs });
   const allowed = new Set(opts.allowedOrigins?.filter(Boolean) ?? []);
 
   const http = createServer((req, res) => {
