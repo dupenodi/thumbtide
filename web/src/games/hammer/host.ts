@@ -15,6 +15,7 @@ import { type Bot, driveBot, makeBot } from "./bots.ts";
 import "./hammer.css";
 import { loadGameFont } from "./font.ts";
 import { Hud, type SeatView } from "./hud.ts";
+import { COIN_LOOK, type Pickup } from "./coins.ts";
 import { Fx, Renderer } from "./render.ts";
 import type { HammerGame, Mode, Phase } from "./shared.ts";
 import { Arena, type Machine, STEP, VIEW_H, VIEW_W } from "./sim.ts";
@@ -133,7 +134,8 @@ const mount: HostMount = (ctx) => {
     return (w.parts.find((p) => p.key === w.striker) ?? w.parts[0]!).material;
   };
   // the TV strokes each spark separately on a weak CPU: fewer at once
-  const fx = new Fx(lite ? 80 : 240);
+  const fx = new Fx(lite ? 80 : 240, lite ? 48 : 90);
+  const coinPickups: Pickup[] = [];
 
   // ---- DOM ---------------------------------------------------------------------------------------
   const root = document.createElement("div");
@@ -435,6 +437,7 @@ const mount: HostMount = (ctx) => {
     phaseFor = 0;
     lastWhole = -1;
     arena.resetTime(); // the last round may have ended in slow motion
+    fx.coins.clear();
     winner = null;
     callAt = -1;
     tuning.damage = 0; // warm-up: fly and swing, no damage
@@ -677,6 +680,8 @@ const mount: HostMount = (ctx) => {
       if (e.type === "hit") {
         sound?.hit(e.dmg, e.impact, e.cut, materialOf(e.attacker));
         hitFx(e.x, e.y, e.dmg, e.cut, e.victim.color);
+        const coins = fx.coins.spill(e.x, e.y, e.dmg);
+        if (coins) sound?.coin(coins);
         const a = byMachine.get(e.attacker);
         const v = byMachine.get(e.victim);
         if (e.dmg > 0) {
@@ -864,6 +869,12 @@ const mount: HostMount = (ctx) => {
     tickPhase(real);
     soundFrame();
     fx.update(real);
+    fx.coins.update(real * arena.timewarp, arena.machines, coinPickups);
+    for (const c of coinPickups) {
+      sound?.coin(0);
+      fx.burst(c.x, c.y, 5, 90, COIN_LOOK[c.metal]!.fill, 1.5);
+    }
+    coinPickups.length = 0;
     const d0 = tour ? performance.now() : 0;
     renderer.draw(arena, Math.min(1, acc / STEP), fx);
     frameDrawn(now);
@@ -876,7 +887,7 @@ const mount: HostMount = (ctx) => {
 
   startPick(FIRST_PICK_S);
   raf = requestAnimationFrame(frame);
-  if (import.meta.env.DEV) (window as unknown as { __rotor: unknown }).__rotor = { host, arena, seats, phase: () => phase, sound, audioCtx: audio() };
+  if (import.meta.env.DEV) (window as unknown as { __rotor: unknown }).__rotor = { host, arena, seats, phase: () => phase, sound, fx, audioCtx: audio() };
 
   return {
     dispose() {

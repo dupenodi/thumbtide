@@ -16,6 +16,8 @@ export interface GameAudio {
   stun(): void;
   disarm(): void;
   pickup(): void;
+  /** Coins: a spill on a hard hit (n coins) or one picked up (n 0). */
+  coin(n: number): void;
   /** A gunshot (bullet) or a mortar blast (ball). */
   shot(ball: boolean): void;
   ko(): void;
@@ -237,6 +239,17 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
       const t = now();
       tone("square", 440, 440, t, 0.05, 0.06);
       tone("square", 660, 660, t + 0.06, 0.05, 0.08);
+    },
+    coin(n) {
+      if (!allow(n ? 2 : 1)) return;
+      const t = now();
+      if (n === 0) {
+        tone("triangle", 1760, 1760, t, 0.06, 0.07);
+        tone("triangle", 2637, 2637, t + 0.05, 0.12, 0.06);
+        return;
+      }
+      // a short jingle: a few bright pings
+      for (let i = 0; i < Math.min(5, 1 + Math.floor(n / 4)); i++) tone("triangle", 1500 + Math.random() * 1500, 1400 + Math.random() * 1400, t + i * 0.035, 0.08, 0.05);
     },
     shot(ball) {
       // an arquebus fires 10 a second: at most one crack per 60 ms

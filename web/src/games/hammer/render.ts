@@ -3,6 +3,7 @@
 
 import type { Body } from "./engine.ts";
 import { type Arena, lerpBody, type Machine, type Tag, VIEW_H, VIEW_W } from "./sim.ts";
+import { COIN_FADE, COIN_LOOK, Coins } from "./coins.ts";
 import { MONSTER_LOOK } from "./monsters.ts";
 import { MACHINE, type Material, PLATES, WEAPONS } from "./weapons.ts";
 
@@ -33,7 +34,11 @@ export class Fx {
   floats: Float[] = [];
   shake = 0;
   /** At most this many sparks live at once (each is a separate stroke; a long grind could add hundreds). */
-  constructor(readonly maxSparks = 240) {}
+  /** Coins from hard hits (draw-only). */
+  readonly coins: Coins;
+  constructor(readonly maxSparks = 240, maxCoins = 90) {
+    this.coins = new Coins(VIEW_W, VIEW_H, maxCoins, Math.min(30, maxCoins));
+  }
   /** Recent striker tip positions per machine, for the swing trail. */
   trails = new Map<Machine, { x: number; y: number }[]>();
 
@@ -122,6 +127,7 @@ export class Renderer {
     for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
     if (arena.shots.length) this.shots(arena, alpha);
     this.plates(arena, alpha);
+    if (fx.coins.list.length) this.coins(fx.coins);
 
     ctx.lineCap = "round";
     for (const p of fx.sparks) {
@@ -149,6 +155,30 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
     for (const m of arena.machines) this.offscreen(m, alpha);
+  }
+
+  /** All coins in 3 fills and 3 strokes (one path per metal); a coin is an ellipse whose width follows its spin. */
+  private coins(coins: Coins): void {
+    const ctx = this.ctx;
+    ctx.lineWidth = 1.2;
+    for (let metal = 0; metal < 3; metal++) {
+      ctx.beginPath();
+      let any = false;
+      for (const c of coins.list) {
+        if (c.metal !== metal) continue;
+        if (c.age > COIN_FADE - 1 && Math.floor(c.age * 8) % 2) continue; // blink out in the last second
+        const r = c.big ? 6 : 4.5;
+        const rx = Math.max(0.8, r * Math.abs(Math.cos(c.spin)));
+        ctx.moveTo(c.x + rx, c.y);
+        ctx.ellipse(c.x, c.y, rx, r, 0, 0, Math.PI * 2);
+        any = true;
+      }
+      if (!any) continue;
+      ctx.fillStyle = COIN_LOOK[metal]!.fill;
+      ctx.fill();
+      ctx.strokeStyle = COIN_LOOK[metal]!.rim;
+      ctx.stroke();
+    }
   }
 
   private sky(): void {
