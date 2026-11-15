@@ -171,8 +171,9 @@ export class Host<G extends GameMessages = AnyGame> extends Emitter<HostEvents<G
         const changed = this.code !== "" && this.code !== m.room;
         this.code = m.room;
         this.config = m.config;
-        // Brand-new room (first start, or our old one expired): push our settings to it.
-        if (!m.resumed && this.opts.maxPlayers && m.config.maxPlayers !== this.opts.maxPlayers) {
+        // Push our seat limit to the room: a new room starts at the relay default, and a resumed one may
+        // carry the limit of an older version of this page.
+        if (this.opts.maxPlayers && m.config.maxPlayers !== this.opts.maxPlayers) {
           this.setMaxPlayers(this.opts.maxPlayers);
         }
         // Reconcile players: anything we knew about that the server doesn't is gone.

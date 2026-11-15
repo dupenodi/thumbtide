@@ -2,7 +2,7 @@
  * TV / big-screen shell. Owns the room, decides who the VIP is (the player whose phone drives menus),
  * mounts whichever game is active, and carries out host commands: pause, restart, settings, kick, lock.
  */
-import { Host, local, type HostPlayer } from "@thumbtide/sdk";
+import { Host, LIMITS, local, type HostPlayer } from "@thumbtide/sdk";
 import { startParam } from "./tv.ts"; // first: the LG TV app's remote, screen saver and fallbacks
 import "./perf.ts"; // the frame monitor for performance tests (off unless the page starts with perf=…)
 import "../style.css";
@@ -16,7 +16,9 @@ import { audio, blip, soundHint } from "./sound.ts";
 const root = document.getElementById("app")!;
 const banner = document.getElementById("banner")!;
 
-const host = new Host({ server: RELAY_URL, game: "lobby", maxPlayers: 8 });
+// The room takes as many phones as the relay allows. Each game seats as many as it can play with
+// (Wet Paint, Cult and Cascade 8) and the rest watch, so a 9th friend can still get in.
+const host = new Host({ server: RELAY_URL, game: "lobby", maxPlayers: LIMITS.maxPlayers });
 shell.host = host;
 
 // sound is on from the start wherever the browser allows it, and from the first key press or click otherwise

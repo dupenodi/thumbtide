@@ -29,6 +29,12 @@ export const LIMITS = {
   /** Token bucket per socket: sustained msgs/sec and burst size. */
   ratePerSec: 90,
   rateBurst: 180,
+  /**
+   * The host's own bucket. It talks to every phone, so its traffic grows with the room: a lobby with 16 phones
+   * sends a few hundred sticky-state updates as they all join, and dropped sticky state leaves phones stale.
+   */
+  hostRatePerSec: 600,
+  hostRateBurst: 1200,
 } as const;
 
 export type PlayerId = string;
