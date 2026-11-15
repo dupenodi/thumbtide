@@ -1,7 +1,7 @@
 // Computer players. They give input like a gamepad (at most 100 units per frame, Hammerfight's GAME_SENSITY_PAD),
 // so they obey the same physics and limits as a person.
 
-import { type Arena, EDGE_M, EDGE_TOP, type Machine, STEP, VIEW_H, VIEW_W } from "./sim.ts";
+import { type Arena, EDGE_M, EDGE_TOP, type Machine, STEP } from "./sim.ts";
 
 export type BotMode = "idle" | "wander" | "fight";
 
@@ -81,8 +81,8 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot): void {
   const r = 90;
   // stay in view: inside the side and bottom edges, and below the score cards at the top (an AFK player's machine no
   // longer sinks off the bottom: the autopilot flies it, so there is nothing to chase down there)
-  const x = Math.min(VIEW_W - EDGE_M, Math.max(EDGE_M, enemy.hull.x + Math.cos(bot.theta) * r));
-  const y = Math.min(VIEW_H - EDGE_M, Math.max(EDGE_TOP, enemy.hull.y + Math.sin(bot.theta) * r));
+  const x = Math.min(arena.w - EDGE_M, Math.max(EDGE_M, enemy.hull.x + Math.cos(bot.theta) * r));
+  const y = Math.min(arena.h - EDGE_M, Math.max(EDGE_TOP, enemy.hull.y + Math.sin(bot.theta) * r));
   seek(arena, m, x, y, 350);
 
   // shield up when the enemy is close (it halves thrust, so not all the time)

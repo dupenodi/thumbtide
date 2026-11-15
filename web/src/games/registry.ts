@@ -174,6 +174,17 @@ export const GAMES: GameDef[] = [
         default: 3,
       },
       {
+        key: "arena",
+        label: "Arena",
+        options: [
+          { value: "classic", label: "Classic" },
+          { value: "crates", label: "Crates" },
+          { value: "big", label: "Big, with crates" },
+          { value: "huge", label: "Huge, with crates" },
+        ],
+        default: "classic",
+      },
+      {
         key: "warmup",
         label: "Weapon pick",
         options: [

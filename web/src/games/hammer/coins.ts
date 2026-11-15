@@ -49,8 +49,8 @@ export interface Pickup {
 export class Coins {
   list: Coin[] = [];
   constructor(
-    readonly w: number,
-    readonly h: number,
+    public w: number,
+    public h: number,
     /** At most this many coins at once (the oldest go first). */
     readonly max = 90,
     /** At most this many coins per spill (Hammerfight: 30). */

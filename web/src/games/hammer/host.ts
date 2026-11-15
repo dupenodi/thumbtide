@@ -19,7 +19,7 @@ import { Hud, type SeatView } from "./hud.ts";
 import { COIN_LOOK, type Pickup } from "./coins.ts";
 import { Fx, Renderer } from "./render.ts";
 import type { HammerGame, Mode, Phase } from "./shared.ts";
-import { Arena, type Machine, STEP, VIEW_H, VIEW_W } from "./sim.ts";
+import { Arena, type Machine, type ObstacleSpec, STEP, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
 import { GUN_KINDS, type GunKind, MACHINE, type Material, PLATE_KINDS, type PlateKind, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
@@ -35,6 +35,47 @@ const SPAWNS: [number, number][] = [
   [390, 400],
   [570, 400],
 ];
+/**
+ * Arenas (OURS: Hammerfight's multiplayer arenas are one fixed size with no obstacles; its story ARENA has crates).
+ * A bigger arena is the same TV picture zoomed out; positions are shares of the arena size.
+ */
+const ARENAS: Record<string, { k: number; obstacles: [ObstacleSpec["kind"], number, number, number, number][] }> = {
+  classic: { k: 1, obstacles: [] },
+  crates: {
+    k: 1,
+    obstacles: [
+      ["pillar", 0.33, 0.52, 12, 34],
+      ["pillar", 0.67, 0.52, 12, 34],
+      ["crate", 0.5, 0.36, 22, 22],
+      ["crate", 0.5, 0.74, 22, 22],
+    ],
+  },
+  big: {
+    k: 1.5,
+    obstacles: [
+      ["pillar", 0.33, 0.52, 12, 34],
+      ["pillar", 0.67, 0.52, 12, 34],
+      ["crate", 0.5, 0.36, 22, 22],
+      ["crate", 0.5, 0.74, 22, 22],
+      ["crate", 0.18, 0.78, 20, 20],
+      ["crate", 0.82, 0.78, 20, 20],
+    ],
+  },
+  huge: {
+    k: 2,
+    obstacles: [
+      ["pillar", 0.25, 0.5, 12, 40],
+      ["pillar", 0.75, 0.5, 12, 40],
+      ["pillar", 0.5, 0.55, 40, 12],
+      ["crate", 0.5, 0.3, 22, 22],
+      ["crate", 0.38, 0.78, 22, 22],
+      ["crate", 0.62, 0.78, 22, 22],
+      ["crate", 0.12, 0.3, 20, 20],
+      ["crate", 0.88, 0.3, 20, 20],
+    ],
+  },
+};
+
 /** Computer players: colours away from the first human colours, and never white (white is the hit flash). */
 const BOT_COLORS = ["#c18cff", "#ff9f43", "#2de2c9", "#a3e048", "#ff7eb6", "#ffd84a", "#7ee0ff", "#b8c0d0"];
 /** Team modes: Red is the odd players P1, P3, P5, P7 (the left HUD side), Blue the even ones; each member gets a shade of the team colour. */
@@ -269,8 +310,8 @@ const mount: HostMount = (ctx) => {
     for (let i = 0; i < n; i++) {
       const left = i % 2 === 0;
       const kind = round >= 3 && i % 2 === 1 ? "armoredworm" : "worm";
-      const y = 120 + Math.random() * (VIEW_H - 240);
-      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, x: left ? -40 : VIEW_W + 40, y, dir: left ? 0 : Math.PI, segments }));
+      const y = 120 + Math.random() * (arena.h - 240);
+      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, x: left ? -40 : arena.w + 40, y, dir: left ? 0 : Math.PI, segments }));
     }
   };
 
@@ -335,7 +376,10 @@ const mount: HostMount = (ctx) => {
   };
 
   const spawn = (s: Seat) => {
-    const [x, y] = SPAWNS[s.slot] ?? [VIEW_W / 2, VIEW_H / 2];
+    // the spawn table is for the classic frame: the same shares of a bigger arena
+    const [x0, y0] = SPAWNS[s.slot] ?? [VIEW_W / 2, VIEW_H / 2];
+    const x = (x0 * arena.w) / VIEW_W;
+    const y = (y0 * arena.h) / VIEW_H;
     if (s.m) {
       arena.respawn(s.m, x, y, s.weapon, s.sidearm, s.plate);
     } else {
@@ -446,6 +490,17 @@ const mount: HostMount = (ctx) => {
   };
 
   // ---- phases ------------------------------------------------------------------------------------
+  let arenaKind = "";
+  /** Size and obstacles from the Arena setting; the coins and spawns follow the size. */
+  const applyArena = () => {
+    arenaKind = String(ctx.settings().arena ?? "classic");
+    const a = ARENAS[arenaKind] ?? ARENAS.classic!;
+    const w = VIEW_W * a.k;
+    const h = VIEW_H * a.k;
+    arena.setArena(w, h, a.obstacles.map(([kind, sx, sy, hw, hh]) => ({ kind, x: sx * w, y: sy * h, hw, hh })));
+    fx.coins.w = w;
+    fx.coins.h = h;
+  };
   const startPick = (seconds = PICK_S) => {
     phase = "pick";
     arena.suddenDeath = false;
@@ -458,6 +513,8 @@ const mount: HostMount = (ctx) => {
       round = 0;
     }
     round++;
+    // a new match (or a new arena choice in its first warm-up) builds the arena
+    if (round === 1 || arenaKind !== (String(ctx.settings().arena ?? "classic"))) applyArena();
     left = seconds;
     pickTotal = seconds;
     phaseFor = 0;
@@ -752,6 +809,16 @@ const mount: HostMount = (ctx) => {
         clashCd = 0.06;
         const n = 4 + Math.min(10, Math.round(e.impact / 10));
         fx.burst(e.x, e.y, lite ? Math.ceil(n / 2) : n, 220, "#cfe3ff", 1.5);
+      } else if (e.type === "crack") {
+        sound?.hit(e.dmg, e.dmg * 4, 1, "wood");
+        fx.burst(e.x, e.y, lite ? 3 : 6, 200, "#c89a5e", 2);
+      } else if (e.type === "break") {
+        // a crate bursts: splinters (sim) and a handful of coins
+        sound?.disarm();
+        fx.burst(e.x, e.y, lite ? 12 : 24, 320, "#c89a5e", 2.5);
+        fx.shake = Math.min(12, fx.shake + 5);
+        const n = coinsOff ? 0 : fx.coins.spill(e.x, e.y, 24);
+        if (n) sound?.coin(n);
       } else if (e.type === "slam") {
         // a reeling machine smashed into something: more stun
         sound?.clash(e.impact);

@@ -203,6 +203,36 @@ test("gibs: a wreck bursts into shards that hurt for a moment, then pass through
   assert.ok(gibs.every((x) => !x.solid || x.dead), "shards still solid after the harm window");
 });
 
+test("arenas: a bigger arena moves the walls; crates break under hard hits, pillars don't", () => {
+  const ar = arena();
+  ar.tuning.slomo = 0;
+  ar.setArena(1440, 810, [
+    { kind: "crate", x: 700, y: 400, hw: 22, hh: 22, hp: 30 },
+    { kind: "pillar", x: 1000, y: 400, hw: 12, hh: 34 },
+  ]);
+  const a = ar.add({ id: 0, name: "a", color: "#f00", weapon: "hammer", x: 200, y: 700 });
+  // the bottom wall is now near 810, not 540
+  a.hull.setVelocity(0, 300, 0, 0.02);
+  for (let i = 0; i < 100; i++) ar.step();
+  assert.ok(a.hull.y > 600, `hull held at ${a.hull.y}: the old bottom wall`);
+  let broke = false;
+  for (let k = 0; k < 12 && !broke; k++) {
+    // the machine and its hammer thrown hard at the crate, again and again (head in front, on its rod)
+    a.hull.place(560, 400, 0);
+    a.hull.setVelocity(600, 0, 0, 0.02);
+    a.striker.place(620, 400, 0);
+    a.striker.setVelocity(800, 0, 0, 0.02);
+    for (let i = 0; i < 10; i++) {
+      ar.step();
+      if (ar.events.some((e) => e.type === "break")) broke = true;
+      ar.events.length = 0;
+    }
+  }
+  assert.ok(broke, "the crate never broke");
+  assert.equal(ar.obstacles.length, 1);
+  assert.equal(ar.obstacles[0]!.kind, "pillar");
+});
+
 test("a big hit stuns: the victim's engine stops, then it recovers in about a second", () => {
   const { ar, b } = hammerHit(800, 6);
   assert.ok(b.stun > 0, "no stun after a big hit");

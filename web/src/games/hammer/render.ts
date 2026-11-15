@@ -110,6 +110,9 @@ export class Renderer {
   private bg: HTMLCanvasElement | null = null;
   /** The mace ball's shading, made once (it's in the ball's local frame, so it fits every ball). */
   private ballGrad: CanvasGradient | null = null;
+  /** The arena shown (world px); a bigger arena is a smaller scale, the same canvas. */
+  private worldW = VIEW_W;
+  private worldH = VIEW_H;
   /** The world-to-canvas offset of this frame (the screen shake); the scale is `scale`. */
   private baseX = 0;
   private baseY = 0;
@@ -129,12 +132,18 @@ export class Renderer {
     const r = this.canvas.getBoundingClientRect();
     const w = Math.min(Math.round(r.width * dpr), this.opts.maxWidth ?? 4096);
     this.canvas.width = w;
-    this.canvas.height = Math.round((w * VIEW_H) / VIEW_W);
-    this.scale = this.canvas.width / VIEW_W;
+    this.canvas.height = Math.round((w * this.worldH) / this.worldW);
+    this.scale = this.canvas.width / this.worldW;
     this.bg = paintBackdrop(this.canvas.width, this.canvas.height, this.scale);
   }
 
   draw(arena: Arena, alpha: number, fx: Fx): void {
+    // a new arena size (between rounds): a new scale; the sprite caches follow the scale
+    if (arena.w !== this.worldW || arena.h !== this.worldH) {
+      this.worldW = arena.w;
+      this.worldH = arena.h;
+      this.resize();
+    }
     const ctx = this.ctx;
     const s = this.scale;
     const skip = this.opts.skip;
@@ -157,6 +166,7 @@ export class Renderer {
     if (!skip?.has("machines")) for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
     if (arena.shots.length) this.shots(arena, alpha);
     this.plates(arena, alpha);
+    if (arena.obstacles.length) this.obstacles(arena);
     if (fx.coins.list.length) this.coins(fx.coins);
 
     ctx.lineCap = "round";
@@ -608,6 +618,45 @@ export class Renderer {
     }
   }
 
+  /** Crates (planks; cracks as they lose health) and stone pillars. Static: a few rects each. */
+  private obstacles(arena: Arena): void {
+    const ctx = this.ctx;
+    for (const o of arena.obstacles) {
+      const { x, y } = o.body;
+      const { hw, hh } = o;
+      if (o.kind === "pillar") {
+        ctx.fillStyle = "#4d5361";
+        ctx.fillRect(x - hw, y - hh, 2 * hw, 2 * hh);
+        ctx.fillStyle = "#666d7d";
+        ctx.fillRect(x - hw, y - hh, 2 * hw, 5);
+        ctx.fillRect(x - hw, y + hh - 5, 2 * hw, 5);
+        continue;
+      }
+      ctx.fillStyle = "#3a2a18";
+      ctx.fillRect(x - hw, y - hh, 2 * hw, 2 * hh);
+      ctx.fillStyle = "#9a6b3a";
+      ctx.fillRect(x - hw + 3, y - hh + 3, 2 * hw - 6, 2 * hh - 6);
+      // planks and the cross brace
+      ctx.strokeStyle = "#5a3e20";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let k = 1; k < 3; k++) {
+        const py = y - hh + (2 * hh * k) / 3;
+        ctx.moveTo(x - hw + 3, py);
+        ctx.lineTo(x + hw - 3, py);
+      }
+      ctx.moveTo(x - hw + 3, y - hh + 3);
+      ctx.lineTo(x + hw - 3, y + hh - 3);
+      // cracks once it is half broken
+      if (o.hp < o.max * 0.5) {
+        ctx.moveTo(x - hw * 0.2, y - hh);
+        ctx.lineTo(x + hw * 0.1, y - hh * 0.2);
+        ctx.lineTo(x - hw * 0.3, y + hh * 0.4);
+      }
+      ctx.stroke();
+    }
+  }
+
   /** Shield plates: on a short rod while attached, then falling debris. */
   private plates(arena: Arena, alpha: number): void {
     const ctx = this.ctx;
@@ -616,7 +665,7 @@ export class Renderer {
       if (t?.gibUntil !== undefined) {
         // a wreck's shard: its colour while it can still hurt, then scorched grey
         this.enter(b, alpha);
-        this.solid(b, { fill: arena.t < t.gibUntil ? t.m.color : "#4a4d57", stroke: "rgba(0,0,0,0.55)" }, 1.5);
+        this.solid(b, { fill: t.wood ? "#9a6b3a" : arena.t < t.gibUntil ? t.m.color : "#4a4d57", stroke: "rgba(0,0,0,0.55)" }, 1.5);
         ctx.restore();
         continue;
       }
@@ -958,9 +1007,9 @@ export class Renderer {
     if (!m.alive) return;
     const [x, y] = lerpBody(m.hull, alpha);
     const pad = 14;
-    if (x > -HULL_R && x < VIEW_W + HULL_R && y > -HULL_R && y < VIEW_H + HULL_R) return;
-    const cx = Math.max(pad, Math.min(VIEW_W - pad, x));
-    const cy = Math.max(pad, Math.min(VIEW_H - pad, y));
+    if (x > -HULL_R && x < this.worldW + HULL_R && y > -HULL_R && y < this.worldH + HULL_R) return;
+    const cx = Math.max(pad, Math.min(this.worldW - pad, x));
+    const cy = Math.max(pad, Math.min(this.worldH - pad, y));
     const ang = Math.atan2(y - cy, x - cx);
     const ctx = this.ctx;
     ctx.save();
