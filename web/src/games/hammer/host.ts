@@ -31,8 +31,8 @@ const SPAWNS: [number, number][] = [
   // seats 5-8: even slots (left HUD side, Red) on the left half, odd on the right
   [110, 270],
   [850, 270],
-  [390, 440],
-  [570, 440],
+  [390, 400],
+  [570, 400],
 ];
 /** Computer players: colours away from the first human colours, and never white (white is the hit flash). */
 const BOT_COLORS = ["#c18cff", "#ff9f43", "#2de2c9", "#a3e048", "#ff7eb6", "#ffd84a", "#7ee0ff", "#b8c0d0"];
