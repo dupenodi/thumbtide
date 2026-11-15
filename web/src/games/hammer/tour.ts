@@ -99,6 +99,8 @@ export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | n
   let impactMax = 0;
   const sounds: Record<string, number> = {};
   let soundErrors = 0;
+  /** The real sound engine, for its sample stats. */
+  let inner: GameAudio | null = null;
 
   const label = (b: Body) => {
     for (const m of arena.machines) if (m.hull === b || m.parts.includes(b)) return m.weapon;
@@ -185,6 +187,7 @@ export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | n
         impactMax: Math.round(impactMax),
         sounds: Object.entries(sounds).map(([k, v]) => `${k}:${v}`).join(",") || "-",
         soundErrors,
+        samples: inner?.samples(),
         audio: audioCtx?.state ?? "none",
       };
       steps = 0;
@@ -209,14 +212,15 @@ export function makeTour(arena: Arena, seats: number, audioCtx: AudioContext | n
     },
     wrapSound(s) {
       if (!s) return s;
+      inner = s;
       const counted = {} as GameAudio;
       for (const k of Object.keys(s) as (keyof GameAudio)[]) {
-        const f = s[k] as (...a: unknown[]) => void;
+        const f = s[k] as (...a: unknown[]) => unknown;
         (counted as unknown as Record<string, unknown>)[k] = (...a: unknown[]) => {
           // the per-frame mixer runs every frame: don't count it
-          if (k !== "frame") sounds[k] = (sounds[k] ?? 0) + 1;
+          if (k !== "frame" && k !== "samples") sounds[k] = (sounds[k] ?? 0) + 1;
           try {
-            f(...a);
+            return f(...a);
           } catch {
             soundErrors++;
           }
