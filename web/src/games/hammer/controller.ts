@@ -1,5 +1,5 @@
-// Phone controller for Rotor Brawl, upright or sideways: a fixed joystick (upright: centred, 3/4 down; sideways: left) flies the machine (Hammerfight's gamepad model,
-// stick³ per frame), so flying in circles swings the weapon. Above it go the weapon cards between rounds
+// Phone controller for Rotor Brawl, upright or sideways: a fixed joystick (upright: centred, 3/4 down; sideways: left) flies the machine (the tilt sets a target speed,
+// and the thrust closes the gap), so flying in circles swings the weapon. Above it go the weapon cards between rounds
 // and the K.O. / win screens.
 
 import { type Controller, haptic } from "@thumbtide/sdk";

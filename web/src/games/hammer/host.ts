@@ -90,6 +90,24 @@ const mount: HostMount = (ctx) => {
   const spec = gameById("hammer")!.controls!;
   const gain = spec.tune.gain ?? 6;
   const stickGain = spec.tune.stick ?? 150;
+  const steer = spec.tune.steer ?? 8;
+  const hold = spec.tune.hold ?? 0.5;
+  /** Stick (not in Hammerfight): the tilt sets a target speed; the thrust closes the gap, capped at stickGain. */
+  const stickPush = (m: Machine, x: number, y: number) => {
+    const l = Math.hypot(x, y);
+    if (l < 0.02) return;
+    const top = arena.tuning.speedClip * Math.min(1, l);
+    const tx = (x / l) * top;
+    const ty = (y / l) * top;
+    let ix = steer * (tx - m.hull.vx) + hold * tx;
+    let iy = steer * (ty - m.hull.vy) + hold * ty;
+    const il = Math.hypot(ix, iy);
+    if (il > stickGain) {
+      ix *= stickGain / il;
+      iy *= stickGain / il;
+    }
+    arena.pushRaw(m, ix, iy);
+  };
 
   const lite = isWebOS || !!startParam("lite");
   // lite (the TV): 15 joint passes instead of 30. Heavy chains cost about a third less per step; the mean chain
@@ -629,7 +647,7 @@ const mount: HostMount = (ctx) => {
     if (inp.g === 1) arena.shield(m);
     if (inp.k === 1) {
       s.k = 1;
-      arena.pushRaw(m, stickGain * inp.x ** 3, stickGain * inp.y ** 3);
+      stickPush(m, inp.x, inp.y);
       return;
     }
     if (inp.s !== s.s || s.k !== 0) {
