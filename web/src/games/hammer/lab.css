@@ -1,0 +1,137 @@
+:root {
+  --bg: #0d1020;
+  --panel: rgba(14, 17, 32, 0.92);
+  --line: rgba(255, 255, 255, 0.1);
+  --text: #e8ebf5;
+  --dim: #8e95ad;
+  --accent: #ffb547;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 system-ui, sans-serif;
+  overflow: hidden;
+}
+
+.hl-stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+body.hl-with-panel .hl-stage {
+  right: 280px;
+}
+
+.hl-canvas {
+  display: block;
+  cursor: crosshair;
+}
+
+.hl-hud {
+  position: fixed;
+  left: 12px;
+  top: 10px;
+  pointer-events: none;
+  text-shadow: 0 1px 2px #000;
+}
+
+.hl-hud b {
+  color: var(--accent);
+}
+
+.hl-hud .hl-keys {
+  color: var(--dim);
+  margin-top: 4px;
+}
+
+.hl-lock {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 14px 22px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 16px;
+  pointer-events: none;
+}
+
+.hl-panel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 280px;
+  overflow-y: auto;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  padding: 12px 14px;
+  box-sizing: border-box;
+}
+
+.hl-panel[hidden] {
+  display: none;
+}
+
+.hl-panel h3 {
+  margin: 14px 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.hl-panel h3:first-child {
+  margin-top: 0;
+}
+
+.hl-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  margin-bottom: 6px;
+}
+
+.hl-row input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.hl-row output {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.hl-panel select,
+.hl-panel button {
+  background: #22283f;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font: inherit;
+}
+
+.hl-panel button {
+  cursor: pointer;
+}
+
+.hl-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.hl-stats {
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  white-space: pre;
+}

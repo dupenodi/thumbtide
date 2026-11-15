@@ -101,7 +101,7 @@ async function perf(tv) {
   });
   await new Promise((res) => server.listen(port, "0.0.0.0", res));
   const { perf: game, ...rest } = opts;
-  const params = { bots: "3", ...rest, game, perf: `http://${lanIp()}:${port}/` };
+  const params = { bots: "3", ...rest, game, perf: `http://${lanIp(tv.host)}:${port}/` };
   capture("ares-launch", "-d", tv.name, "--close", appinfo.id); // start fresh, so the launch options apply
   if (!run("ares-launch", "-d", tv.name, appinfo.id, "-p", JSON.stringify(params))) fail("Installed, but it didn't open.");
   console.log(`\nOpened ${game} on the TV. Its frame rate shows here every 2 seconds (Ctrl-C to stop).\n`);

@@ -1,0 +1,1055 @@
+// Machine and weapon data. Most of it is taken from Hammerfight's object files
+// (D:\Steam\steamapps\common\Hammerfight\Demo\*.seria and Objects\Weapons\*.seria): the collision meshes in px with
+// local +x pointing away from the machine, m_fDensity (so mass ratios match the original), m_sharpness, the two-sided
+// m_sharpness_u/_d and m_bladeable_u/_d, and the joints. Joint types: 2 = rod that aims the part at its parent,
+// 3 = rope that aims, 5 = short rope between offset anchors with a soft turn (see HAMMERFIGHT_PHYSICS.md → Joints).
+//
+// The rest comes from the exe's item factory (0x486ff0, read from the DRM-free v1.004 exe): the weapons it builds in
+// code. Two weapons are ours (the great maul and the wooden flail), made from the original shapes with other densities
+// and sharpness, and are marked OURS below. So are the rod lengths of the blades whose files hold the blade only.
+// Not here: bow1 (only story scripts fire it), the flags (ids 100-198, not weapons).
+
+export type WeaponClass = "hammer" | "axe" | "mace" | "sword" | "dual";
+export type Material = "wood" | "iron" | "stone" | "silver" | "steel" | "gold";
+
+export type WeaponKind =
+  | "mallet"
+  | "hammer"
+  | "maul"
+  | "bagor"
+  | "axe"
+  | "berdish"
+  | "flail"
+  | "chainball"
+  | "silvermace"
+  | "kathib"
+  | "sword"
+  | "hisaian"
+  | "claw"
+  | "severn"
+  | "innata"
+  | "broadblade"
+  | "saian"
+  | "silverblade"
+  | "palash"
+  | "twin"
+  | "tribune"
+  | "krankhammer"
+  | "goldhammer"
+  | "goldaxe"
+  | "goldblade"
+  | "spikedflail"
+  | "krankmace"
+  | "kolotun"
+  | "klevec"
+  | "warhammer"
+  | "axis"
+  | "eclipse"
+  | "mamba"
+  | "pike"
+  | "imperia"
+  | "liberia"
+  | "sunblade"
+  | "cyclone"
+  | "bladeflail"
+  | "orbmace"
+  | "starmace"
+  | "stixmace"
+  | "shuriken"
+  | "clawmace";
+
+/** In card order: grouped by class, light → heavy. */
+export const WEAPON_KINDS: WeaponKind[] = [
+  "mallet", "kolotun", "hammer", "klevec", "warhammer", "maul", "krankhammer", "goldhammer",
+  "bagor", "axis", "mamba", "eclipse", "axe", "pike", "berdish", "goldaxe",
+  "flail", "chainball", "orbmace", "starmace", "stixmace", "shuriken", "silvermace", "bladeflail", "spikedflail", "clawmace", "krankmace",
+  "kathib", "claw", "sword", "imperia", "cyclone", "severn", "innata", "liberia", "broadblade", "saian", "silverblade", "palash", "hisaian", "sunblade", "goldblade",
+  "twin", "tribune",
+];
+
+/** The convex hull of a polygon (x,y pairs). Collisions need convex shapes; one original axe head is hook-shaped. */
+function hull(v: number[]): number[] {
+  const pts: [number, number][] = [];
+  for (let i = 0; i < v.length; i += 2) pts.push([v[i]!, v[i + 1]!]);
+  pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: [number, number][] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2]!, lower[lower.length - 1]!, p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: [number, number][] = [];
+  for (const p of [...pts].reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2]!, upper[upper.length - 1]!, p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)].flat();
+}
+
+const box = (hx: number, hy: number) => [-hx, -hy, hx, -hy, hx, hy, -hx, hy];
+
+/** class PC: mesh 24.996 × 32.995, m_fDensity 80, health 100, health_low 12. */
+export const MACHINE = {
+  mesh: box(12.4981, 16.4975),
+  density: 80,
+  health: 100,
+  healthLow: 12,
+  /** Human spin damping (0x44c930): torque −= 2e6 · ω. */
+  spinDamp: 2e6,
+};
+
+export interface PartSpec {
+  key: string;
+  mesh: number[];
+  density: number;
+  /** m_sharpness, and the other side's value when it differs (blunt back of an axe or sabre: m_sharpness_u). */
+  sharpness: number;
+  sharpnessU?: number;
+  /** m_bladeable_d, and m_bladeable_u for the other edge when it differs (0 = that edge doesn't cut). */
+  bladeable: number;
+  bladeableU?: number;
+  /** Where the part's origin sits below the machine centre at spawn (the weapon hangs straight down). */
+  hang: number;
+  /** Spawn angle; default π/2 (local +x pointing down, away from the machine). */
+  angle?: number;
+  /** Drawing hint. */
+  look: "hammer" | "mallet" | "axe" | "blade" | "link" | "spike" | "handle" | "ball" | "gun";
+  material: Material;
+  /** Draw a shaft from the machine to this part (parts on a rod joint). */
+  rod?: boolean;
+  /** This part shoots (class Weapon with m_ammoclip_size): along its local +x, away from the machine. */
+  gun?: GunSpec;
+  /** m_extra_shock: its hits stun this many times longer (the wooden hammer: 4). */
+  extraShock?: number;
+}
+
+/**
+ * A gun (Weapon::fire, 0x4184xx; mortar 0x41adxx). Fire needs the timer at 0 and a round in the clip; each shot sets
+ * the timer to 0.1 s, the last one to m_recoil_time, and the clip refills when that runs out.
+ */
+export interface GunSpec {
+  /** m_ammoclip_size. */
+  clip: number;
+  /** m_recoil_time: seconds to reload an empty clip. */
+  reload: number;
+  /** Seconds between shots while the trigger is held (the exe sets 0.1). */
+  interval: number;
+  /** Projectiles per shot and their spread, +- radians (mortar: 5, 0.2). */
+  pellets: number;
+  spread: number;
+  /** Muzzle speed px/s (bullets: 2000). */
+  speed: number;
+  /** Projectile radius px and density. */
+  shotR: number;
+  shotDensity: number;
+  /** Projectile sharpness (bullets: 7). */
+  shotSharpness: number;
+  /** Recoil impulse on the gun as a multiple of the shot's momentum (the exe: 1, mortar only). */
+  recoil: number;
+  /** "ball" shots are drawn as mortar balls, "bullet" as tracers, "rocket" as a rocket with a flame. */
+  look: "bullet" | "ball" | "rocket";
+  /** Rockets: no gravity, and a blast on the first contact or at the end of their life. */
+  blast?: { radius: number; damage: number; push: number };
+}
+
+export interface JointSpec {
+  /** "hull" or a part key. */
+  a: string;
+  b: string;
+  type: number;
+  radius: number;
+  sax?: number;
+  say?: number;
+  sbx?: number;
+  sby?: number;
+  /** m_necess: last joint pass this joint takes part in. Rods use 5; chains use 999 (all passes). */
+  necess: number;
+}
+
+export interface WeaponSpec {
+  kind: WeaponKind;
+  cls: WeaponClass;
+  /** 1 light … 3 heavy. */
+  tier: 1 | 2 | 3;
+  label: string;
+  blurb: string;
+  /** True when the weapon is made by us rather than taken from Hammerfight's files. */
+  ours?: boolean;
+  parts: PartSpec[];
+  joints: JointSpec[];
+  /** The part that does most of the hitting (for trails and clashes). */
+  striker: string;
+}
+
+// ---------------------------------------------------------------- guns
+// Bullets are 7 px balls of sharpness 7 at 2000 px/s. Their density (200 in the exe) is OURS: with this port's
+// damage formula a 200-density bullet does about 100 damage, so we use 8 (about 5 a hit) and 10 for mortar balls.
+const BULLET = { interval: 0.1, pellets: 1, spread: 0.01, speed: 2000, shotR: 3.5, shotDensity: 8, shotSharpness: 7, recoil: 0, look: "bullet" } as const;
+
+export type GunKind = "arquebus" | "mortar" | "heavymortar" | "launcher";
+export const GUN_KINDS: GunKind[] = ["arquebus", "mortar", "heavymortar", "launcher"];
+
+/** A gun you take with a melee weapon: it rides on its own rod on the far side, tied to the weapon (type 0). */
+export interface SidearmSpec {
+  kind: GunKind;
+  label: string;
+  blurb: string;
+  part: Omit<PartSpec, "key" | "hang" | "rod" | "angle">;
+  rod: number;
+}
+
+export const SIDEARMS: Record<GunKind, SidearmSpec> = {
+  // gun_blade.seria: density 40.8, sharpness 5 (it has a bayonet), m_recoil_time 2; the item code sets a clip of 20.
+  arquebus: {
+    kind: "arquebus",
+    label: "Arquebus",
+    blurb: "20 quick shots, then a reload.",
+    rod: 34,
+    part: {
+      mesh: [-16.347, -9.848, -16.494, 4.143, 16.494, 12.124, 9.118, -12.124],
+      density: 40.8006,
+      sharpness: 5,
+      bladeable: 0,
+      look: "gun",
+      material: "iron",
+      gun: { ...BULLET, clip: 20, reload: 2 },
+    },
+  },
+  // mortar (id 240): box 22 × 10, density 25, rod 18, clip 3, m_recoil_time 5; 5 balls a shot with +-0.2 spread,
+  // recoil = the balls' momentum. The ball speed, the time between blasts and the 3x kick are OURS.
+  mortar: {
+    kind: "mortar",
+    label: "Mortar",
+    blurb: "3 blasts of 5 balls. Big kick.",
+    rod: 18,
+    part: {
+      mesh: box(11, 5),
+      density: 25,
+      sharpness: 1,
+      bladeable: 0,
+      look: "gun",
+      material: "iron",
+      gun: { clip: 3, reload: 5, interval: 0.6, pellets: 5, spread: 0.2, speed: 1100, shotR: 5, shotDensity: 10, shotSharpness: 7, recoil: 3, look: "ball" },
+    },
+  },
+  // mortar_heavy (id 244): box 22 × 14, density 25, rod 19, clip 1, m_recoil_time 5; one mortar_ball (6-gon 13 × 13,
+  // sharpness 2). Ball density (200 in the exe) and speed are OURS, as for bullets.
+  heavymortar: {
+    kind: "heavymortar",
+    label: "Heavy mortar",
+    blurb: "One huge ball. Slow reload.",
+    rod: 19,
+    part: {
+      mesh: box(11, 7),
+      density: 25,
+      sharpness: 1,
+      bladeable: 0,
+      look: "gun",
+      material: "iron",
+      gun: { clip: 1, reload: 5, interval: 0.1, pellets: 1, spread: 0.02, speed: 1000, shotR: 6.5, shotDensity: 60, shotSharpness: 2, recoil: 3, look: "ball" },
+    },
+  },
+  // launcher (id 243): box 44 × 13, density 25, rod 17, clip 3, m_recoil_time 5. The rocket (box 15 × 7, m_explosive
+  // 1700) flies under its own thrust and explodes. Its speed and the blast size and damage are OURS (not found in the exe).
+  launcher: {
+    kind: "launcher",
+    label: "Launcher",
+    blurb: "3 rockets that explode.",
+    rod: 17,
+    part: {
+      mesh: box(22, 6.5),
+      density: 25,
+      sharpness: 1,
+      bladeable: 0,
+      look: "gun",
+      material: "iron",
+      gun: {
+        clip: 3,
+        reload: 5,
+        interval: 0.5,
+        pellets: 1,
+        spread: 0.02,
+        speed: 800,
+        shotR: 4,
+        shotDensity: 8,
+        shotSharpness: 1,
+        recoil: 0,
+        look: "rocket",
+        blast: { radius: 80, damage: 22, push: 450 },
+      },
+    },
+  },
+};
+
+// ---------------------------------------------------------------- plates (shields)
+// Item factory ids 184-198: a box (thickness along local +x, away from the machine), density, m_overkill and the rod
+// (m_jrad_x), all with sharpness 0.5. A plate is knocked off when a weapon at more than 1.5x its speed hits it with an
+// impact above overkill x 100 (x 0.25 at critical health). Holding the shield pushes the plates apart and halves thrust.
+export type PlateKind = "woodlight" | "woodheavy" | "rusty" | "iron" | "silver" | "imperia" | "armor" | "heavyplate";
+export interface PlateSpec {
+  kind: PlateKind;
+  label: string;
+  mesh: number[];
+  density: number;
+  overkill: number;
+  rod: number;
+  material: Material;
+}
+const plate = (kind: PlateKind, label: string, w: number, h: number, density: number, overkill: number, rod: number, material: Material): PlateSpec => ({
+  kind,
+  label,
+  mesh: box(w / 2, h / 2),
+  density,
+  overkill,
+  rod,
+  material,
+});
+export const PLATES: Record<PlateKind, PlateSpec> = {
+  woodlight: plate("woodlight", "Light wood", 12, 28, 15, 0.3, 21, "wood"), // plate_wood_light (184)
+  woodheavy: plate("woodheavy", "Heavy wood", 15, 27, 20, 0.4, 23, "wood"), // plate_wood_heavy (186)
+  rusty: plate("rusty", "Rusty", 13, 31, 30, 0.6, 21, "stone"), // plate_rusty (189)
+  iron: plate("iron", "Iron", 16, 31, 30, 0.6, 21, "iron"), // plate_iron (190)
+  silver: plate("silver", "Silver", 15, 27, 30, 0.7, 23, "silver"), // plate_silver (194)
+  imperia: plate("imperia", "Imperia", 15, 31, 35, 0.7, 19, "gold"), // plate_imperia (195)
+  armor: plate("armor", "Armour", 16, 33, 40, 0.7, 36, "steel"), // plate_armor (198)
+  heavyplate: plate("heavyplate", "Heavy", 15, 38, 30, 0.8, 25, "iron"), // plate_heavy (193)
+};
+export const PLATE_KINDS = Object.keys(PLATES) as PlateKind[];
+/** Plates a machine carries (the game allows up to 6; two keep the body count down on the TV). */
+export const PLATE_COUNT = 2;
+
+/** Dual weapons already fill the far side (the tribune's back blade is its own gun). */
+export const takesSidearm = (k: WeaponKind) => WEAPONS[k].cls !== "dual";
+
+const combined = new Map<string, WeaponSpec>();
+/** The weapon with a sidearm added: the gun hangs opposite the weapon on its own rod, held apart by a type 0 joint. */
+export function armedSpec(kind: WeaponKind, gun: GunKind | null): WeaponSpec {
+  const w = WEAPONS[kind];
+  if (!gun || !takesSidearm(kind)) return w;
+  const key = `${kind}+${gun}`;
+  let c = combined.get(key);
+  if (!c) {
+    const g = SIDEARMS[gun];
+    const first = w.joints.find((j) => j.a === "hull")!;
+    const rigid = first.type === 2;
+    c = {
+      ...w,
+      parts: [...w.parts, { key: "gun", hang: -g.rod, angle: -Math.PI / 2, rod: true, ...g.part }],
+      joints: [
+        ...w.joints,
+        { a: "hull", b: "gun", type: 2, radius: g.rod, necess: 5 },
+        // a rod weapon holds the gun straight across (like the dual sets); a chain can't, so the gun swings free
+        ...(rigid ? [{ a: first.b, b: "gun", type: 0, radius: first.radius + g.rod, necess: 1 }] : []),
+      ],
+    };
+    combined.set(key, c);
+  }
+  return c;
+}
+
+// ---------------------------------------------------------------- building blocks
+const HAMMER_HEAD = box(8.49872, 14.4978); // hammer_iron 17 × 29
+
+const linkPart = (i: number, hang: number, density: number, material: Material): PartSpec => ({
+  key: `link${i}`,
+  mesh: box(4.99925, 2.99955), // chain_small: 10 × 6
+  density,
+  sharpness: 1,
+  bladeable: 0,
+  hang,
+  look: "link",
+  material,
+});
+
+/** chain_large: box 12 × 6.6, density 20 (links joined by type 3, radius 9). */
+const bigLink = (i: number, hang: number): PartSpec => ({ key: `link${i}`, mesh: box(6, 3.3), density: 20, sharpness: 1, bladeable: 0, hang, look: "link", material: "iron" });
+/** n links from `from` to `to` (each joined to the one before with a rope of `r`). */
+function chain(n: number, first: number, step: number, big: boolean): { parts: PartSpec[]; joints: JointSpec[] } {
+  const parts: PartSpec[] = [];
+  const joints: JointSpec[] = [];
+  for (let i = 0; i < n; i++) {
+    // only the first link is a full chain_large: a whole chain of them folds up in this engine (the krank mace and the
+    // spiked flail do the same), so the rest use the small link mesh at the large spacing
+    parts.push(big && i === 0 ? bigLink(i, first + i * step) : linkPart(i, first + i * step, 20, "iron"));
+    if (i > 0) joints.push({ a: `link${i - 1}`, b: `link${i}`, type: 3, radius: big ? 9 : 7, necess: 999 });
+  }
+  return { parts, joints };
+}
+/** mace_orb_hand: box 31 × 9, density 30, between the last link and the head. */
+const orbHand = (hang: number): PartSpec => ({ key: "handle", mesh: box(15.5, 4.5), density: 30, sharpness: 1, bladeable: 0, hang, look: "handle", material: "wood" });
+/** mace_hand: box 30 × 8, density 20, on a rod of 13; the first link hangs from its far end by a type 5 and a type 3. */
+const maceHand = (hang: number, w = 30): PartSpec => ({ key: "hand", mesh: box(w / 2, 4), density: 20, sharpness: 1, bladeable: 0, hang, look: "handle", material: "iron", rod: true });
+
+/** An n-gon inscribed in a w × h ellipse, like the exe's mesh helper (0x402390, mode n). */
+function ngon(n: number, w: number, h: number): number[] {
+  const v: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = ((i + 0.5) / n) * Math.PI * 2;
+    v.push(Math.cos(a) * w * 0.5, Math.sin(a) * h * 0.5);
+  }
+  return v;
+}
+
+const OCTAGON = [4.97488, 12.0104, -4.97489, 12.0104, -12.0104, 4.97488, -12.0104, -4.97489, -4.97488, -12.0104, 4.97489, -12.0104, 12.0104, -4.97488, 12.0104, 4.97488];
+
+/** mace_stone's layout: 6 links, a handle on a short rope, a ball on the handle. */
+function chainMace(
+  kind: WeaponKind,
+  o: { tier: 1 | 2 | 3; label: string; blurb: string; ours?: boolean; link: number; handle: number; ball: number; sharpness: number; material: Material },
+): WeaponSpec {
+  const linkMat: Material = o.material === "wood" ? "wood" : "iron";
+  return {
+    kind,
+    cls: "mace",
+    tier: o.tier,
+    label: o.label,
+    blurb: o.blurb,
+    ours: o.ours,
+    striker: "ball",
+    parts: [
+      linkPart(0, 10, o.link, linkMat),
+      linkPart(1, 17, o.link, linkMat),
+      linkPart(2, 24, o.link, linkMat),
+      linkPart(3, 31, o.link, linkMat),
+      linkPart(4, 38, o.link, linkMat),
+      linkPart(5, 45, o.link, linkMat),
+      { key: "handle", mesh: box(15.4977, 4.49932), density: o.handle, sharpness: 1, bladeable: 0, hang: 59, look: "handle", material: "wood" },
+      { key: "ball", mesh: OCTAGON, density: o.ball, sharpness: o.sharpness, bladeable: 0, hang: 70, look: "ball", material: o.material },
+    ],
+    joints: [
+      { a: "hull", b: "link0", type: 3, radius: 10, necess: 999 },
+      { a: "link0", b: "link1", type: 3, radius: 7, necess: 999 },
+      { a: "link1", b: "link2", type: 3, radius: 7, necess: 999 },
+      { a: "link2", b: "link3", type: 3, radius: 7, necess: 999 },
+      { a: "link3", b: "link4", type: 3, radius: 7, necess: 999 },
+      { a: "link4", b: "link5", type: 3, radius: 7, necess: 999 },
+      { a: "link5", b: "handle", type: 5, radius: 2, sbx: -12, necess: 999 },
+      { a: "handle", b: "ball", type: 5, radius: 3, sax: 8, necess: 999 },
+    ],
+  };
+}
+
+/** One rigid head on a rod (hammers, axes, swords). */
+function rodWeapon(
+  kind: WeaponKind,
+  cls: WeaponClass,
+  o: { tier: 1 | 2 | 3; label: string; blurb: string; ours?: boolean; rod: number; sby?: number; necess?: number; part: Omit<PartSpec, "key" | "hang" | "rod"> },
+): WeaponSpec {
+  return {
+    kind,
+    cls,
+    tier: o.tier,
+    label: o.label,
+    blurb: o.blurb,
+    ours: o.ours,
+    striker: "head",
+    parts: [{ key: "head", hang: o.rod, rod: true, ...o.part }],
+    joints: [{ a: "hull", b: "head", type: 2, radius: o.rod, sby: o.sby ?? 0, necess: o.necess ?? 5 }],
+  };
+}
+
+// ---------------------------------------------------------------- the roster
+const list: WeaponSpec[] = [
+  // Hammers: "the easiest to handle; smashes armor with its weight".
+  // hammer_wood (id 200): box 22 × 28, density 35, sharpness 2, m_extra_shock 4, rod 56
+  rodWeapon("mallet", "hammer", {
+    tier: 1,
+    label: "Wooden hammer",
+    blurb: "Light, weak hits, but long stuns.",
+    rod: 56,
+    part: { mesh: box(11, 14), density: 35, sharpness: 2, bladeable: 0, extraShock: 4, look: "mallet", material: "wood" },
+  }),
+  // hammer_iron.seria: rod 60, 17 × 29, density 60, sharpness 2
+  rodWeapon("hammer", "hammer", {
+    tier: 2,
+    label: "Spiked hammer",
+    blurb: "Heavy rod. Big stuns.",
+    rod: 60,
+    part: { mesh: HAMMER_HEAD, density: 60, sharpness: 2, bladeable: 0, look: "hammer", material: "iron" },
+  }),
+  rodWeapon("maul", "hammer", {
+    tier: 3,
+    label: "Great maul",
+    blurb: "Huge and slow. Drags you round.",
+    ours: true, // OURS: hammer_iron scaled ×1.25 on a longer rod, denser
+    rod: 70,
+    part: { mesh: box(10.6, 18.1), density: 70, sharpness: 2.4, bladeable: 0, look: "hammer", material: "iron" },
+  }),
+
+  // Axes: "as heavy as a hammer and sharp as a sword, yet its shaft is short"; one edge cuts.
+  // bagor.seria: rod 48 (shiftB_y 1.5), density 42, sharpness 3, bladeable_u 0
+  rodWeapon("bagor", "axe", {
+    tier: 1,
+    label: "Bagor",
+    blurb: "Light hook-axe. One sharp edge.",
+    rod: 48,
+    sby: 1.5,
+    part: {
+      mesh: hull([-14.415, 12.79, -4.319, 15.632, 6.077, 8.302, 11.424, -0.449, 14.415, -15.632, -8.507, -15.033]),
+      density: 42,
+      sharpness: 3,
+      bladeable: 1,
+      bladeableU: 0,
+      look: "axe",
+      material: "iron",
+    },
+  }),
+  // axe_iron.seria: rod 55 (shiftB_y −3), 18 × 23, density 65, sharpness 3 (back 0.5), bladeable_u 0
+  rodWeapon("axe", "axe", {
+    tier: 2,
+    label: "Iron axe",
+    blurb: "Short and brutal. One edge cuts.",
+    rod: 55,
+    sby: -3,
+    part: { mesh: box(8.999, 11.498), density: 65, sharpness: 3, sharpnessU: 1.5, bladeable: 1, bladeableU: 0, look: "axe", material: "iron" },
+  }),
+  // axe_berdish.seria (blade only): 31 × 19, density 60, sharpness 3. Rod 70 is OURS ("long-handled axes are slower");
+  // the one-edge blade values follow the other axes.
+  rodWeapon("berdish", "axe", {
+    tier: 3,
+    label: "Berdish",
+    blurb: "Long pole-axe. Slow, deep cuts.",
+    rod: 70,
+    part: {
+      mesh: hull([-7.481, -11.216, -16.159, 2.702, -5.535, 8.194, 8.234, 7.963, 14.591, 0.565, 10.351, -10.706]),
+      density: 60,
+      sharpness: 3,
+      bladeable: 1,
+      bladeableU: 0,
+      look: "axe",
+      material: "iron",
+    },
+  }),
+
+  // Maces: "hits with more force than a hammer, yet a hammer is faster"; the long chain keeps short weapons away.
+  chainMace("flail", { tier: 1, label: "Wooden flail", blurb: "A log on a rope. Long, light, weak.", ours: true, link: 12, handle: 20, ball: 22, sharpness: 1.5, material: "wood" }),
+  // mace_stone.seria
+  chainMace("chainball", { tier: 2, label: "Chain ball", blurb: "Long whip. Hard to aim.", link: 20, handle: 30, ball: 50, sharpness: 2, material: "stone" }),
+  // mace_silver.seria: handle on a 16 px rod → 4 links → mace_bich, density 80, sharpness 3
+  {
+    kind: "silvermace",
+    cls: "mace",
+    tier: 3,
+    label: "Silver mace",
+    blurb: "The heaviest blow in the game.",
+    striker: "ball",
+    parts: [
+      { key: "handle", mesh: box(10.998, 4.499), density: 20, sharpness: 1, bladeable: 0, hang: 16, look: "handle", material: "silver", rod: true },
+      linkPart(0, 35, 20, "silver"),
+      linkPart(1, 42, 20, "silver"),
+      linkPart(2, 49, 20, "silver"),
+      linkPart(3, 56, 20, "silver"),
+      // the head's chain anchor is at local (0, −15), so it spawns with local −y pointing up
+      { key: "ball", mesh: [0, 13, -9.526, 6.5, -9.526, -6.5, 0, -13, 9.526, -6.5, 9.526, 6.5], density: 80, sharpness: 3, bladeable: 0, hang: 78, angle: 0, look: "ball", material: "silver" },
+    ],
+    joints: [
+      { a: "hull", b: "handle", type: 2, radius: 16, necess: 999 },
+      { a: "handle", b: "link0", type: 5, radius: 5, sax: 14, necess: 999 },
+      { a: "handle", b: "link0", type: 3, radius: 5, sax: 14, necess: 999 },
+      { a: "link0", b: "link1", type: 3, radius: 7, necess: 999 },
+      { a: "link1", b: "link2", type: 3, radius: 7, necess: 999 },
+      { a: "link2", b: "link3", type: 3, radius: 7, necess: 999 },
+      { a: "link3", b: "ball", type: 5, radius: 7, sby: -15, necess: 999 },
+    ],
+  },
+
+  // Swords: "light as a feather, sharp as the sophit's jaws"; deadly sliding cuts, weak against armour.
+  // blade_kathib.seria (blade only): density 40, sharpness 3.1. Rod 36 is OURS (like the katar's 38).
+  rodWeapon("kathib", "sword", {
+    tier: 1,
+    label: "Kathib",
+    blurb: "Light bodyguard's sword. Quick.",
+    rod: 36,
+    part: { mesh: hull([-20.1, 7.8, 5.1, 7.2, 18.9, 1.8, 20.7, -7.8, -20.7, -1.8]), density: 40, sharpness: 3.1, bladeable: 1, look: "blade", material: "steel" },
+  }),
+  // katar.seria: rod 38 (shiftB_y 1), density 40, sharpness 3.4, bladeable_u 0.6
+  rodWeapon("sword", "sword", {
+    tier: 2,
+    label: "Katar",
+    blurb: "Fast. Slashes cut deep.",
+    rod: 38,
+    sby: 1,
+    part: {
+      mesh: [23.8303, 2.22223, 4.53768, 7.79758, -19.1727, 9.89369, -18.8112, -3.08128, 13.3968, -10.4543],
+      density: 40,
+      sharpness: 3.4,
+      bladeable: 1,
+      bladeableU: 0.6,
+      look: "blade",
+      material: "steel",
+    },
+  }),
+  // hisayan.seria: rod 69 (shiftB_y 4, necess 3), density 45, sharpness 3.2 (back 0.5), bladeable_u 0.5
+  rodWeapon("hisaian", "sword", {
+    tier: 3,
+    label: "Hisaian",
+    blurb: "Long curved blade. Huge reach.",
+    rod: 69,
+    sby: 4,
+    necess: 3,
+    part: {
+      mesh: hull([-20.7, 12.3, -0.9, 10.5, 12.9, 4.5, 20.7, -5.1, 11.7, -12.3, -19.5, 4.5]),
+      density: 45,
+      sharpness: 3.2,
+      sharpnessU: 1.6,
+      bladeable: 1,
+      bladeableU: 0.5,
+      look: "blade",
+      material: "steel",
+    },
+  }),
+  // ---- more swords from Objects/Weapons (blade only: their rod lengths are OURS unless noted)
+  // blade_claw.seria: density 35, sharpness 6 (the sharpest edge in the game); rod 37 from double_01.seria
+  rodWeapon("claw", "sword", {
+    tier: 1,
+    label: "Claw",
+    blurb: "Tiny hooked blade. Sharpest edge.",
+    rod: 37,
+    sby: 3,
+    part: { mesh: hull([-18.564, 2.757, 18.564, -7.772, 10.964, 2.551, -17.685, 7.772]), density: 35, sharpness: 6, bladeable: 1, bladeableU: 0.6, look: "blade", material: "steel" },
+  }),
+  // blade_severn.seria: 55 × 13, density 30, sharpness 3.5; rod 42 OURS
+  rodWeapon("severn", "sword", {
+    tier: 2,
+    label: "Severn",
+    blurb: "Long, thin and light.",
+    rod: 42,
+    part: { mesh: hull([-27.429, 6.658, -26.361, -6.658, 27.429, -6.488, 15.865, 5.002]), density: 30, sharpness: 3.5, bladeable: 1, look: "blade", material: "steel" },
+  }),
+  // blade_innata.seria: 60 × 13, density 30, sharpness 4.5; rod 44 OURS
+  rodWeapon("innata", "sword", {
+    tier: 2,
+    label: "Innata",
+    blurb: "The longest blade. Very sharp.",
+    rod: 44,
+    part: { mesh: hull([-29.841, 6.314, 5.79, 5.547, 22.692, 0.322, 29.841, -6.314, -29.154, 0.628]), density: 30, sharpness: 4.5, bladeable: 1, look: "blade", material: "steel" },
+  }),
+  // pishal.seria broad_blade: 44 × 17, density 42, sharpness 2.7, rod 43.2 (without the pishal's mortar)
+  rodWeapon("broadblade", "sword", {
+    tier: 2,
+    label: "Broad blade",
+    blurb: "Straight and heavy. Cuts both ways.",
+    rod: 43.2,
+    part: { mesh: box(21.997, 8.499), density: 42, sharpness: 2.7, bladeable: 1, look: "blade", material: "steel" },
+  }),
+  // blade_saian.seria: m_fDensity 0 with m_fDensity2 40 (we use 40), sharpness 4; rod 40 OURS
+  rodWeapon("saian", "sword", {
+    tier: 2,
+    label: "Saian",
+    blurb: "Curved and keen.",
+    rod: 40,
+    part: { mesh: hull([-21.997, 8.483, -6.36, 7.952, 7.488, 2.186, 23.323, -7.424, 11.263, -12.723, -21.534, 1.791]), density: 40, sharpness: 4, bladeable: 1, look: "blade", material: "steel" },
+  }),
+  // blade_silver.seria: 57 × 21, density 45, sharpness 3.5; rod 44 OURS
+  rodWeapon("silverblade", "sword", {
+    tier: 3,
+    label: "Silver blade",
+    blurb: "A noble's sword. Long and heavy.",
+    rod: 44,
+    part: { mesh: hull([-26.878, -0.3, -26.975, 8.339, -6.806, 7.605, 15.369, -0.788, 29.887, -11.186, 9.739, -12.372]), density: 45, sharpness: 3.5, bladeable: 1, look: "blade", material: "silver" },
+  }),
+  // blade_palash.seria / double_01.seria: density 45, sharpness 3 (back 0.5), bladeable_u 0.5; rod 35 from double_01
+  rodWeapon("palash", "sword", {
+    tier: 3,
+    label: "Palash",
+    blurb: "Broad sabre. Shatters shields.",
+    rod: 35,
+    sby: 3,
+    part: {
+      mesh: hull([-25.08, 12.54, -5.13, 11.97, 13.11, 6.27, 26.22, -5.13, 18.24, -12.54, -26.22, 2.85]),
+      density: 45,
+      sharpness: 3,
+      sharpnessU: 1.5,
+      bladeable: 1,
+      bladeableU: 0.5,
+      look: "blade",
+      material: "steel",
+    },
+  }),
+
+  // ---- dual sets: two weapons on rods, and a long rigid joint between them that pushes them to opposite sides
+  // double_01.seria: PC → palash (rod 35, shiftB_y 3), PC → claw (rod 36.95, shiftB_y 3, density 15.38 here),
+  // palash ↔ claw type 0, radius 101.08, necess 1
+  {
+    kind: "twin",
+    cls: "dual",
+    tier: 2,
+    label: "Twin blades",
+    blurb: "A sabre and a claw on opposite sides.",
+    striker: "head",
+    parts: [
+      {
+        key: "head",
+        mesh: hull([-25.08, 12.54, -5.13, 11.97, 13.11, 6.27, 26.22, -5.13, 18.24, -12.54, -26.22, 2.85]),
+        density: 45,
+        sharpness: 3,
+        sharpnessU: 1.5,
+        bladeable: 1,
+        bladeableU: 0.5,
+        hang: 35,
+        look: "blade",
+        material: "steel",
+        rod: true,
+      },
+      { key: "back", mesh: hull([-18.564, 2.757, 18.564, -7.772, 10.964, 2.551, -17.685, 7.772]), density: 15.3818, sharpness: 6, bladeable: 1, bladeableU: 0.6, hang: -36.953, angle: -Math.PI / 2, look: "blade", material: "steel", rod: true },
+    ],
+    joints: [
+      { a: "hull", b: "head", type: 2, radius: 35, sby: 3, necess: 5 },
+      { a: "hull", b: "back", type: 2, radius: 36.953, sby: 3, necess: 5 },
+      { a: "head", b: "back", type: 0, radius: 101.084, say: 3, sby: 3, necess: 1 },
+    ],
+  },
+  // tribun.seria: PC → axe_posolski (rod 58.8; density 70, sharpness 3.1, blade 0.5 with the u-side 0, spikeable),
+  // PC → tribun blade (rod 25; density 5.1, sharpness 5, back 0.3, bladeable_u 0), axe ↔ blade type 0, radius 117.35
+  {
+    kind: "tribune",
+    cls: "dual",
+    tier: 3,
+    label: "Tribune",
+    blurb: "Envoy's axe with a blade behind.",
+    striker: "head",
+    parts: [
+      { key: "head", mesh: box(5.999, 19.997), density: 70, sharpness: 3.1, bladeable: 0.5, bladeableU: 0, hang: 58.8221, look: "axe", material: "iron", rod: true },
+      {
+        key: "back",
+        mesh: hull([-24.167, -10.214, -22.925, 8.868, 24.136, 10.214, 24.167, -8.866]),
+        density: 5.10288,
+        sharpness: 5,
+        sharpnessU: 1.5,
+        bladeable: 1,
+        bladeableU: 0,
+        hang: -25,
+        angle: -Math.PI / 2,
+        look: "blade",
+        material: "steel",
+        rod: true,
+        // tribun.seria: m_ammoclip_size 40, m_recoil_time 5
+        gun: { ...BULLET, clip: 40, reload: 5 },
+      },
+    ],
+    joints: [
+      { a: "hull", b: "head", type: 2, radius: 58.8221, necess: 5 },
+      { a: "hull", b: "back", type: 2, radius: 25, necess: 5 },
+      { a: "head", b: "back", type: 0, radius: 117.351, necess: 1 },
+    ],
+  },
+  // ---- weapons the exe builds in code (item factory 0x486ff0; values read from the asm) ----
+  // hammer_krank (id 205): box 17 × 34, density 64, sharpness 3, rod 60
+  rodWeapon("krankhammer", "hammer", {
+    tier: 3,
+    label: "Krank hammer",
+    blurb: "A long-headed brute.",
+    rod: 60,
+    part: { mesh: box(8.5, 17), density: 64, sharpness: 3, bladeable: 0, look: "hammer", material: "iron" },
+  }),
+  // hammer_gold (id 206), "Dayram's hammer": box 19 × 31, density 60, sharpness 3, rod 60
+  rodWeapon("goldhammer", "hammer", {
+    tier: 3,
+    label: "Dayram's hammer",
+    blurb: "A champion's gold hammer.",
+    rod: 60,
+    part: { mesh: box(9.5, 15.5), density: 60, sharpness: 3, bladeable: 0, look: "hammer", material: "gold" },
+  }),
+  // axe_gold (id 225), "axe of Avire-Aseed": box 19 × 35, density 55, sharpness 3, bladeable 1 (u-side 0), rod 58,
+  // m_jrad_y −1
+  rodWeapon("goldaxe", "axe", {
+    tier: 3,
+    label: "Avire-Aseed axe",
+    blurb: "A champion's gold axe.",
+    rod: 58,
+    sby: -1,
+    part: { mesh: box(9.5, 17.5), density: 55, sharpness: 3, bladeable: 1, bladeableU: 0, look: "axe", material: "gold" },
+  }),
+  // gold_blade (id 238), "Arjuna sword": box 44 × 14, density 35, sharpness 3.5, bladeable 1 both edges, rod 49
+  rodWeapon("goldblade", "sword", {
+    tier: 3,
+    label: "Arjuna sword",
+    blurb: "A champion's gold sword.",
+    rod: 49,
+    part: { mesh: box(22, 7), density: 35, sharpness: 3.5, bladeable: 1, look: "blade", material: "gold" },
+  }),
+  // mace_sharp (id 216): 4 chain_large links (the first 12 × 6.6), 3 spiked links (15 × 20, 16 × 21, 17 × 22,
+  // sharpness 4, bladeable), handle 31 × 9, ball an octagon 30 × 30, density 30, sharpness 3.5, bladeable 1
+  {
+    kind: "spikedflail",
+    cls: "mace",
+    tier: 3,
+    label: "Spiked flail",
+    blurb: "Bladed links and a spiked ball.",
+    striker: "ball",
+    parts: [
+      { key: "link0", mesh: box(6, 3.3), density: 20, sharpness: 1, bladeable: 0, hang: 10, look: "link", material: "iron" },
+      linkPart(1, 19, 20, "iron"),
+      linkPart(2, 28, 20, "iron"),
+      linkPart(3, 37, 20, "iron"),
+      { key: "spike3", mesh: box(7.5, 10), density: 20, sharpness: 4, bladeable: 1, hang: 47, look: "spike", material: "iron" },
+      { key: "spike2", mesh: box(8, 10.5), density: 20, sharpness: 4, bladeable: 1, hang: 59, look: "spike", material: "iron" },
+      { key: "spike1", mesh: box(8.5, 11), density: 20, sharpness: 4, bladeable: 1, hang: 73, look: "spike", material: "iron" },
+      { key: "handle", mesh: box(15.5, 4.5), density: 30, sharpness: 1, bladeable: 0, hang: 90, look: "handle", material: "wood" },
+      { key: "ball", mesh: ngon(8, 30, 30), density: 30, sharpness: 3.5, bladeable: 1, hang: 101, look: "ball", material: "iron" },
+    ],
+    joints: [
+      { a: "hull", b: "link0", type: 3, radius: 10, necess: 999 },
+      { a: "link0", b: "link1", type: 3, radius: 9, necess: 999 },
+      { a: "link1", b: "link2", type: 3, radius: 9, necess: 999 },
+      { a: "link2", b: "link3", type: 3, radius: 9, necess: 999 },
+      { a: "link3", b: "spike3", type: 5, radius: 5, sbx: -5, necess: 999 },
+      { a: "spike3", b: "spike2", type: 5, radius: 1, sax: 5, sbx: -6, necess: 999 },
+      { a: "spike2", b: "spike1", type: 5, radius: 1, sax: 6, sbx: -7, necess: 999 },
+      { a: "spike1", b: "handle", type: 5, radius: 2, sax: 7, sbx: -8, necess: 999 },
+      { a: "handle", b: "ball", type: 5, radius: 3, sax: 8, necess: 999 },
+    ],
+  },
+  // mace_krank (id 215): 6 chain_large links (the first 14 × 8.4), grip mace_krank_hold 38 × 10, ball an octagon
+  // 34 × 34, density 70, sharpness 2
+  {
+    kind: "krankmace",
+    cls: "mace",
+    tier: 3,
+    label: "Krank mace",
+    blurb: "A wrecking ball on a long grip.",
+    striker: "ball",
+    parts: [
+      { key: "link0", mesh: box(7, 4.2), density: 20, sharpness: 1, bladeable: 0, hang: 10, look: "link", material: "iron" },
+      linkPart(1, 19, 20, "iron"),
+      linkPart(2, 28, 20, "iron"),
+      linkPart(3, 37, 20, "iron"),
+      linkPart(4, 46, 20, "iron"),
+      linkPart(5, 55, 20, "iron"),
+      { key: "handle", mesh: box(19, 5), density: 30, sharpness: 1, bladeable: 0, hang: 74, look: "handle", material: "iron" },
+      { key: "ball", mesh: ngon(8, 34, 34), density: 70, sharpness: 2, bladeable: 0, hang: 89, look: "ball", material: "stone" },
+    ],
+    joints: [
+      { a: "hull", b: "link0", type: 3, radius: 10, necess: 999 },
+      { a: "link0", b: "link1", type: 3, radius: 9, necess: 999 },
+      { a: "link1", b: "link2", type: 3, radius: 9, necess: 999 },
+      { a: "link2", b: "link3", type: 3, radius: 9, necess: 999 },
+      { a: "link3", b: "link4", type: 3, radius: 9, necess: 999 },
+      { a: "link4", b: "link5", type: 3, radius: 9, necess: 999 },
+      { a: "link5", b: "handle", type: 5, radius: 2, sbx: -17, necess: 999 },
+      { a: "handle", b: "ball", type: 5, radius: 5, sax: 10, necess: 999 },
+    ],
+  },
+  // ---- more of the item factory (ids from 0x486ff0) ----
+  // hammer_kolotun (201): box 17 × 35, density 35, sharpness 2, rod 60
+  rodWeapon("kolotun", "hammer", {
+    tier: 1,
+    label: "Kolotun",
+    blurb: "A long, light thumper.",
+    rod: 60,
+    part: { mesh: box(8.5, 17.5), density: 35, sharpness: 2, bladeable: 0, look: "hammer", material: "iron" },
+  }),
+  // hammer_klevec (203): box 16 × 32, density 60, sharpness 3, rod 60
+  rodWeapon("klevec", "hammer", {
+    tier: 2,
+    label: "Klevec",
+    blurb: "A beaked hammer. Hits sharp.",
+    rod: 60,
+    part: { mesh: box(8, 16), density: 60, sharpness: 3, bladeable: 0, look: "hammer", material: "steel" },
+  }),
+  // hammer_war (204): box 16 × 40, density 60, sharpness 2, rod 60
+  rodWeapon("warhammer", "hammer", {
+    tier: 3,
+    label: "War hammer",
+    blurb: "A tall, heavy head.",
+    rod: 60,
+    part: { mesh: box(8, 20), density: 60, sharpness: 2, bladeable: 0, look: "hammer", material: "iron" },
+  }),
+  // axe_axis (218): 5-gon 27 × 27, density 50, sharpness 3.5 (×0.75 on the blade side), bladeable 1 (u-side 0), rod 52
+  rodWeapon("axis", "axe", {
+    tier: 2,
+    label: "Axis",
+    blurb: "A five-sided cleaver.",
+    rod: 52,
+    part: { mesh: ngon(5, 27, 27), density: 50, sharpness: 2.625, sharpnessU: 3.5, bladeable: 1, bladeableU: 0, look: "axe", material: "iron" },
+  }),
+  // axe_eclips (220): 8-gon 30 × 32, density 35, sharpness 3.2, bladeable 1, rod 51
+  rodWeapon("eclipse", "axe", {
+    tier: 2,
+    label: "Eclipse",
+    blurb: "A round blade. Cuts on every side.",
+    rod: 51,
+    part: { mesh: ngon(8, 30, 32), density: 35, sharpness: 3.2, bladeable: 1, look: "axe", material: "steel" },
+  }),
+  // axe_mamba (224): 6-gon 32 × 32, density 35, sharpness 4, bladeable 1, rod 52
+  rodWeapon("mamba", "axe", {
+    tier: 2,
+    label: "Mamba",
+    blurb: "Light, wide and very sharp.",
+    rod: 52,
+    part: { mesh: ngon(6, 32, 32), density: 35, sharpness: 4, bladeable: 1, look: "axe", material: "steel" },
+  }),
+  // axe_pike (219): box 9 × 45, density 70, sharpness 3.5, no blade (it stabs: m_spikeable 1), rod 58
+  rodWeapon("pike", "axe", {
+    tier: 3,
+    label: "Pike",
+    blurb: "A heavy spike. Stabs, no cut.",
+    rod: 58,
+    part: { mesh: box(4.5, 22.5), density: 70, sharpness: 3.5, bladeable: 0, look: "blade", material: "iron" },
+  }),
+  // imperia_blade (236): box 57 × 10, density 35, sharpness 4.2 (back 0.3×), bladeable 1 (back 0), rod 47
+  rodWeapon("imperia", "sword", {
+    tier: 2,
+    label: "Imperia blade",
+    blurb: "Long and thin. One keen edge.",
+    rod: 47,
+    part: { mesh: box(28.5, 5), density: 35, sharpness: 4.2, sharpnessU: 1.26, bladeable: 1, bladeableU: 0, look: "blade", material: "steel" },
+  }),
+  // liberia_blade (235): box 51 × 15, density 30, sharpness 3.5, bladeable 1, rod 43
+  rodWeapon("liberia", "sword", {
+    tier: 2,
+    label: "Liberia blade",
+    blurb: "A broad, even sword.",
+    rod: 43,
+    part: { mesh: box(25.5, 7.5), density: 30, sharpness: 3.5, bladeable: 1, look: "blade", material: "steel" },
+  }),
+  // sun_blade (239): box 48 × 20, density 30, sharpness 3.5, bladeable 1, rod 51
+  rodWeapon("sunblade", "sword", {
+    tier: 3,
+    label: "Sun blade",
+    blurb: "A wide blade on a long rod.",
+    rod: 51,
+    part: { mesh: box(24, 10), density: 30, sharpness: 3.5, bladeable: 1, look: "blade", material: "gold" },
+  }),
+  // cyclon_blade (245): a 10-gon disc 29 × 29 (density 20, sharpness 3) on a short rod (12), and cyclon_arm (box
+  // 50 × 10, density 20) hung from the disc by a type 0 joint (radius 5, shiftA_x 22, necess 30): it whirls round.
+  {
+    kind: "cyclone",
+    cls: "sword",
+    tier: 2,
+    label: "Cyclone",
+    blurb: "A spinning disc and a flail arm.",
+    striker: "arm",
+    parts: [
+      { key: "head", mesh: ngon(10, 29, 29), density: 20, sharpness: 3, bladeable: 1, hang: 12, look: "ball", material: "steel", rod: true },
+      { key: "arm", mesh: box(25, 5), density: 20, sharpness: 2, bladeable: 0, hang: 39, angle: -Math.PI / 2, look: "handle", material: "iron" },
+    ],
+    joints: [
+      { a: "hull", b: "head", type: 2, radius: 12, necess: 5 },
+      { a: "arm", b: "head", type: 0, radius: 5, sax: 22, necess: 30 },
+    ],
+  },
+  // mace_blade (210): 8 chain_large links, an axe-like head (6-gon 39 × 20, density 50, sharpness 2, bladeable 1 on
+  // one side, 0.9 on the other) on a type 5 (radius 7, shiftB_y -16)
+  {
+    kind: "bladeflail",
+    cls: "mace",
+    tier: 3,
+    label: "Blade flail",
+    blurb: "An axe head on a long chain.",
+    striker: "ball",
+    parts: [
+      ...chain(8, 10, 9, true).parts,
+      { key: "ball", mesh: ngon(6, 39, 20), density: 50, sharpness: 2, bladeable: 0.9, bladeableU: 0, hang: 96, look: "axe", material: "iron" },
+    ],
+    joints: [
+      { a: "hull", b: "link0", type: 3, radius: 10, necess: 999 },
+      ...chain(8, 10, 9, true).joints,
+      { a: "link7", b: "ball", type: 5, radius: 7, sbx: -16, necess: 999 },
+    ],
+  },
+  // mace_orb (207): 10 chain_small links, mace_orb_hand, an 8-gon ball 25 × 25, density 70, sharpness 2
+  {
+    kind: "orbmace",
+    cls: "mace",
+    tier: 2,
+    label: "Orb mace",
+    blurb: "A small, dense ball. Longest chain.",
+    striker: "ball",
+    parts: [
+      ...chain(10, 10, 7, false).parts,
+      orbHand(87),
+      { key: "ball", mesh: ngon(8, 25, 25), density: 70, sharpness: 2, bladeable: 0, hang: 98, look: "ball", material: "stone" },
+    ],
+    joints: [
+      { a: "hull", b: "link0", type: 3, radius: 10, necess: 999 },
+      ...chain(10, 10, 7, false).joints,
+      { a: "link9", b: "handle", type: 5, radius: 2, sbx: -12, necess: 999 },
+      { a: "handle", b: "ball", type: 5, radius: 3, sax: 8, necess: 999 },
+    ],
+  },
+  // mace_star (212): mace_hand on a rod (13), 6 chain_small links, an 8-gon ball 25 × 25, density 70, sharpness 3.9
+  // (spiked) on a type 5 (radius 10)
+  {
+    kind: "starmace",
+    cls: "mace",
+    tier: 2,
+    label: "Morning star",
+    blurb: "A spiked ball on a short chain.",
+    striker: "ball",
+    parts: [maceHand(13), ...chain(6, 30, 7, false).parts, { key: "ball", mesh: ngon(8, 25, 25), density: 70, sharpness: 3.9, bladeable: 0, hang: 75, look: "ball", material: "iron" }],
+    joints: [
+      { a: "hull", b: "hand", type: 2, radius: 13, necess: 5 },
+      { a: "hand", b: "link0", type: 5, radius: 5, sax: 12, necess: 999 },
+      { a: "hand", b: "link0", type: 3, radius: 5, sax: 12, necess: 999 },
+      ...chain(6, 30, 7, false).joints,
+      { a: "link5", b: "ball", type: 5, radius: 10, necess: 999 },
+    ],
+  },
+  // mace_stix2 (209): mace_hand on a rod (13), 5 chain_small links, a bar 35 × 9, density 70, sharpness 3 on a type 5
+  // (radius 1, shiftB_x -26)
+  {
+    kind: "stixmace",
+    cls: "mace",
+    tier: 2,
+    label: "Stix",
+    blurb: "A heavy bar on a short chain.",
+    striker: "ball",
+    parts: [maceHand(13), ...chain(5, 30, 7, false).parts, { key: "ball", mesh: box(17.5, 4.5), density: 70, sharpness: 3, bladeable: 0, hang: 85, look: "handle", material: "iron" }],
+    joints: [
+      { a: "hull", b: "hand", type: 2, radius: 13, necess: 5 },
+      { a: "hand", b: "link0", type: 5, radius: 5, sax: 12, necess: 999 },
+      { a: "hand", b: "link0", type: 3, radius: 5, sax: 12, necess: 999 },
+      ...chain(5, 30, 7, false).joints,
+      { a: "link4", b: "ball", type: 5, radius: 1, sbx: -26, necess: 999 },
+    ],
+  },
+  // suriken_large (208): a flail, not a throwing star: 6 chain_large links, mace_orb_hand, an 8-gon star 26 × 26,
+  // density 20, sharpness 3.5, bladeable 0.65
+  {
+    kind: "shuriken",
+    cls: "mace",
+    tier: 2,
+    label: "Shuriken flail",
+    blurb: "A light bladed star. Cuts.",
+    striker: "ball",
+    parts: [
+      ...chain(6, 10, 9, true).parts,
+      orbHand(69),
+      { key: "ball", mesh: ngon(8, 26, 26), density: 20, sharpness: 3.5, bladeable: 0.65, hang: 80, look: "ball", material: "steel" },
+    ],
+    joints: [
+      { a: "hull", b: "link0", type: 3, radius: 10, necess: 999 },
+      ...chain(6, 10, 9, true).joints,
+      { a: "link5", b: "handle", type: 5, radius: 2, sbx: -12, necess: 999 },
+      { a: "handle", b: "ball", type: 5, radius: 3, sax: 8, necess: 999 },
+    ],
+  },
+  // mace_claw (211): mace_claw_hand (box 48 × 8) on a rod (20), 3 chain_small links, then two jaws on a hinge:
+  // claw_01 (box 10 × 30, density 57, sharpness 1.5) and claw_02 (box 20 × 30, density 60, sharpness 1.5), type 2, r 15
+  {
+    kind: "clawmace",
+    cls: "mace",
+    tier: 3,
+    label: "Claw mace",
+    blurb: "Two iron jaws on a chain.",
+    striker: "ball",
+    parts: [
+      maceHand(20, 48),
+      ...chain(3, 46, 7, false).parts,
+      { key: "jaw", mesh: box(5, 15), density: 57, sharpness: 1.5, bladeable: 0, hang: 81, look: "spike", material: "iron" },
+      { key: "ball", mesh: box(10, 15), density: 60, sharpness: 1.5, bladeable: 0, hang: 96, look: "spike", material: "iron" },
+    ],
+    joints: [
+      { a: "hull", b: "hand", type: 2, radius: 20, necess: 5 },
+      { a: "hand", b: "link0", type: 5, radius: 5, sax: 21, necess: 999 },
+      { a: "hand", b: "link0", type: 3, radius: 5, sax: 21, necess: 999 },
+      ...chain(3, 46, 7, false).joints,
+      { a: "link2", b: "jaw", type: 5, radius: 1, sbx: -20, necess: 999 },
+      { a: "jaw", b: "ball", type: 2, radius: 15, necess: 999 },
+    ],
+  },
+];
+
+export const WEAPONS = Object.fromEntries(list.map((w) => [w.kind, w])) as Record<WeaponKind, WeaponSpec>;
+export const WEAPON_LABEL = Object.fromEntries(list.map((w) => [w.kind, w.label])) as Record<WeaponKind, string>;

@@ -2,14 +2,22 @@ import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 
-/** First LAN IPv4, so the QR code on the TV points somewhere a phone can reach in dev. */
+/**
+ * This computer's LAN IPv4, so the QR code on the TV points somewhere a phone can reach in dev. LAN_IP sets it by
+ * hand. Virtual adapters (WSL, Hyper-V, VMs, Docker) are skipped: phones on the Wi-Fi can't reach them.
+ */
 function lanIp(): string {
-  for (const list of Object.values(networkInterfaces())) {
+  if (process.env.LAN_IP) return process.env.LAN_IP;
+  const virtual = /vEthernet|WSL|Hyper-V|VirtualBox|VMware|Docker|vboxnet|Loopback/i;
+  let fallback = "";
+  for (const [name, list] of Object.entries(networkInterfaces())) {
     for (const a of list ?? []) {
-      if (a.family === "IPv4" && !a.internal && !a.address.startsWith("169.254.")) return a.address;
+      if (a.family !== "IPv4" || a.internal || a.address.startsWith("169.254.")) continue;
+      if (!virtual.test(name)) return a.address;
+      fallback ||= a.address;
     }
   }
-  return "localhost";
+  return fallback || "localhost";
 }
 
 /**

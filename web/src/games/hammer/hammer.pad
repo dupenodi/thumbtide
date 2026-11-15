@@ -1,0 +1,26 @@
+# Rotor Brawl: fly a little machine and swing a heavy weapon.
+# A fixed joystick flies the machine (upright: centred, 3/4 down; sideways: on the left); flying in circles swings the weapon.
+# Syntax and every setting: web/src/games/kit/pad.ts
+
+controller
+  orientation  any
+  send-rate    60hz
+
+stick fly
+  label        "Fly"
+  mode         fixed
+  travel       64px
+  full-at      90%
+  deadzone     5%
+  curve        1
+  haptic       10ms
+
+buzz
+  hit          25
+  hurt         60 30 90
+  ko           220 80 220
+  win          40 40 40 40 120
+
+tune
+  # input units per frame at full tilt; the TV cubes the stick (Hammerfight's gamepad: 100 · stick³)
+  stick        600

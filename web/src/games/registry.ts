@@ -2,6 +2,7 @@ import { parsePad } from "./kit/pad.ts";
 import type { GameDef } from "./types.ts";
 import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
+import hammerPad from "./hammer/hammer.pad?raw";
 import sandboxPad from "./sandbox/sandbox.pad?raw";
 import wetpaintPad from "./wetpaint/wetpaint.pad?raw";
 
@@ -144,6 +145,48 @@ export const GAMES: GameDef[] = [
     ],
     host: () => import("./cascade/host.ts"),
     controller: () => import("./cascade/controller.ts"),
+  },
+  {
+    id: "hammer",
+    title: "Rotor Brawl",
+    tagline: "Fly a tiny machine. Swing a huge weapon. Last one flying wins.",
+    minPlayers: 1,
+    maxPlayers: 4,
+    colors: ["#ffb547", "#3ec5ff"],
+    glyph: "action",
+    controls: parsePad(hammerPad, "hammer.pad"),
+    settings: [
+      {
+        key: "mode",
+        label: "Mode",
+        options: [
+          { value: "ffa", label: "Free for all" },
+          { value: "teams", label: "Teams 2v2" },
+          { value: "pve", label: "Co-op vs CPU" },
+          { value: "pvm", label: "Co-op vs monsters" },
+        ],
+        default: "ffa",
+      },
+      {
+        key: "wins",
+        label: "Rounds to win",
+        options: [2, 3, 5].map((n) => ({ value: n, label: String(n) })),
+        default: 3,
+      },
+      {
+        key: "bots",
+        label: "Computer players",
+        options: [0, 1, 2, 3].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+        applies: "now",
+      },
+      { key: "music", label: "Music", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: true, applies: "now" },
+      { key: "slomo", label: "Slow motion on big hits", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: true, applies: "now" },
+      { key: "teamCollision", label: "Teammates collide", options: [{ value: true, label: "Yes" }, { value: false, label: "No" }], default: true, applies: "now" },
+      { key: "teamDamage", label: "Friendly fire", options: [{ value: false, label: "Off" }, { value: true, label: "On" }], default: false, applies: "now" },
+    ],
+    host: () => import("./hammer/host.ts"),
+    controller: () => import("./hammer/controller.ts"),
   },
   {
     id: "sandbox",
