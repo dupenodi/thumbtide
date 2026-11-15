@@ -519,8 +519,8 @@ const mount: HostMount = (ctx) => {
       round = 0;
     }
     round++;
-    // a new match (or a new arena choice in its first warm-up) builds the arena
-    if (round === 1 || arenaKind !== (String(ctx.settings().arena ?? "classic"))) applyArena();
+    // the arena is rebuilt for each round (fresh crates; a new Arena choice applies from the next round)
+    applyArena(); // every round: broken crates come back
     left = seconds;
     pickTotal = seconds;
     phaseFor = 0;

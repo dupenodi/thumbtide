@@ -808,10 +808,11 @@ export class Arena {
 
   /** A weapon, shot or machine hits a crate: the game's damage formula (blunt rule included) takes its health. */
   private hitObstacle(o: Obstacle, by: Tag, byBody: Body, c: ContactReport): void {
-    if (o.kind !== "crate" || o.hp <= 0 || !this.owned(by)) return;
+    // no damage in the warm-up (damage 0): the crates are there for the fight
+    if (o.kind !== "crate" || o.hp <= 0 || !this.owned(by) || this.tuning.damage <= 0) return;
     const impact = c.impulse * 1e-5;
     if (!by.shot && c.approach < this.tuning.bluntMinV) return;
-    const dmg = Math.floor(0.1 * Math.max(1, by.sharpness) * impact);
+    const dmg = Math.floor(this.tuning.damage * Math.max(1, by.sharpness) * impact);
     if (dmg <= 0) return;
     o.hp -= dmg;
     this.events.push({ type: "crack", by: by.m, obstacle: o, dmg, x: c.x, y: c.y });

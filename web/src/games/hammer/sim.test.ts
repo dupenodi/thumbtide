@@ -231,6 +231,18 @@ test("arenas: a bigger arena moves the walls; crates break under hard hits, pill
   assert.ok(broke, "the crate never broke");
   assert.equal(ar.obstacles.length, 1);
   assert.equal(ar.obstacles[0]!.kind, "pillar");
+
+  // in the warm-up (damage 0) the same blows leave a crate whole
+  ar.setArena(1440, 810, [{ kind: "crate", x: 700, y: 400, hw: 22, hh: 22, hp: 30 }]);
+  ar.tuning.damage = 0;
+  for (let k = 0; k < 12; k++) {
+    a.hull.place(560, 400, 0);
+    a.hull.setVelocity(600, 0, 0, 0.02);
+    a.striker.place(620, 400, 0);
+    a.striker.setVelocity(800, 0, 0, 0.02);
+    for (let i = 0; i < 10; i++) ar.step();
+  }
+  assert.equal(ar.obstacles[0]!.hp, 30, "a crate took damage in the warm-up");
 });
 
 test("a big hit stuns: the victim's engine stops, then it recovers in about a second", () => {
