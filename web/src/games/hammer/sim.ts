@@ -383,6 +383,16 @@ export class Arena {
     this.sweepShots();
   }
 
+  /** The grips of the loose weapons that a machine can pick up (the bots fly there when disarmed). */
+  looseGrips(): Body[] {
+    const out: Body[] = [];
+    for (const l of this.loose) {
+      const grip = l.holder.part.get(l.spec.joints.find((j) => j.a === "hull")!.b);
+      if (grip) out.push(grip);
+    }
+    return out;
+  }
+
   /** Hold the trigger this frame. */
   fire(m: Machine): void {
     m.trigger = true;

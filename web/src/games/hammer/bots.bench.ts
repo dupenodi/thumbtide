@@ -1,5 +1,5 @@
 // Bot bench (run on request, not in `npm test`): duels between bot profiles in every arena, plus free-for-alls.
-//   node --import tsx --test src/games/hammer/bots.bench.ts     (ROUNDS=6 ARENAS=classic,huge ONLY=a,b FFA=0)
+//   node --import tsx --test src/games/hammer/bots.bench.ts     (ROUNDS=6 ARENAS=classic,huge ONLY=a,b VS=chaser,spinner FFA=0)
 import { test } from "node:test";
 import { type Entrant, type RoundResult, runRound, withSeed } from "./botmatch.ts";
 import { BENCH_PROFILES } from "./bots.ts";
@@ -9,6 +9,23 @@ const ROUNDS = Number(process.env.ROUNDS) || 6;
 const ARENA_LIST = (process.env.ARENAS ?? "classic,crates,big,huge").split(",");
 const only = process.env.ONLY?.split(",");
 const names = Object.keys(BENCH_PROFILES).filter((n) => !only || only.includes(n));
+/** VS=a,b: only the pairs with one of these (every profile against the given opponents). */
+const vs = process.env.VS?.split(",");
+/** Per profile, over every round it played: totals for the identity table. */
+const per = new Map<string, { n: number; dealt: number; hits: number; big: number; stunned: number; edge: number; secs: number }>();
+function note(r: RoundResult) {
+  for (const s of r.stats) {
+    const x = per.get(s.name) ?? { n: 0, dealt: 0, hits: 0, big: 0, stunned: 0, edge: 0, secs: 0 };
+    x.n++;
+    x.dealt += s.dealt;
+    x.hits += s.hits;
+    x.big = Math.max(x.big, s.bigHit);
+    x.stunned += s.stunned;
+    x.edge += s.edge;
+    x.secs += r.seconds;
+    per.set(s.name, x);
+  }
+}
 
 const pct = (x: number) => `${Math.round(x * 100)}%`.padStart(4);
 
@@ -25,6 +42,7 @@ test("bot duels", () => {
   const rows: string[] = [];
   for (let a = 0; a < names.length; a++) {
     for (let b = a + 1; b < names.length; b++) {
+      if (vs && !vs.includes(names[a]!) && !vs.includes(names[b]!)) continue;
       let wa = 0;
       let wb = 0;
       let n = 0;
@@ -37,6 +55,7 @@ test("bot duels", () => {
           const eb = entrant(names[b]!, seed + 1);
           const res = withSeed(seed, () => runRound({ arena, entrants: swap ? [eb, ea] : [ea, eb] }));
           all.push(res);
+          note(res);
           const wName = res.winner < 0 ? null : res.stats[res.winner]!.name;
           if (wName === names[a]) wa++;
           if (wName === names[b]) wb++;
@@ -53,6 +72,13 @@ test("bot duels", () => {
   console.log("\nDUELS (both spawn sides, every arena)\n" + rows.join("\n"));
   console.log("\nWIN RATE\n" + names.map((n) => `${n.padEnd(12)} ${pct((wins.get(n) ?? 0) / Math.max(1, games.get(n) ?? 1))}`).join("\n"));
   summary("duels", all);
+  console.log("\nPER PROFILE (duels): damage/min · hits/min · damage per hit · biggest · stunned % · edge %");
+  for (const n of names) {
+    const x = per.get(n);
+    if (!x) continue;
+    const min = x.secs / 60;
+    console.log(`${n.padEnd(12)} ${(x.dealt / min).toFixed(0).padStart(4)} ${(x.hits / min).toFixed(0).padStart(4)} ${(x.dealt / Math.max(1, x.hits)).toFixed(1).padStart(5)} ${String(x.big).padStart(4)} ${((x.stunned * 100) / x.secs).toFixed(0).padStart(4)}% ${((x.edge * 100) / x.secs).toFixed(0).padStart(4)}%`);
+  }
 });
 
 test("bot free-for-all", () => {
