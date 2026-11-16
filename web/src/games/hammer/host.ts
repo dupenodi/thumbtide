@@ -13,7 +13,7 @@ import { createGameAudio } from "./audio.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount } from "../types.ts";
 import { applyArenaKind, spawnPoint, STICK_DEFAULTS, type StickTune, stickPush as stickPushFor } from "./arenas.ts";
-import { type Bot, driveBot, makeBot } from "./bots.ts";
+import { type Bot, driveBot, makeBot, newRound, PROFILES, type ProfileId, profileLoadout, ROSTER } from "./bots.ts";
 import "./hammer.css";
 import { loadGameFont } from "./font.ts";
 import { Hud, type SeatView } from "./hud.ts";
@@ -167,9 +167,6 @@ const mount: HostMount = (ctx) => {
   let botSerial = 0;
   let machineSerial = 0;
 
-  const randomWeapon = (): WeaponKind => WEAPON_KINDS[Math.floor(Math.random() * WEAPON_KINDS.length)]!;
-  /** About one bot in three takes a gun. */
-  const randomSidearm = (): GunKind | null => (Math.random() < 0.35 ? GUN_KINDS[Math.floor(Math.random() * GUN_KINDS.length)]! : null);
   /** What the phone shows of a machine's gun and plates: sent again when it changes. */
   const gunSig = (m: Machine | null) => {
     const g = gunOf(m);
@@ -275,21 +272,26 @@ const mount: HostMount = (ctx) => {
     for (let i = have.length; i < want; i++) {
       const id = `bot:${++botSerial}`;
       const n = bots().length;
+      // a personality not yet in the room (the roster has 8, so 7 bots are all different)
+      const taken = new Set(bots().map((b) => b.bot?.profile.id));
+      const free = ROSTER.filter((p) => !taken.has(p));
+      const pid: ProfileId = free[Math.floor(Math.random() * free.length)] ?? ROSTER[n % ROSTER.length]!;
+      const kit = profileLoadout(pid);
       seats.set(id, {
         id,
-        name: `CPU ${n + 1}`,
+        name: PROFILES[pid].name,
         color: BOT_COLORS[n % BOT_COLORS.length]!,
         human: false,
         idle: 0,
         auto: null,
-        weapon: randomWeapon(),
-        sidearm: randomSidearm(),
-        plate: Math.random() < 0.3 ? PLATE_KINDS[Math.floor(Math.random() * PLATE_KINDS.length)]! : null,
+        weapon: kit.weapon,
+        sidearm: kit.gun,
+        plate: kit.plate,
         gunSig: "",
         wins: 0,
         slot: -1,
         m: null,
-        bot: makeBot("fight", VIEW_W / 2, VIEW_H / 2),
+        bot: makeBot("fight", VIEW_W / 2, VIEW_H / 2, pid, botSerial),
         s: -1,
         k: -1,
         tx: 0,
@@ -459,7 +461,16 @@ const mount: HostMount = (ctx) => {
     applyToggles();
     readyOnly = seconds === READY_S && round > 1;
     if (round === 1) for (const s of seats.values()) s.fought = false;
-    if (!readyOnly) for (const s of bots()) s.weapon = randomWeapon();
+    // bots take their personality's loadout (mostly its first weapon); a new round gives them a new mood
+    for (const s of bots()) {
+      if (!s.bot) continue;
+      newRound(s.bot);
+      if (readyOnly) continue;
+      const kit = profileLoadout(s.bot.profile.id);
+      s.weapon = kit.weapon;
+      s.sidearm = kit.gun;
+      s.plate = kit.plate;
+    }
     syncBots();
     fillSeats();
     for (const s of seated()) spawn(s);
@@ -658,7 +669,7 @@ const mount: HostMount = (ctx) => {
     s.idle = moving ? 0 : s.idle + STEP;
     // away (or phone asleep) in a fight: a bot flies for them, so the round doesn't stall
     if (phase === "fight" && s.idle > IDLE_S) {
-      s.auto ??= makeBot("fight", m.hull.x, m.hull.y);
+      s.auto ??= makeBot("fight", m.hull.x, m.hull.y, "pilot", m.id);
       driveBot(arena, m, s.auto);
       if (inp && inp.k === 0) {
         s.tx = inp.x;

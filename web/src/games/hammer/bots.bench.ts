@@ -31,7 +31,8 @@ const pct = (x: number) => `${Math.round(x * 100)}%`.padStart(4);
 
 function entrant(name: string, seed: number): Entrant {
   const p = BENCH_PROFILES[name]!;
-  const weapon: WeaponKind = p.weapon(seed) ?? WEAPON_KINDS[seed % WEAPON_KINDS.length]!;
+  // WEAPON=<kind>: everyone gets this weapon (tells a style's strength from its weapon's)
+  const weapon: WeaponKind = (process.env.WEAPON as WeaponKind | undefined) ?? p.weapon(seed) ?? WEAPON_KINDS[seed % WEAPON_KINDS.length]!;
   return { name, weapon, sidearm: p.sidearm?.(seed) ?? null, plate: p.plate?.(seed) ?? null, driver: p.driver };
 }
 

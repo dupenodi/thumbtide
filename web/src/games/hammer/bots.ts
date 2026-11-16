@@ -248,7 +248,25 @@ function enemies(arena: Arena, m: Machine): Machine[] {
   return out;
 }
 
+/** Who each bot is after, per arena: the original's crowd rule (RE_AI.md 4) reads it. */
+const claims = new WeakMap<Arena, Map<Machine, Machine>>();
+function attackersOn(arena: Arena, o: Machine, me: Machine): number {
+  let n = 0;
+  const c = claims.get(arena);
+  if (c) for (const [a, t] of c) if (t === o && a !== me && a.alive) n++;
+  return n;
+}
+
 function chooseTarget(arena: Arena, m: Machine, b: Bot, foes: Machine[]): Machine | null {
+  const t = pickTarget(arena, m, b, foes);
+  let c = claims.get(arena);
+  if (!c) claims.set(arena, (c = new Map()));
+  if (t) c.set(m, t);
+  else c.delete(m);
+  return t;
+}
+
+function pickTarget(arena: Arena, m: Machine, b: Bot, foes: Machine[]): Machine | null {
   const p = b.profile;
   if (b.target && b.target.alive && b.target.team !== m.team && arena.t - b.targetSince < p.commit) return b.target;
   const lead = foes.reduce((x, o) => Math.max(x, o.hp), 0);
@@ -266,6 +284,12 @@ function chooseTarget(arena: Arena, m: Machine, b: Bot, foes: Machine[]): Machin
     if (p.style === "jackal" && o.stun <= 0.2 && o.hp > 25) s -= 1;
     // Flak: the highest machine is the easiest rocket
     if (p.style === "flak") s += ((m.hull.y - o.hull.y) / 300) * 0.5;
+    // the original's crowd rule: a second attacker is less keen, a third stays away (fights spread out); a
+    // stunned or 12-health machine is the exception (the third-party dive is the drama)
+    const crowd = attackersOn(arena, o, m);
+    if (o.stun <= 0.2 && o.hp > 12) s -= crowd === 0 ? 0 : crowd === 1 ? 0.5 : 2;
+    // kingslayer: the untouched leader draws everyone (no one sits out a free-for-all)
+    if (foes.length > 1) s += (o.hp / 100) * 0.6;
     if (o === b.target) s += 0.25;
     if (s > bestS) {
       bestS = s;
@@ -467,7 +491,9 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
     const stunned = T.stun > 0.15 && stunTime(T) > 0.25;
     // engagement clock: from 2 s without action the gap shrinks
     const urge = Math.max(0, Math.min(1, (bot.quiet - 2) / 3));
-    let gap = p.gap * bot.mood * (1 - urge);
+    // showdown: the last two machines drop their caution (no third party is left to profit)
+    const showdown = foes.length === 1 && arena.machines.filter((x) => x.alive).length === 2;
+    let gap = p.gap * bot.mood * (1 - urge) * (showdown ? 0.5 : 1);
     // the head's time to the target's bearing, and the time to step in: lunge when they match
     const bearing = Math.atan2(ty - h.y, tx - h.x);
     const tHead = Math.abs(head.w) > 1 ? angTo(head.phase, bearing, Math.sign(head.w)) / Math.abs(head.w) : 9;
@@ -476,15 +502,16 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
     if (inPhase && ready && strong) gap = 0;
     if (!strong) gap = Math.max(gap, s.radius + 50); // wait outside until a killing blow is wound up
     let want = c.L * p.standoff * bot.mood + (c.blade && p.style === "graze" ? s.radius + 10 : 0) + gap;
-    if (p.style === "flak") want = Math.max(want, 220);
-    if (p.style === "jackal" && !stunned && T.hp > 25) want = Math.max(want, c.L * 2.2);
+    // Flak keeps its rocket range and Jackal waits outside, but not in a showdown or after a quiet spell
+    if (p.style === "flak" && !showdown && !stunned) want = Math.max(want, 220 * (1 - urge));
+    if (p.style === "jackal" && !showdown && !stunned && T.hp > 25) want = Math.max(want, c.L * 2.2 * (1 - urge));
     // the spot round the target nearest to my bearing that is on the stage (off the side edges, below the score
     // cards, above the floor band): the fight stays in view, and the target gets hit toward the edges, not me
     let px = tx + ux * want;
     let py = ty + uy * want;
-    if (p.style === "flak") {
+    if (p.style === "flak" && !showdown && !stunned) {
       // sit below the fight (Flak), but on the stage
-      py = Math.max(py, ty + 140);
+      py = Math.max(py, ty + 140 * (1 - urge));
     }
     if (!onStage(arena, px, py)) {
       const a0 = Math.atan2(uy, ux);
