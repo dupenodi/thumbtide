@@ -52,22 +52,33 @@ export interface Profile {
   commit: number;
   /** Shield up against a sweep (needs plates). */
   shield: boolean;
+  /** Seconds to lead the target's motion. */
+  lead: number;
+  /** Slack (s) on the head's timing for the step in. */
+  window: number;
+  /** Pull to the strike spot per px (against the pump's unit thrust). */
+  pull: number;
+  /** Assumed speed of the step in (px/s): the step starts gap/stepV before the head arrives. */
+  stepV: number;
 }
+/** The numbers bots.tune.ts may change (all of them fields of Profile). */
+export const TUNABLE = ["standoff", "gap", "gate", "pumpMove", "dodge", "commit", "wStunned", "wWeak", "lead", "window", "pull", "stepV"] as const;
 
 export type ProfileId = "dervish" | "lance" | "razor" | "thump" | "krank" | "bulwark" | "flak" | "jackal" | "pilot";
 
-const P = (p: Omit<Profile, "wNear" | "wLeader" | "wGrudge"> & Partial<Pick<Profile, "wNear" | "wLeader" | "wGrudge">>): Profile => ({ wNear: 1, wLeader: 0.3, wGrudge: 0.6, ...p });
+type Tunable = "wNear" | "wLeader" | "wGrudge" | "lead" | "window" | "pull" | "stepV";
+const P = (p: Omit<Profile, Tunable> & Partial<Pick<Profile, Tunable>>): Profile => ({ wNear: 1, wLeader: 0.3, wGrudge: 0.6, lead: 0.15, window: 0.1, pull: 1 / 90, stepV: 380, ...p });
 
 /** The personalities. Each pushes one strategy to the limit; all share the skill core. */
 export const PROFILES: Record<ProfileId, Profile> = {
-  dervish: P({ id: "dervish", name: "Dervish", blurb: "A ring of chain that never stops; walks the ring onto you", style: "ring", weapons: ["orbmace", "chainball", "silvermace", "spikedflail"], gun: null, plate: null, standoff: 0.95, gap: 0, gate: 0.7, pumpMove: 0.6, dodge: 0.2, inside: false, wStunned: 0.5, wWeak: 0.3, commit: 2, shield: false }),
-  lance: P({ id: "lance", name: "Lance", blurb: "Charges through at top speed; the head whips in at the pass", style: "lance", weapons: ["pike", "klevec", "goldhammer"], gun: "arquebus", plate: "woodlight", standoff: 1, gap: 50, gate: 0.6, pumpMove: 0.15, dodge: 0.25, inside: false, wStunned: 0.4, wWeak: 0.2, commit: 1.2, shield: false, wNear: 0.3 }),
-  razor: P({ id: "razor", name: "Razor", blurb: "Slices in fly-pasts; never meets you head-on", style: "graze", weapons: ["innata", "claw", "saian", "kathib"], gun: null, plate: null, standoff: 1.12, gap: 40, gate: 0.8, pumpMove: 0.35, dodge: 0.35, inside: false, wStunned: 0.6, wWeak: 1, commit: 1, shield: false }),
-  thump: P({ id: "thump", name: "Thump", blurb: "Stun-lock: every hit stuns, and it never lets go", style: "stun", weapons: ["mallet", "kolotun", "hammer"], gun: null, plate: "rusty", standoff: 0.9, gap: 30, gate: 0.55, pumpMove: 0.35, dodge: 0.25, inside: true, wStunned: 3, wWeak: 0.2, commit: 0.8, shield: false }),
-  krank: P({ id: "krank", name: "Krank", blurb: "One huge blow: breaks shields, knocks weapons away", style: "heavy", weapons: ["krankmace", "maul", "silvermace", "palash"], gun: null, plate: "heavyplate", standoff: 1, gap: 60, gate: 0.9, pumpMove: 0.7, dodge: 0.15, inside: false, wStunned: 1, wWeak: 0.2, commit: 1.5, shield: true }),
-  bulwark: P({ id: "bulwark", name: "Bulwark", blurb: "Holds its ground behind armour, then hits back at once", style: "counter", weapons: ["axe", "warhammer", "axis"], gun: null, plate: "armor", standoff: 1, gap: 45, gate: 0.6, pumpMove: 0.3, dodge: 0.3, inside: true, wStunned: 1.5, wWeak: 0.2, commit: 0.5, shield: true }),
-  flak: P({ id: "flak", name: "Flak", blurb: "Shoots from below, then dives on whoever reels", style: "flak", weapons: ["kolotun", "severn", "hammer"], gun: "launcher", plate: "silver", standoff: 1, gap: 60, gate: 0.6, pumpMove: 0.15, dodge: 0.35, inside: false, wStunned: 2, wWeak: 0.5, commit: 2, shield: true, wLeader: 0.8 }),
-  jackal: P({ id: "jackal", name: "Jackal", blurb: "Waits outside every fight and steals the knockout", style: "jackal", weapons: ["klevec", "goldhammer", "berdish"], gun: "mortar", plate: null, standoff: 1, gap: 90, gate: 0.7, pumpMove: 0.3, dodge: 0.4, inside: false, wStunned: 3, wWeak: 2, commit: 0.3, shield: false }),
+  dervish: P({ id: "dervish", name: "Dervish", blurb: "A ring of chain that never stops; walks the ring onto you", style: "ring", weapons: ["spikedflail", "stixmace", "starmace"], gun: null, plate: null, standoff: 0.617, gap: 15.6, gate: 0.7, pumpMove: 0.708, dodge: 0.27, inside: false, wStunned: 0.5, wWeak: 0.3, commit: 2, shield: false, lead: 0.123, window: 0.118, pull: 0.013, stepV: 380 }),
+  lance: P({ id: "lance", name: "Lance", blurb: "Charges through at top speed; the head whips in at the pass", style: "lance", weapons: ["pike", "klevec", "goldhammer"], gun: "arquebus", plate: "woodlight", standoff: 0.6, gap: 38.35, gate: 0.39, pumpMove: 0.15, dodge: 0.25, inside: false, wStunned: 0.4, wWeak: 0.2, commit: 1.2, shield: false, wNear: 0.3, lead: 0.177, window: 0.1, pull: 0.011, stepV: 380 }),
+  razor: P({ id: "razor", name: "Razor", blurb: "Slices in fly-pasts; never meets you head-on", style: "graze", weapons: ["innata", "claw", "saian", "kathib"], gun: null, plate: null, standoff: 0.6, gap: 47.2, gate: 0.52, pumpMove: 0.306, dodge: 0.413, inside: false, wStunned: 0.6, wWeak: 1, commit: 1, shield: false, lead: 0.15, window: 0.1, pull: 0.009, stepV: 291.46 }),
+  thump: P({ id: "thump", name: "Thump", blurb: "Stun-lock: heavy blunt hits, and it never lets go", style: "stun", weapons: ["krankhammer", "warhammer", "kolotun"], gun: null, plate: "rusty", standoff: 0.9, gap: 30, gate: 0.233, pumpMove: 0.35, dodge: 0.348, inside: true, wStunned: 3, wWeak: 0.2, commit: 0.8, shield: false, lead: 0.15, window: 0.1, pull: 0.011, stepV: 380 }),
+  krank: P({ id: "krank", name: "Krank", blurb: "One huge blow: breaks shields, knocks weapons away", style: "heavy", weapons: ["maul", "silvermace", "palash"], gun: null, plate: "heavyplate", standoff: 0.65, gap: 81, gate: 0.9, pumpMove: 0.7, dodge: 0.203, inside: false, wStunned: 1, wWeak: 0.2, commit: 1.5, shield: true, lead: 0.123, window: 0.1, pull: 0.011, stepV: 247 }),
+  bulwark: P({ id: "bulwark", name: "Bulwark", blurb: "Holds its ground behind armour, then hits back at once", style: "counter", weapons: ["goldaxe", "mamba", "axe"], gun: null, plate: "armor", standoff: 0.65, gap: 60.75, gate: 0.81, pumpMove: 0.405, dodge: 0.3, inside: true, wStunned: 1.5, wWeak: 0.2, commit: 0.5, shield: true, lead: 0.15, window: 0.082, pull: 0.011, stepV: 247 }),
+  flak: P({ id: "flak", name: "Flak", blurb: "Shoots from below, then dives on whoever reels", style: "flak", weapons: ["severn", "hammer", "kolotun"], gun: "launcher", plate: "silver", standoff: 1, gap: 25.35, gate: 0.39, pumpMove: 0.203, dodge: 0.35, inside: false, wStunned: 2, wWeak: 0.5, commit: 2, shield: true, wLeader: 0.8, lead: 0.15, window: 0.1, pull: 0.011, stepV: 380 }),
+  jackal: P({ id: "jackal", name: "Jackal", blurb: "Waits outside every fight and steals the knockout", style: "jackal", weapons: ["klevec", "goldhammer", "berdish"], gun: "mortar", plate: null, standoff: 0.6, gap: 58.5, gate: 0.7, pumpMove: 0.405, dodge: 0.328, inside: false, wStunned: 3, wWeak: 2, commit: 0.3, shield: false, lead: 0.15, window: 0.1, pull: 0.011, stepV: 380 }),
   /** The away-player autopilot: plain skill with the player's own weapon, no show. */
   pilot: P({ id: "pilot", name: "Pilot", blurb: "Autopilot", style: "ring", weapons: [], gun: null, plate: null, standoff: 1, gap: 30, gate: 0.6, pumpMove: 0.35, dodge: 0.3, inside: false, wStunned: 1, wWeak: 0.3, commit: 1, shield: true, wGrudge: 0 }),
 };
@@ -477,7 +488,7 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
     if (p.shield && m.plates.length > 1) arena.shield(m);
   } else {
     // ---- strike: the head's path through the target (or grazing its face for a slice)
-    const tc = 0.15;
+    const tc = p.lead;
     const tx = T.hull.x + T.hull.vx * tc;
     const ty = T.hull.y + T.hull.vy * tc + (T.stun > 0 ? 0.5 * arena.tuning.gravity * tc * tc : 0);
     let ux = h.x - tx;
@@ -497,8 +508,8 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
     // the head's time to the target's bearing, and the time to step in: lunge when they match
     const bearing = Math.atan2(ty - h.y, tx - h.x);
     const tHead = Math.abs(head.w) > 1 ? angTo(head.phase, bearing, Math.sign(head.w)) / Math.abs(head.w) : 9;
-    const tStep = gap / 380;
-    const inPhase = tHead < tStep + 0.1 || stunned;
+    const tStep = gap / p.stepV;
+    const inPhase = tHead < tStep + p.window || stunned;
     if (inPhase && ready && strong) gap = 0;
     if (!strong) gap = Math.max(gap, s.radius + 50); // wait outside until a killing blow is wound up
     let want = c.L * p.standoff * bot.mood + (c.blade && p.style === "graze" ? s.radius + 10 : 0) + gap;
@@ -552,7 +563,7 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
     const ex = px - h.x;
     const ey = py - h.y;
     const ed = Math.hypot(ex, ey);
-    const kPos = p.style === "lance" && bot.intent === "charge" ? 1 / 30 : 1 / 90;
+    const kPos = p.style === "lance" && bot.intent === "charge" ? 1 / 30 : p.pull;
     const pw = !ready ? 1 : p.pumpMove;
     dir[0] = pump[0] * pw + ex * kPos;
     dir[1] = pump[1] * pw + ey * kPos;
