@@ -12,6 +12,7 @@ import { makeTour } from "./tour.ts";
 import { createGameAudio } from "./audio.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount } from "../types.ts";
+import { applyArenaKind, spawnPoint, STICK_DEFAULTS, type StickTune, stickPush as stickPushFor } from "./arenas.ts";
 import { type Bot, driveBot, makeBot } from "./bots.ts";
 import "./hammer.css";
 import { loadGameFont } from "./font.ts";
@@ -19,63 +20,11 @@ import { Hud, type SeatView } from "./hud.ts";
 import { COIN_LOOK, type Pickup } from "./coins.ts";
 import { Fx, Renderer } from "./render.ts";
 import type { HammerGame, Mode, Phase } from "./shared.ts";
-import { Arena, type Machine, type ObstacleSpec, STEP, VIEW_H, VIEW_W } from "./sim.ts";
+import { Arena, type Machine, STEP, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
 import { GUN_KINDS, type GunKind, MACHINE, type Material, PLATE_KINDS, type PlateKind, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
 const MAX_SEATS = 8;
-const SPAWNS: [number, number][] = [
-  [220, 170],
-  [740, 170],
-  [220, 370],
-  [740, 370],
-  // seats 5-8: even slots (left HUD side, Red) on the left half, odd on the right
-  [110, 270],
-  [850, 270],
-  [390, 400],
-  [570, 400],
-];
-/**
- * Arenas (OURS: Hammerfight's multiplayer arenas are one fixed size with no obstacles; its story ARENA has crates).
- * A bigger arena is the same TV picture zoomed out; positions are shares of the arena size.
- */
-const ARENAS: Record<string, { k: number; obstacles: [ObstacleSpec["kind"], number, number, number, number][] }> = {
-  classic: { k: 1, obstacles: [] },
-  crates: {
-    k: 1,
-    obstacles: [
-      ["pillar", 0.33, 0.52, 12, 34],
-      ["pillar", 0.67, 0.52, 12, 34],
-      ["crate", 0.5, 0.36, 22, 22],
-      ["crate", 0.5, 0.74, 22, 22],
-    ],
-  },
-  big: {
-    k: 1.5,
-    obstacles: [
-      ["pillar", 0.33, 0.52, 12, 34],
-      ["pillar", 0.67, 0.52, 12, 34],
-      ["crate", 0.5, 0.36, 22, 22],
-      ["crate", 0.5, 0.74, 22, 22],
-      ["crate", 0.18, 0.78, 20, 20],
-      ["crate", 0.82, 0.78, 20, 20],
-    ],
-  },
-  huge: {
-    k: 2,
-    obstacles: [
-      ["pillar", 0.25, 0.5, 12, 40],
-      ["pillar", 0.75, 0.5, 12, 40],
-      ["pillar", 0.5, 0.55, 40, 12],
-      ["crate", 0.5, 0.3, 22, 22],
-      ["crate", 0.38, 0.78, 22, 22],
-      ["crate", 0.62, 0.78, 22, 22],
-      ["crate", 0.12, 0.3, 20, 20],
-      ["crate", 0.88, 0.3, 20, 20],
-    ],
-  },
-};
-
 /** Computer players: colours away from the first human colours, and never white (white is the hit flash). */
 const BOT_COLORS = ["#c18cff", "#ff9f43", "#2de2c9", "#a3e048", "#ff7eb6", "#ffd84a", "#7ee0ff", "#b8c0d0"];
 /** Team modes: Red is the odd players P1, P3, P5, P7 (the left HUD side), Blue the even ones; each member gets a shade of the team colour. */
@@ -143,27 +92,8 @@ const mount: HostMount = (ctx) => {
   const host = ctx.host as Host<HammerGame>;
   const spec = gameById("hammer")!.controls!;
   const gain = spec.tune.gain ?? 6;
-  const stickGain = spec.tune.stick ?? 150;
-  const steer = spec.tune.steer ?? 8;
-  const hold = spec.tune.hold ?? 0.5;
-  /** Stick (not in Hammerfight): the tilt sets a target speed; the thrust closes the gap. The cap grows with the tilt (full
-   *  from half tilt), so a thumb that rests near the centre gives a small force, not a full brake, and no step at the dead zone. */
-  const stickPush = (m: Machine, x: number, y: number) => {
-    const l = Math.hypot(x, y);
-    if (l < 0.02) return;
-    const top = arena.tuning.speedClip * Math.min(1, l);
-    const tx = (x / l) * top;
-    const ty = (y / l) * top;
-    let ix = steer * (tx - m.hull.vx) + hold * tx;
-    let iy = steer * (ty - m.hull.vy) + hold * ty;
-    const cap = stickGain * Math.min(1, l / 0.5);
-    const il = Math.hypot(ix, iy);
-    if (il > cap) {
-      ix *= cap / il;
-      iy *= cap / il;
-    }
-    arena.pushRaw(m, ix, iy);
-  };
+  const stickTune: StickTune = { stick: spec.tune.stick ?? STICK_DEFAULTS.stick, steer: spec.tune.steer ?? STICK_DEFAULTS.steer, hold: spec.tune.hold ?? STICK_DEFAULTS.hold };
+  const stickPush = (m: Machine, x: number, y: number) => stickPushFor(arena, m, x, y, stickTune);
 
   const lite = isWebOS || !!startParam("lite");
   // lite (the TV): 15 joint passes instead of 30. Heavy chains cost about a third less per step; the mean chain
@@ -382,9 +312,7 @@ const mount: HostMount = (ctx) => {
 
   const spawn = (s: Seat) => {
     // the spawn table is for the classic frame: the same shares of a bigger arena
-    const [x0, y0] = SPAWNS[s.slot] ?? [VIEW_W / 2, VIEW_H / 2];
-    const x = (x0 * arena.w) / VIEW_W;
-    const y = (y0 * arena.h) / VIEW_H;
+    const [x, y] = spawnPoint(arena, s.slot);
     if (s.m) {
       arena.respawn(s.m, x, y, s.weapon, s.sidearm, s.plate);
     } else {
@@ -500,10 +428,7 @@ const mount: HostMount = (ctx) => {
   /** Size and obstacles from the Arena setting; the coins and spawns follow the size. */
   const applyArena = () => {
     arenaKind = String(ctx.settings().arena ?? "classic");
-    const a = ARENAS[arenaKind] ?? ARENAS.classic!;
-    const w = VIEW_W * a.k;
-    const h = VIEW_H * a.k;
-    arena.setArena(w, h, a.obstacles.map(([kind, sx, sy, hw, hh]) => ({ kind, x: sx * w, y: sy * h, hw, hh })));
+    const { w, h } = applyArenaKind(arena, arenaKind);
     fx.coins.w = w;
     fx.coins.h = h;
   };

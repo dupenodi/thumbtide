@@ -2,6 +2,7 @@
 // so they obey the same physics and limits as a person.
 
 import { type Arena, EDGE_M, EDGE_TOP, type Machine, STEP } from "./sim.ts";
+import type { GunKind, PlateKind, WeaponKind } from "./weapons.ts";
 
 export type BotMode = "idle" | "wander" | "fight";
 
@@ -102,3 +103,29 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot): void {
     }
   }
 }
+
+/** Profiles for bots.bench.ts: a driver per machine and its loadout choice (null = the bench's rotation). */
+export interface BenchProfile {
+  driver: (arena: Arena, m: Machine) => (arena: Arena, m: Machine) => void;
+  weapon: (seed: number) => WeaponKind | null;
+  sidearm?: (seed: number) => GunKind | null;
+  plate?: (seed: number) => PlateKind | null;
+}
+
+export const BENCH_PROFILES: Record<string, BenchProfile> = {
+  /** The bot before the personalities (orbit at 90 px, raw pad input). */
+  classic: {
+    driver: (_a, m) => {
+      const b = makeBot("fight", m.hull.x, m.hull.y);
+      return (a, mm) => driveBot(a, mm, b);
+    },
+    weapon: () => null,
+  },
+  classic2: {
+    driver: (_a, m) => {
+      const b = makeBot("fight", m.hull.x, m.hull.y);
+      return (a, mm) => driveBot(a, mm, b);
+    },
+    weapon: () => null,
+  },
+};
