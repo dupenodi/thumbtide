@@ -71,6 +71,7 @@ const mount: ControllerMount = (ctx) => {
 
   const zone = el.querySelector<HTMLElement>(".hmc-stick")!;
   const tip = el.querySelector<HTMLElement>(".hmc-tip")!;
+  const TIP_HTML = tip.innerHTML;
   const over = el.querySelector<HTMLElement>(".hmc-over")!;
   const pick = el.querySelector<HTMLElement>(".hmc-pick")!;
   const fire = el.querySelector<HTMLButtonElement>(".hmc-fire")!;
@@ -237,8 +238,12 @@ const mount: ControllerMount = (ctx) => {
     }
 
     const phase = sh?.phase ?? "pick";
-    pick.hidden = phase !== "pick";
-    tip.hidden = phase === "pick";
+    // "Weapon pick: each match only": no cards between the rounds of a match, just a line saying so
+    const fixed = !!own?.fixed;
+    pick.hidden = phase !== "pick" || fixed;
+    tip.hidden = phase === "pick" && !fixed;
+    const tipHtml = fixed && phase === "pick" ? "<b>Weapons fixed</b><span>for this match</span>" : TIP_HTML;
+    if (tip.innerHTML !== tipHtml) tip.innerHTML = tipHtml;
     // a win for my team counts as my win
     const won = !!sh && !!own && (sh.mode === "ffa" ? sh.winnerId === ctl.me?.id : sh.winnerTeam === own.team);
     // "CPU wins", but "Players win"

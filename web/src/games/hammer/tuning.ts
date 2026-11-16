@@ -36,6 +36,26 @@ export interface Tuning {
   limit: number;
   /** Stiffness of the soft limit, Hz. */
   limitHz: number;
+  /** Not in Hammerfight: 1 = hard top and bottom walls keep a live hull inside the frame (0 = off). */
+  walls: number;
+  // ---- hit types (not in Hammerfight, after the play test: "damage from inertia, not from resting contact";
+  // "blades slice, blunt weapons bash"; "stun by hit type, damage and what the machine hits next")
+  /** A blunt hit needs this approach speed (px/s, along the contact normal) to hurt or stun: resting contact doesn't. */
+  bluntMinV: number;
+  /** A blade cut needs this relative speed (px/s); a slower slide is a blunt touch. */
+  cutMinV: number;
+  /** A blade's edge that hits head-on (no slice) does this share of its sharpness. */
+  bladeRam: number;
+  /** Stun from a blunt hit, × the original shock (0.01·M per hit with M > 30). */
+  stunScale: number;
+  /** Share of that stun a cut gives (blades cut, they don't knock out). */
+  stunCut: number;
+  /** Most stun a machine can hold (Hammerfight 1, about 0.5 s at full health). */
+  stunMax: number;
+  /** Slam: in the 0.8 s after a stunning hit, hitting a wall, a machine or debris adds this × the slam impact as stun. */
+  slam: number;
+  /** Pieces a machine bursts into when it's wrecked; they hurt for 2.5 s. 0 = none. */
+  gibs: number;
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -56,6 +76,15 @@ export const DEFAULT_TUNING: Tuning = {
   hitstop: 0,
   limit: 70,
   limitHz: 7,
+  walls: 1,
+  bluntMinV: 90,
+  cutMinV: 100,
+  bladeRam: 0.8,
+  stunScale: 1.6,
+  stunCut: 0.35,
+  stunMax: 1.5,
+  slam: 0.004,
+  gibs: 5,
 };
 
 export interface TuningField {

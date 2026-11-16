@@ -12,6 +12,17 @@ import { armedSpec, type GunKind, type GunSpec, MACHINE, type PartSpec, PLATE_CO
 export const VIEW_W = 960;
 export const VIEW_H = 540;
 /**
+ * Which weapon parts collide. Hammerfight's item factory gives chain links, mace hands and handles m_layer 0, and the
+ * broadphase (0x402719) only pairs bodies whose layers share a bit: they touch nothing, so a chain can't wrap and
+ * grind an enemy; only the head hits (RE_WEAPONS.md 3.3). Exceptions: the morning star's hand (layer 8, which the
+ * machine layer 11 shares), the spiked flail's bladed segments and the claw's jaw (default layer 3).
+ */
+export const solidPart = (kind: WeaponKind, key: string): boolean => !(/^(link\d+|hand|handle)$/.test(key) && !(kind === "starmace" && key === "hand"));
+
+/** A live hull's centre stays this far inside the top edge (hull half height 16.5 + the rotor) and the bottom. */
+const WALL_TOP = 30;
+const WALL_BOTTOM = 18;
+/**
  * Where AI fliers (bots, monsters) keep to: EDGE_M px inside the left, right and bottom edges, and below EDGE_TOP
  * (the score cards cover the top ~75 px of the frame).
  */
@@ -27,6 +38,12 @@ const SHOCK_VALUE = 0.02;
 const LEVEL = 4;
 const COLLISION_EFFECT = 0.1;
 const EXTRA_SHOCK = 1;
+/** Seconds after a stunning hit in which hitting something is a slam (OURS). */
+const SLAM_S = 0.8;
+/** A wreck's pieces hurt for this long, then fall through everything (OURS). */
+const GIB_HARM_S = 2.5;
+/** A stunned machine must hit the floor or ceiling at least this fast (px/s) for a slam (not a slow fall). */
+const WALL_SLAM_V = 150;
 /** Not in Hammerfight: how close a weaponless hull must fly to a loose weapon's grip to take it, px. */
 const PICKUP_RANGE = 34;
 /** Not in Hammerfight: seconds after losing a weapon before a machine can take one. */
@@ -66,6 +83,12 @@ export interface Tag {
   plate?: PlateKind;
   /** A knocked-off plate: it no longer counts as its machine's. */
   loose?: boolean;
+  /** A piece of a wrecked machine: it hurts like an owned weapon until this arena time (OURS). */
+  gibUntil?: number;
+  /** Whose hit it is when this body hurts someone (a wreck shard: whoever wrecked it). */
+  credit?: Machine | null;
+  /** A crate's splinter (drawn as wood). */
+  wood?: boolean;
   spec: PartSpec | null;
 }
 
@@ -140,8 +163,10 @@ export interface Machine {
   iny: number;
   hp: number;
   alive: boolean;
-  /** Shock (0–1). While above 0 the engine is off: no thrust, the machine falls and tumbles. */
+  /** Shock (0 to tuning.stunMax). While above 0 the engine is off: no thrust, the machine falls and tumbles. */
   stun: number;
+  /** Until this arena time, hitting something adds stun (a slam after a stunning hit; OURS). */
+  slamUntil: number;
   diedAt: number;
   lastHitBy: Machine | null;
   /** Seconds of white flash left after a hit. */
@@ -158,7 +183,30 @@ export type SimEvent =
   | { type: "shot"; m: Machine; ball: boolean; x: number; y: number }
   | { type: "blast"; m: Machine; radius: number; x: number; y: number }
   | { type: "plateoff"; m: Machine; by: Machine; x: number; y: number }
+  | { type: "slam"; m: Machine; impact: number; x: number; y: number }
+  | { type: "crack"; by: Machine; obstacle: Obstacle; dmg: number; x: number; y: number }
+  | { type: "break"; by: Machine; obstacle: Obstacle; x: number; y: number }
   | { type: "ko"; victim: Machine; by: Machine | null; x: number; y: number };
+
+/** A crate breaks after enough damage; a pillar never does. */
+export interface Obstacle {
+  kind: "crate" | "pillar";
+  body: Body;
+  hw: number;
+  hh: number;
+  hp: number;
+  max: number;
+}
+
+/** Where an obstacle goes, in the arena's own px. */
+export interface ObstacleSpec {
+  kind: "crate" | "pillar";
+  x: number;
+  y: number;
+  hw: number;
+  hh: number;
+  hp?: number;
+}
 
 interface Loose {
   /** Whose parts arrays hold the bodies. */
@@ -181,6 +229,14 @@ export class Arena {
   t = 0;
   /** CORE_TIMEWRAP: 1 = normal, 0.3 at the start of slow motion. */
   timewarp = 1;
+  /** The arena in world px (the TV shows all of it: a bigger arena is a zoomed-out view). */
+  w = VIEW_W;
+  h = VIEW_H;
+  /** Static obstacles (OURS; Hammerfight's multiplayer arenas have none, its story ARENA has crates and cages). */
+  obstacles: Obstacle[] = [];
+  private obstacleOf = new Map<Body, Obstacle>();
+  /** Crates broken during this step's collisions, removed after it. */
+  private brokenBodies: Body[] = [];
   private slomoTimer = 0;
   /** Wrecks that fell far below the frame: out of the physics until they respawn (they can't come back). */
   readonly parked = new Set<Machine>();
@@ -218,6 +274,7 @@ export class Arena {
       hp: MACHINE.health,
       alive: true,
       stun: 0,
+      slamUntil: 0,
       diedAt: 0,
       lastHitBy: null,
       flash: 0,
@@ -288,6 +345,7 @@ export class Arena {
       hp: layout.hp,
       alive: true,
       stun: 0,
+      slamUntil: 0,
       diedAt: 0,
       lastHitBy: null,
       flash: 0,
@@ -323,6 +381,16 @@ export class Arena {
     this.slomoTimer = 0;
     for (const sh of this.shots) sh.body.dead = true;
     this.sweepShots();
+  }
+
+  /** The grips of the loose weapons that a machine can pick up (the bots fly there when disarmed). */
+  looseGrips(): Body[] {
+    const out: Body[] = [];
+    for (const l of this.loose) {
+      const grip = l.holder.part.get(l.spec.joints.find((j) => j.a === "hull")!.b);
+      if (grip) out.push(grip);
+    }
+    return out;
   }
 
   /** Hold the trigger this frame. */
@@ -378,21 +446,31 @@ export class Arena {
       m.inx = m.iny = 0;
       this.limit(m);
       // a wreck far below the frame can't come back: stop simulating it (and its hull's joints and contacts)
-      if (!m.alive && !this.parked.has(m) && m.hull.y > VIEW_H + OUT_OF_PLAY) {
+      if (!m.alive && !this.parked.has(m) && m.hull.y > this.h + OUT_OF_PLAY) {
         this.world.remove(m.hull);
         this.parked.add(m);
       }
     }
     // the same for a loose weapon that fell far below the frame: nobody can reach it again
     if (this.loose.length) for (const l of [...this.loose]) {
-      if (l.holder.parts.length && l.holder.parts.every((b) => b.y > VIEW_H + OUT_OF_PLAY)) this.destroy(l.holder);
+      if (l.holder.parts.length && l.holder.parts.every((b) => b.y > this.h + OUT_OF_PLAY)) this.destroy(l.holder);
     }
 
     this.world.commonForces(tn.gravity);
     this.world.step({ dt, dtPrev: this.dtPrev, gravity: tn.gravity, passes: tn.passes, onContact: this.onContact });
+    if (this.brokenBodies.length) {
+      for (const b of this.brokenBodies) this.world.remove(b);
+      this.brokenBodies.length = 0;
+    }
+    if (tn.walls) for (const m of this.machines) if (m.alive && !m.monster) this.verticalWalls(m, dt);
     this.dtPrev = dt;
     this.t += dt;
     if (this.shots.length) this.ageShots();
+    // a wreck's pieces stop hurting, then stop colliding
+    for (const d of this.debris) {
+      const g = (d.body.data as Tag | null)?.gibUntil;
+      if (g !== undefined && this.t > g) d.body.solid = false;
+    }
     if (this.debris.length && this.t - this.debris[0]!.at > 4) {
       for (const d of this.debris) if (this.t - d.at > 4) this.world.remove(d.body);
       this.debris = this.debris.filter((d) => this.t - d.at <= 4);
@@ -524,7 +602,7 @@ export class Arena {
     let any = false;
     for (const sh of this.shots) {
       const b = sh.body;
-      if (sh.contacts >= sh.maxContacts || this.t - sh.born > SHOT_LIFE || b.x < -80 || b.x > VIEW_W + 80 || b.y < -80 || b.y > VIEW_H + 80) b.dead = true;
+      if (sh.contacts >= sh.maxContacts || this.t - sh.born > SHOT_LIFE || b.x < -80 || b.x > this.w + 80 || b.y < -80 || b.y > this.h + 80) b.dead = true;
       if (b.dead) {
         any = true;
         if (sh.blast) this.blast(sh);
@@ -657,8 +735,8 @@ export class Arena {
       k = best > 150 ? 1 : best > 70 ? 2 * (1 + Math.sin(3 * t)) * 0.5 : -0.8;
     } else {
       // nobody to hunt: drift round the middle of the arena
-      const cx = VIEW_W / 2 + Math.cos(t * 0.4) * 250 - core.x;
-      const cy = VIEW_H / 2 + Math.sin(t * 0.6) * 120 - core.y;
+      const cx = this.w / 2 + Math.cos(t * 0.4) * 250 - core.x;
+      const cy = this.h / 2 + Math.sin(t * 0.6) * 120 - core.y;
       const d = Math.hypot(cx, cy) || 1;
       hx = cx / d;
       hy = cy / d;
@@ -668,8 +746,8 @@ export class Arena {
     // Not in Hammerfight (its arenas have walls): near an edge, steer back inside the frame so the fight stays in
     // view. The top margin is bigger: the score cards cover the top of the screen.
     const edge = (v: number, lo: number, hi: number) => (v < lo ? (lo - v) / EDGE_M : v > hi ? -(v - hi) / EDGE_M : 0);
-    const ex = 2 * Math.max(-1.5, Math.min(1.5, edge(core.x, EDGE_M, VIEW_W - EDGE_M)));
-    const ey = 2 * Math.max(-1.5, Math.min(1.5, edge(core.y, EDGE_TOP, VIEW_H - EDGE_M)));
+    const ex = 2 * Math.max(-1.5, Math.min(1.5, edge(core.x, EDGE_M, this.w - EDGE_M)));
+    const ey = 2 * Math.max(-1.5, Math.min(1.5, edge(core.y, EDGE_TOP, this.h - EDGE_M)));
     const ax = (hx * k - hy * wig + ex) * 750 * st.layout.force;
     const ay = (hy * k + hx * wig + ey) * 750 * st.layout.force;
     // pull at the head end: the core and the jaw share the push for the whole body
@@ -688,7 +766,27 @@ export class Arena {
     }
   }
 
-  /** Not in Hammerfight: a stiff spring a little outside the fixed camera frame. */
+  /**
+   * Hard top and bottom walls for a live hull, so a machine (with its rotor) never leaves the frame up or down
+   * (the play test: machines went out of view at the top and bottom; the sides keep the soft limit). The hull
+   * bounces off with the game's restitution (0.3).
+   */
+  private verticalWalls(m: Machine, dt: number): void {
+    const h = m.hull;
+    const top = WALL_TOP;
+    const bottom = this.h - WALL_BOTTOM;
+    if (h.y >= top && h.y <= bottom) return;
+    const vy = (h.y - h.py) / dt;
+    h.y = h.y < top ? top : bottom;
+    const out = h.y === top ? vy < 0 : vy > 0;
+    // the speed into the wall turns round at 0.3; a speed already away from it is kept
+    h.py = h.y - (out ? -0.3 * vy : vy) * dt;
+    h.vy = out ? -0.3 * vy : vy;
+    // a stunned machine knocked into the floor or ceiling: a slam (the impact as a hull-on-wall collision would give)
+    if (out && Math.abs(vy) > WALL_SLAM_V) this.slam(m, (h.mass * 1.3 * Math.abs(vy)) * 1e-5, h.x, h.y);
+  }
+
+  /** Not in Hammerfight: a stiff spring a little outside the fixed camera frame (only the sides now). */
   private limit(m: Machine): void {
     if (!m.alive) return;
     const tn = this.tuning;
@@ -701,12 +799,61 @@ export class Arena {
       if (pos > hi) return k * (hi - pos) - (vel > 0 ? c * vel : 0);
       return 0;
     };
-    const ax = axis(h.x, h.vx, -tn.limit, VIEW_W + tn.limit);
-    const ay = axis(h.y, h.vy, -tn.limit, VIEW_H + tn.limit);
-    if (ax || ay) h.applyForce(ax * h.mass, ay * h.mass);
+    const ax = axis(h.x, h.vx, -tn.limit, this.w + tn.limit);
+    if (ax) h.applyForce(ax * h.mass, 0);
+  }
+
+  /** A new arena size and obstacle layout (between rounds). */
+  setArena(w: number, h: number, obstacles: ObstacleSpec[]): void {
+    this.w = w;
+    this.h = h;
+    for (const o of this.obstacles) this.world.remove(o.body);
+    this.obstacles = [];
+    this.obstacleOf.clear();
+    for (const s of obstacles) {
+      // density 0: static (it never moves; the solver gives it no share of a correction)
+      const body = new Body([-s.hw, -s.hh, s.hw, -s.hh, s.hw, s.hh, -s.hw, s.hh], 0).place(s.x, s.y, 0);
+      body.gravity = false;
+      const hp = s.kind === "crate" ? (s.hp ?? 30) : Infinity;
+      const o: Obstacle = { kind: s.kind, body, hw: s.hw, hh: s.hh, hp, max: hp };
+      this.world.add(body);
+      this.obstacles.push(o);
+      this.obstacleOf.set(body, o);
+    }
+  }
+
+  /** A weapon, shot or machine hits a crate: the game's damage formula (blunt rule included) takes its health. */
+  private hitObstacle(o: Obstacle, by: Tag, byBody: Body, c: ContactReport): void {
+    // no damage in the warm-up (damage 0): the crates are there for the fight
+    if (o.kind !== "crate" || o.hp <= 0 || !this.owned(by) || this.tuning.damage <= 0) return;
+    const impact = c.impulse * 1e-5;
+    if (!by.shot && c.approach < this.tuning.bluntMinV) return;
+    const dmg = Math.floor(this.tuning.damage * Math.max(1, by.sharpness) * impact);
+    if (dmg <= 0) return;
+    o.hp -= dmg;
+    this.events.push({ type: "crack", by: by.m, obstacle: o, dmg, x: c.x, y: c.y });
+    if (o.hp > 0) return;
+    // this runs inside the collision loop: switch the body off now and take it out of the world after the step
+    o.body.solid = false;
+    this.brokenBodies.push(o.body);
+    this.obstacles = this.obstacles.filter((x) => x !== o);
+    this.obstacleOf.delete(o.body);
+    // splinters fly from the crate and hurt the others for a moment (they are the breaker's: not the breaker)
+    this.shards(by.m, o.body.x, o.body.y, Math.min(o.hw, o.hh), 4, byBody.vx * 0.3, byBody.vy * 0.3, true, by.credit ?? by.m);
+    this.events.push({ type: "break", by: by.m, obstacle: o, x: o.body.x, y: o.body.y });
   }
 
   private onContact = (c: ContactReport): void => {
+    const oa = this.obstacleOf.get(c.a);
+    const ob = this.obstacleOf.get(c.b);
+    if (oa || ob) {
+      const t = (oa ? c.b.data : c.a.data) as Tag | null;
+      if (!t) return;
+      // a reeling machine smashed into a crate or a pillar
+      if (t.hull) this.slam(t.m, c.impulse * 1e-5, c.x, c.y);
+      this.hitObstacle((oa ?? ob)!, t, oa ? c.b : c.a, c);
+      return;
+    }
     const ta = c.a.data as Tag | null;
     const tb = c.b.data as Tag | null;
     if (!ta || !tb || ta.m === tb.m) return;
@@ -714,6 +861,11 @@ export class Arena {
     if (tb.shot) tb.shot.contacts++;
     const impact = c.impulse * 1e-5;
     if (impact <= 0) return;
+
+    // A slam: a machine still reeling from a stunning hit runs into another machine or into debris (not into a
+    // weapon: that is a hit of its own). OURS.
+    if (ta.hull && (tb.hull || !this.owned(tb))) this.slam(ta.m, impact, c.x, c.y);
+    if (tb.hull && (ta.hull || !this.owned(ta))) this.slam(tb.m, impact, c.x, c.y);
 
     if (!ta.hull && !tb.hull) {
       if (impact > 15) this.events.push({ type: "clash", a: ta.m, b: tb.m, impact, x: c.x, y: c.y });
@@ -727,8 +879,18 @@ export class Arena {
     if (ta.hull) this.hurt(ta.m, c.a, tb, c.b, impact, c);
   };
 
+  /** Stun from a slam (see onContact and the walls); once per stunning hit. */
+  private slam(m: Machine, impact: number, x: number, y: number): void {
+    if (!m.alive || this.t >= m.slamUntil || impact < 20 || this.tuning.damage <= 0) return;
+    m.slamUntil = 0;
+    m.stun = Math.min(this.tuning.stunMax, m.stun + this.tuning.slam * impact);
+    this.events.push({ type: "slam", m, impact, x, y });
+  }
+
   /** Is this body still held by a live machine? Loose weapons and wrecks are "unowned". */
   private owned(t: Tag): boolean {
+    // a wreck's flying pieces hurt like a weapon for a moment
+    if (t.gibUntil !== undefined) return this.t < t.gibUntil;
     // a shot stays its shooter's, even after the shooter is wrecked
     return !!t.shot || (t.m.alive && (t.hull || (t.plate ? !t.loose : t.m.armed)));
   }
@@ -740,13 +902,10 @@ export class Arena {
     if (this.tuning.damage <= 0) return;
     // Friendly fire off: teammates' hits only push.
     if (by.m !== victim && by.m.team === victim.team && this.tuning.teamDamage < 1) return;
+    const tn = this.tuning;
     const owned = this.owned(by);
     // Unowned blunt things (a wreck, a loose chain) count for 10 % against a machine.
     const effect = !owned && by.sharpness <= 1 ? COLLISION_EFFECT : 1;
-
-    // Shock: big hits switch the victim's engine off for a moment.
-    // m_extra_shock on the weapon (the wooden hammer's 4) makes its stuns longer
-    if (impact > 30) victim.stun = Math.min(1, victim.stun + SHOCK_VALUE * EXTRA_SHOCK * (by.spec?.extraShock ?? 1) * impact * 0.5 * effect);
 
     // Two-sided weapons (0x512ff0…): which side touched decides the sharpness and the blade (an axe's back is blunt,
     // the katar's back edge cuts at 0.6). Then blades cut harder the faster they slide across.
@@ -762,13 +921,32 @@ export class Arena {
       }
     }
     // armoured monsters: blades get no cut bonus (the game's tips: swords are weak against heavy armour)
-    const cut = victim.monster?.layout.armored ? 1 : cutFactor(byBody, bladeable, c.nx, c.ny);
+    let cut = victim.monster?.layout.armored ? 1 : cutFactor(byBody, bladeable, c.nx, c.ny);
+
+    // Hit types (OURS, see tuning): the hit counts by how the two bodies meet, not just by the impulse.
+    // A slow slide is no slice; a blunt touch needs real approach speed (a mace head resting on a machine, or
+    // pressed against it, no longer grinds health away); a blade's edge rammed in head-on does less.
+    // (speeds at the contact point, before the impulse: collide.ts)
+    if (cut > 1 && c.rel < tn.cutMinV) cut = 1;
+    const blunt = cut <= 1;
+    if (blunt && !by.shot && !by.jaws && c.approach < tn.bluntMinV) return; // (a monster bite is not a blow)
+    if (blunt && bladeable > 0) sharpness *= tn.bladeRam;
+
+    // Shock: big hits switch the victim's engine off for a moment (only M > 30, +0.01·M; m_extra_shock on the
+    // weapon, the wooden hammer's 4, makes its stuns longer). OURS: blunt hits stun stunScale ×, cuts stunCut of
+    // that, up to stunMax; and for 0.8 s after, hitting something adds more (a slam, see onContact).
+    if (impact > 30) {
+      const kind = blunt ? 1 : tn.stunCut;
+      victim.stun = Math.min(tn.stunMax, victim.stun + SHOCK_VALUE * EXTRA_SHOCK * (by.spec?.extraShock ?? 1) * impact * 0.5 * effect * tn.stunScale * kind);
+      victim.slamUntil = this.t + SLAM_S;
+    }
+
     const bonus = by.shot && victim.monster && by.shot.look === "bullet" ? MONSTER_SHOT_BONUS : 1;
     let dmg = Math.floor(this.tuning.damage * sharpness * cut * impact * effect * bonus);
     // a bite (0x410340): m_jaws adds rand(0.3, 3) × jaws
     if (by.jaws && dmg > 0) dmg += Math.round((0.3 + Math.random() * 2.7) * by.jaws);
     if (dmg <= 0) return;
-    this.damage(victim, dmg, by.m, owned, impact, cut, c.x, c.y);
+    this.damage(victim, dmg, by.credit ?? by.m, owned, impact, cut, c.x, c.y);
 
     // GAME_SLOMO (0x483b94): v = 0.15 · M · (40000/(victimMass + 15001) + 0.25); v > 27, or a fast blade (cut > 4),
     // slows time. OURS: the limits are SLOMO_V and SLOMO_CUT. With the exe's 27, a hit on a machine needs an impact
@@ -906,7 +1084,8 @@ export class Arena {
     }
   }
 
-  private wreck(m: Machine): void {
+  /** A machine is destroyed (health 0): it drops its weapon and plates, falls, and bursts into shards. */
+  wreck(m: Machine): void {
     m.alive = false;
     m.diedAt = this.t;
     m.stun = 0;
@@ -916,7 +1095,35 @@ export class Arena {
     m.hull.spinDamp = 300000;
     if (m.monster) for (const b of m.parts) b.gravity = true;
     m.hull.setVelocity(m.hull.vx, m.hull.vy, (Math.random() - 0.5) * 12, STEP * this.timewarp);
+    if (!m.monster) this.gibs(m);
     this.events.push({ type: "ko", victim: m, by: m.lastHitBy, x: m.hull.x, y: m.hull.y });
+  }
+
+  /**
+   * OURS (Hammerfight's detached parts are harmless layer-0 debris): the wreck bursts into a few heavy shards that
+   * fly out and hurt like a weapon (sharpness 3, owned by the wreck) for GIB_HARM_S, then fall through everything
+   * and go with the other debris after 4 s.
+   */
+  private gibs(m: Machine): void {
+    this.shards(m, m.hull.x, m.hull.y, 10, Math.max(0, Math.round(this.tuning.gibs)), m.hull.vx, m.hull.vy, false, m.lastHitBy);
+  }
+
+  /** `n` flying shards from (x, y), owned by `owner` (they don't hit it), harmful for GIB_HARM_S. */
+  private shards(owner: Machine, x: number, y: number, r: number, n: number, vx: number, vy: number, wood = false, credit: Machine | null = owner): void {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.8;
+      const w = 4 + Math.random() * 3;
+      const t = 2.5 + Math.random() * 2;
+      // a jagged quad, a little different each time
+      const mesh = [-w, -t, w * (0.6 + Math.random() * 0.5), -t * 0.6, w, t, -w * (0.5 + Math.random() * 0.5), t * 0.8];
+      const b = new Body(mesh, 80).place(x + Math.cos(a) * r, y + Math.sin(a) * r, a);
+      const s = 280 + Math.random() * 220;
+      b.setVelocity(vx + Math.cos(a) * s, vy + Math.sin(a) * s - 120, (Math.random() - 0.5) * 30, STEP * this.timewarp);
+      b.group = owner.id; // they start inside the wreck: not against it, nor each other
+      b.data = { m: owner, hull: false, striker: false, sharpness: 3, bladeable: 0, bladeableU: 0, sharpnessU: 3, spec: null, gibUntil: this.t + GIB_HARM_S, credit, ...(wood ? { wood: true } : {}) } satisfies Tag;
+      this.world.add(b);
+      this.debris.push({ body: b, at: this.t });
+    }
   }
 
   /** Remove the machine's weapon bodies and joints (the hull stays). */
@@ -957,6 +1164,7 @@ export class Arena {
       // Hanging straight down: local +x (away from the machine) points along world +y.
       const b = new Body(p.mesh, p.density).place(x, y + p.hang, p.angle ?? Math.PI / 2);
       b.group = m.id;
+      b.solid = solidPart(kind, p.key);
       b.data = {
         m,
         hull: false,

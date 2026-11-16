@@ -35,3 +35,21 @@ test("coins: the cap drops the oldest, they fall out of the frame, and a machine
   assert.equal(out.length, 10);
   assert.equal(c.list.length, 0);
 });
+
+test("coins: the held weapon picks coins up too", () => {
+  const c = new Coins(960, 540);
+  const a = new Arena({ ...DEFAULT_TUNING });
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", x: 300, y: 200 });
+  const head = m.parts[m.parts.length - 1]!;
+  assert.ok(Math.hypot(head.x - m.hull.x, head.y - m.hull.y) > 40, "the head is well away from the hull");
+  c.spill(head.x, head.y, 20);
+  for (const k of c.list) {
+    k.x = head.x;
+    k.y = head.y;
+    k.vx = k.vy = 0;
+    k.age = 1;
+  }
+  const out: Pickup[] = [];
+  c.update(0.001, [m], out);
+  assert.equal(out.length, 10);
+});

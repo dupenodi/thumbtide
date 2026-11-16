@@ -1,3 +1,4 @@
+import { createWriteStream } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -22,6 +23,8 @@ export interface StartOptions {
   ghostMinMs?: number;
   /** Comma-separated allowlist; empty = allow all origins. */
   allowedOrigins?: string[];
+  /** Play-test recorder: every phone and TV message, one JSON line each (THUMBTIDE_RECORD=<file>). */
+  record?: (line: object) => void;
 }
 
 const HEARTBEAT_MS = 15_000;
@@ -90,6 +93,7 @@ function parseFrame(ws: WebSocket, raw: Buffer | ArrayBuffer | Buffer[], limiter
 export function startServer(opts: StartOptions = {}) {
   const rooms = new RoomManager({ playerGraceMs: opts.playerGraceMs, hostGraceMs: opts.hostGraceMs, ghostMinMs: opts.ghostMinMs });
   const allowed = new Set(opts.allowedOrigins?.filter(Boolean) ?? []);
+  const rec = opts.record ? (line: object) => opts.record!({ ts: Date.now(), ...line }) : null;
 
   const http = createServer((req, res) => {
     res.setHeader("access-control-allow-origin", "*");
@@ -148,12 +152,17 @@ export function startServer(opts: StartOptions = {}) {
 
     const r = room;
     r.attachHost(conn, resumed);
+    rec?.({ room: r.code, ev: "host-open", resumed });
     const limiter = new RateLimiter(LIMITS.hostRatePerSec, LIMITS.hostRateBurst);
     ws.on("message", (raw) => {
       const msg = parseFrame(ws, raw, limiter) as HostToServer | null;
+      if (msg && msg.t !== "ping") rec?.({ room: r.code, ev: "tv", m: msg });
       if (msg && !r.closed) r.onHostMessage(msg);
     });
-    ws.on("close", () => r.detachHost(conn));
+    ws.on("close", () => {
+      rec?.({ room: r.code, ev: "host-close" });
+      r.detachHost(conn);
+    });
   }
 
   function handleController(ws: WebSocket, url: URL) {
@@ -175,12 +184,30 @@ export function startServer(opts: StartOptions = {}) {
     }
 
     const player = result;
+    rec?.({ room: room.code, ev: "phone-open", id: player.info.id, name: player.info.name });
     const limiter = new RateLimiter();
+    let lastSig = "";
+    let lastIn = 0;
     ws.on("message", (raw) => {
       const msg = parseFrame(ws, raw, limiter) as ControllerToServer | null;
+      if (msg && msg.t !== "ping" && rec) {
+        // stick input comes ~60 times a second: keep every message whose buttons or mode change, and the stick
+        // itself at most every 100 ms (an hour of 8 phones was ~150-200 MB with every message)
+        const d = msg.t === "in" && msg.d && typeof msg.d === "object" ? (msg.d as Record<string, unknown>) : null;
+        const sig = d ? Object.entries(d).filter(([k]) => k !== "x" && k !== "y").map(([k, v]) => `${k}${v}`).join() : "";
+        const now = Date.now();
+        if (!d || sig !== lastSig || now - lastIn >= 100) {
+          lastSig = sig;
+          lastIn = now;
+          rec({ room: room.code, ev: "phone", id: player.info.id, m: msg });
+        }
+      }
       if (msg && !room.closed) room.onControllerMessage(player, msg);
     });
-    ws.on("close", () => room.detachController(player, conn));
+    ws.on("close", (code) => {
+      rec?.({ room: room.code, ev: "phone-close", id: player.info.id, code });
+      room.detachController(player, conn);
+    });
   }
 
   // Server-side liveness: kill sockets that stop answering protocol pings
@@ -218,9 +245,14 @@ export function startServer(opts: StartOptions = {}) {
 // Run directly: `tsx src/index.ts` (pathToFileURL, so Windows paths match too)
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT ?? 8787);
+  // THUMBTIDE_RECORD=<file>: a play-test log of every phone and TV message (append, one JSON line each)
+  const recFile = process.env.THUMBTIDE_RECORD;
+  const recStream = recFile ? createWriteStream(recFile, { flags: "a" }) : null;
+  if (recFile) console.log(`[thumbtide] recording all room traffic to ${recFile}`);
   const server = startServer({
     port,
     allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",").map((s) => s.trim()),
+    record: recStream ? (line) => recStream.write(`${JSON.stringify(line)}\n`) : undefined,
   });
   server.ready.then((p) => console.log(`[thumbtide] relay listening on :${p}`));
   const stopKeepAwake = keepAwake();

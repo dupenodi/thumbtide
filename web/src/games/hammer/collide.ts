@@ -156,8 +156,10 @@ export function collideAll(bodies: Body[], dt: number, onContact?: (c: ContactRe
   const n = bodies.length;
   for (let i = 0; i < n; i++) {
     const A = bodies[i]!;
+    if (!A.solid) continue;
     for (let j = i + 1; j < n; j++) {
       const B = bodies[j]!;
+      if (!B.solid) continue;
       if (A.group >= 0 && A.group === B.group) continue;
       if (A.team >= 0 && A.team === B.team) continue;
       if (A.invMass === 0 && B.invMass === 0) continue;
@@ -234,6 +236,9 @@ function resolve(A: Body, B: Body, m: Manifold, dt: number, onContact?: (c: Cont
   const e = (A.cor + B.cor) / 2;
   const mu = (A.cof + B.cof) / 2;
   let total = 0;
+  // the closing speed and relative speed at the contact before the impulse (the game reads them for hit types)
+  let approach = 0;
+  let rel = 0;
   for (let k = 0; k < m.count; k++) {
     const cx = m.px[k]!;
     const cy = m.py[k]!;
@@ -249,6 +254,10 @@ function resolve(A: Body, B: Body, m: Manifold, dt: number, onContact?: (c: Cont
     const rvy = vby - vay;
     const vn = rvx * nx + rvy * ny;
     if (vn >= 0) continue;
+    if (-vn > approach) {
+      approach = -vn;
+      rel = Math.hypot(rvx, rvy);
+    }
     const ran = rax * ny - ray * nx;
     const rbn = rbx * ny - rby * nx;
     const kn = imSum + iiA * ran * ran + iiB * rbn * rbn;
@@ -289,5 +298,5 @@ function resolve(A: Body, B: Body, m: Manifold, dt: number, onContact?: (c: Cont
     b.pa = b.a - b.w * dt;
   }
 
-  if (onContact) onContact({ a: A, b: B, impulse: total, nx, ny, x: m.px[0]!, y: m.py[0]! });
+  if (onContact) onContact({ a: A, b: B, impulse: total, approach, rel, nx, ny, x: m.px[0]!, y: m.py[0]! });
 }

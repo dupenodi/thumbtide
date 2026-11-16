@@ -38,6 +38,13 @@ interface Float {
 }
 
 const HULL_R = 16.5;
+/** The rotor strip: frames, and the box one frame covers in the hull's frame (blade ±24 plus its round cap). */
+const ROTOR_FRAMES = 8;
+const ROTOR_W = 54;
+const ROTOR_Y = -HULL_R - 12;
+const ROTOR_H = 13;
+/** Sparks fade in this many steps (each step of each colour is one stroke). */
+const SPARK_LEVELS = 3;
 
 export class Fx {
   sparks: Spark[] = [];
@@ -103,10 +110,19 @@ export class Renderer {
   private bg: HTMLCanvasElement | null = null;
   /** The mace ball's shading, made once (it's in the ball's local frame, so it fits every ball). */
   private ballGrad: CanvasGradient | null = null;
+  /** The arena shown (world px); a bigger arena is a smaller scale, the same canvas. */
+  private worldW = VIEW_W;
+  private worldH = VIEW_H;
+  /** The world-to-canvas offset of this frame (the screen shake); the scale is `scale`. */
+  private baseX = 0;
+  private baseY = 0;
+  /** Where solid() and mesh() paint: a sprite's canvas while one is painted, else the game canvas. */
+  private pen: CanvasRenderingContext2D | null = null;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
-    private opts: { maxDpr?: number; maxWidth?: number; names?: boolean } = {},
+    /** skip: perf A/B only (the host passes it in perf builds): layers not to draw (sky, trails, weapons, machines, sparks, floats). */
+    private opts: { maxDpr?: number; maxWidth?: number; names?: boolean; skip?: Set<string> } = {},
   ) {
     this.ctx = canvas.getContext("2d", { alpha: false })!;
   }
@@ -116,56 +132,131 @@ export class Renderer {
     const r = this.canvas.getBoundingClientRect();
     const w = Math.min(Math.round(r.width * dpr), this.opts.maxWidth ?? 4096);
     this.canvas.width = w;
-    this.canvas.height = Math.round((w * VIEW_H) / VIEW_W);
-    this.scale = this.canvas.width / VIEW_W;
+    this.canvas.height = Math.round((w * this.worldH) / this.worldW);
+    this.scale = this.canvas.width / this.worldW;
     this.bg = paintBackdrop(this.canvas.width, this.canvas.height, this.scale);
   }
 
   draw(arena: Arena, alpha: number, fx: Fx): void {
+    // a new arena size (between rounds): a new scale; the sprite caches follow the scale
+    if (arena.w !== this.worldW || arena.h !== this.worldH) {
+      this.worldW = arena.w;
+      this.worldH = arena.h;
+      this.resize();
+    }
     const ctx = this.ctx;
     const s = this.scale;
+    const skip = this.opts.skip;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this.sky();
+    if (!skip?.has("sky")) this.sky();
+    else {
+      ctx.fillStyle = "#1a1f33";
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
     const sh = fx.shake;
-    ctx.setTransform(s, 0, 0, s, (Math.random() - 0.5) * sh * s, (Math.random() - 0.5) * sh * s);
+    this.baseX = (Math.random() - 0.5) * sh * s;
+    this.baseY = (Math.random() - 0.5) * sh * s;
+    ctx.setTransform(s, 0, 0, s, this.baseX, this.baseY);
 
     // monsters first (behind the machines), then the machines' trails, weapons and hulls
     for (const m of arena.machines) if (m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.creature(arena, m, alpha);
-    for (const m of arena.machines) if (!m.monster) this.trail(m, alpha, fx);
-    for (const m of arena.machines) if (!m.monster) this.weapon(m, alpha);
+    if (!skip?.has("trails")) for (const m of arena.machines) if (!m.monster) this.trail(m, alpha, fx);
+    if (!skip?.has("weapons")) for (const m of arena.machines) if (!m.monster) this.weapon(m, alpha);
     // a wreck that has faded out (or left play) draws nothing: skip its paths entirely
-    for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
+    if (!skip?.has("machines")) for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
     if (arena.shots.length) this.shots(arena, alpha);
     this.plates(arena, alpha);
+    if (arena.obstacles.length) this.obstacles(arena);
     if (fx.coins.list.length) this.coins(fx.coins);
 
     ctx.lineCap = "round";
-    for (const p of fx.sparks) {
-      const k = p.life / p.max;
-      ctx.strokeStyle = p.color;
-      ctx.globalAlpha = Math.min(1, k * 1.5);
-      ctx.lineWidth = p.w * k + 0.5;
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    ctx.textAlign = "center";
-    let font = "";
-    for (const f of fx.floats) {
-      ctx.globalAlpha = Math.min(1, f.life * 2);
-      const want = `${f.size}px "Russo One", system-ui, sans-serif`;
-      if (want !== font) ctx.font = font = want; // setting a font parses it
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = "rgba(10,12,20,0.85)";
-      ctx.strokeText(f.text, f.x, f.y);
-      ctx.fillStyle = f.color;
-      ctx.fillText(f.text, f.x, f.y);
+    if (!skip?.has("sparks")) this.sparks(fx);
+    if (!skip?.has("floats")) {
+      // damage numbers: a cached picture each (outlined text cost the TV two text draws per number per frame)
+      for (const f of fx.floats) {
+        const t = this.textSprite(f.text, f.color, f.size);
+        ctx.globalAlpha = Math.min(1, f.life * 2);
+        ctx.drawImage(t.c, f.x - t.w / 2, f.y - t.asc, t.w, t.h);
+      }
     }
     ctx.globalAlpha = 1;
     for (const m of arena.machines) this.offscreen(m, alpha);
   }
+
+  /**
+   * Sparks in a few strokes, not one each: grouped by colour and by one of SPARK_LEVELS brightness (and width)
+   * steps of their remaining life. With 8 machines there were up to ~55 separate strokes a frame.
+   */
+  private sparkPaths = new Map<string, number[]>();
+  private sparks(fx: Fx): void {
+    const ctx = this.ctx;
+    const groups = this.sparkPaths;
+    for (const g of groups.values()) g.length = 0;
+    for (const p of fx.sparks) {
+      const k = p.life / p.max;
+      const level = Math.min(SPARK_LEVELS - 1, Math.floor(k * SPARK_LEVELS));
+      const key = `${p.color}|${p.w}|${level}`;
+      let g = groups.get(key);
+      if (!g) groups.set(key, (g = []));
+      g.push(p.x, p.y, p.x - p.vx * 0.03, p.y - p.vy * 0.03);
+    }
+    for (const [key, g] of groups) {
+      if (!g.length) continue;
+      const [color, w, lv] = key.split("|");
+      const k = (Number(lv) + 0.5) / SPARK_LEVELS;
+      ctx.strokeStyle = color!;
+      ctx.globalAlpha = Math.min(1, k * 1.5);
+      ctx.lineWidth = Number(w) * k + 0.5;
+      ctx.beginPath();
+      for (let i = 0; i < g.length; i += 4) {
+        ctx.moveTo(g[i]!, g[i + 1]!);
+        ctx.lineTo(g[i + 2]!, g[i + 3]!);
+      }
+      ctx.stroke();
+    }
+    if (groups.size > 64) groups.clear(); // colours come and go with players
+  }
+
+  private texts = new Map<string, { c: HTMLCanvasElement; w: number; h: number; asc: number }>();
+  /** An outlined damage number (or word), drawn once per text, colour, size and scale. */
+  private textSprite(text: string, color: string, size: number): { c: HTMLCanvasElement; w: number; h: number; asc: number } {
+    if (this.textScale !== this.scale) {
+      this.texts.clear();
+      this.textScale = this.scale;
+    }
+    const key = `${text}|${color}|${size}`;
+    let t = this.texts.get(key);
+    if (t) return t;
+    const s = this.scale;
+    const font = `${size}px "Russo One", system-ui, sans-serif`;
+    this.ctx.font = font;
+    const w = Math.ceil(this.ctx.measureText(text).width) + 8;
+    const h = Math.ceil(size * 1.3) + 6;
+    const asc = Math.ceil(size * 0.95) + 3;
+    const c = document.createElement("canvas");
+    c.width = Math.ceil(w * s);
+    c.height = Math.ceil(h * s);
+    const g = c.getContext("2d")!;
+    g.scale(c.width / w, c.height / h);
+    g.font = font;
+    g.textAlign = "center";
+    g.lineJoin = "round";
+    g.lineWidth = 4;
+    g.strokeStyle = "rgba(10,12,20,0.85)";
+    g.strokeText(text, w / 2, asc);
+    g.fillStyle = color;
+    g.fillText(text, w / 2, asc);
+    t = { c, w, h, asc };
+    // keep it once the font is in (else the fallback font would stick); if the font never loads, keep the
+    // fallback after 120 misses rather than paint a new canvas for every number in every frame
+    if ((document.fonts?.check?.(font) ?? true) || ++this.fontMisses > 120) {
+      if (this.texts.size > 96) this.texts.clear();
+      this.texts.set(key, t);
+    }
+    return t;
+  }
+  private textScale = 0;
+  private fontMisses = 0;
 
   /** Coin pictures: 3 metals × COIN_FRAMES spin widths, painted once per scale (paths per coin cost the TV). */
   private coinAtlas: HTMLCanvasElement | null = null;
@@ -225,7 +316,7 @@ export class Renderer {
   }
 
   private mesh(b: Body): void {
-    const ctx = this.ctx;
+    const ctx = this.pen ?? this.ctx;
     ctx.beginPath();
     for (let i = 0; i < b.count; i++) {
       if (i === 0) ctx.moveTo(b.lx[i]!, b.ly[i]!);
@@ -358,8 +449,62 @@ export class Renderer {
         ctx.lineTo(bx + Math.cos(ba) * minX, by + Math.sin(ba) * minX);
         ctx.stroke();
       }
+      if (part.look === "link" && PALETTE[part.material].fill === linkFill) {
+        // a link on a rod (none today): its shaft is drawn, the link itself goes in the batched chain path
+        if (!linksDrawn) strokeLinks();
+        continue;
+      }
+      // the part is one picture, painted once (paths cost the TV per frame; 8 machines of them took ~9 fps)
+      const sp = this.partSprite(b, part);
+      const c = Math.cos(ba) * this.scale;
+      const sn = Math.sin(ba) * this.scale;
+      ctx.setTransform(c, sn, -sn, c, bx * this.scale + this.baseX, by * this.scale + this.baseY);
+      ctx.drawImage(sp.c, sp.x, sp.y, sp.w, sp.h);
+      ctx.setTransform(this.scale, 0, 0, this.scale, this.baseX, this.baseY);
+    }
+  }
+
+  private parts = new WeakMap<Body, { c: HTMLCanvasElement; x: number; y: number; w: number; h: number }>();
+  private partScale = 0;
+  /** A weapon part's picture in its own frame (origin at the body, +x along it), at the canvas's pixel scale. */
+  private partSprite(b: Body, part: NonNullable<Tag["spec"]>): { c: HTMLCanvasElement; x: number; y: number; w: number; h: number } {
+    if (this.partScale !== this.scale) {
+      this.parts = new WeakMap();
+      this.partScale = this.scale;
+    }
+    let sp = this.parts.get(b);
+    if (sp) return sp;
+    const { minX, maxX, maxY } = bounds(b);
+    // room for the spikes, the tip, the guard and the barrel round the mesh (all within 8 px) plus the stroke
+    const r = part.look === "hammer" || part.look === "mallet" || part.look === "axe" || part.look === "blade" || part.look === "spike" || part.look === "link" || part.look === "handle" || part.look === "gun" ? maxY : Math.max(maxX, maxY);
+    const x = Math.min(minX, -r) - 10;
+    const y = -r - 10;
+    const w = Math.max(maxX, r) + 10 - x;
+    const h = 2 * (r + 10);
+    const s = this.scale;
+    const c = document.createElement("canvas");
+    c.width = Math.ceil(w * s);
+    c.height = Math.ceil(h * s);
+    const g = c.getContext("2d")!;
+    g.setTransform(c.width / w, 0, 0, c.height / h, (-x * c.width) / w, (-y * c.height) / h);
+    g.lineJoin = "round";
+    g.lineCap = "round";
+    this.pen = g;
+    try {
+      this.paintPart(g, b, part);
+    } finally {
+      this.pen = null;
+    }
+    sp = { c, x, y, w, h };
+    this.parts.set(b, sp);
+    return sp;
+  }
+
+  /** Paints one weapon part in its own frame (the body's origin, +x along the part). */
+  private paintPart(ctx: CanvasRenderingContext2D, b: Body, part: NonNullable<Tag["spec"]>): void {
+    {
+      const { minX, maxX, maxY } = bounds(b);
       const pal = PALETTE[part.material];
-      this.enter(b, alpha);
       if (part.look === "hammer") {
         // spikes on both striking faces and the top, sized to the head
         ctx.fillStyle = "#c9ced8";
@@ -421,12 +566,6 @@ export class Renderer {
         ctx.fill();
         this.solid(b, pal, 1.5);
       } else if (part.look === "link") {
-        if (pal.fill === linkFill) {
-          // a link on a rod (none today): its shaft is drawn, the link itself goes in the batched chain path
-          ctx.restore();
-          if (!linksDrawn) strokeLinks();
-          continue;
-        }
         ctx.strokeStyle = pal.fill;
         ctx.lineWidth = 2;
         ctx.strokeRect(-5, -3, 10, 6);
@@ -476,7 +615,45 @@ export class Renderer {
           }
         }
       }
-      ctx.restore();
+    }
+  }
+
+  /** Crates (planks; cracks as they lose health) and stone pillars. Static: a few rects each. */
+  private obstacles(arena: Arena): void {
+    const ctx = this.ctx;
+    for (const o of arena.obstacles) {
+      const { x, y } = o.body;
+      const { hw, hh } = o;
+      if (o.kind === "pillar") {
+        ctx.fillStyle = "#4d5361";
+        ctx.fillRect(x - hw, y - hh, 2 * hw, 2 * hh);
+        ctx.fillStyle = "#666d7d";
+        ctx.fillRect(x - hw, y - hh, 2 * hw, 5);
+        ctx.fillRect(x - hw, y + hh - 5, 2 * hw, 5);
+        continue;
+      }
+      ctx.fillStyle = "#3a2a18";
+      ctx.fillRect(x - hw, y - hh, 2 * hw, 2 * hh);
+      ctx.fillStyle = "#9a6b3a";
+      ctx.fillRect(x - hw + 3, y - hh + 3, 2 * hw - 6, 2 * hh - 6);
+      // planks and the cross brace
+      ctx.strokeStyle = "#5a3e20";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let k = 1; k < 3; k++) {
+        const py = y - hh + (2 * hh * k) / 3;
+        ctx.moveTo(x - hw + 3, py);
+        ctx.lineTo(x + hw - 3, py);
+      }
+      ctx.moveTo(x - hw + 3, y - hh + 3);
+      ctx.lineTo(x + hw - 3, y + hh - 3);
+      // cracks once it is half broken
+      if (o.hp < o.max * 0.5) {
+        ctx.moveTo(x - hw * 0.2, y - hh);
+        ctx.lineTo(x + hw * 0.1, y - hh * 0.2);
+        ctx.lineTo(x - hw * 0.3, y + hh * 0.4);
+      }
+      ctx.stroke();
     }
   }
 
@@ -485,6 +662,13 @@ export class Renderer {
     const ctx = this.ctx;
     for (const b of arena.world.bodies) {
       const t = b.data as Tag | null;
+      if (t?.gibUntil !== undefined) {
+        // a wreck's shard: its colour while it can still hurt, then scorched grey
+        this.enter(b, alpha);
+        this.solid(b, { fill: t.wood ? "#9a6b3a" : arena.t < t.gibUntil ? t.m.color : "#4a4d57", stroke: "rgba(0,0,0,0.55)" }, 1.5);
+        ctx.restore();
+        continue;
+      }
       if (!t?.plate) continue;
       const pal = PALETTE[PLATES[t.plate].material];
       if (!t.loose && t.m.alive) {
@@ -653,7 +837,7 @@ export class Renderer {
 
   /** Fill and outline a body's mesh in a material. */
   private solid(b: Body, pal: { fill: string; stroke: string }, width = 2): void {
-    const ctx = this.ctx;
+    const ctx = this.pen ?? this.ctx;
     ctx.fillStyle = pal.fill;
     ctx.strokeStyle = pal.stroke;
     ctx.lineWidth = width;
@@ -669,20 +853,12 @@ export class Renderer {
     if (!m.alive) ctx.globalAlpha = Math.max(0, 1 - (arena.t - m.diedAt) / 2.5);
 
     if (m.alive) {
+      // the rotor: one frame of a cached strip (blade width follows the spin)
       const spin = Math.abs(Math.sin(arena.t * 38 + m.id));
-      ctx.strokeStyle = "rgba(220,225,240,0.7)";
-      ctx.lineWidth = 3;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(-24 * spin, -HULL_R - 7);
-      ctx.lineTo(24 * spin, -HULL_R - 7);
-      ctx.stroke();
-      ctx.fillStyle = "rgba(220,225,240,0.10)";
-      ctx.beginPath();
-      ctx.ellipse(0, -HULL_R - 7, 24, 3, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#3a3f4b";
-      ctx.fillRect(-1.5, -HULL_R - 7, 3, 7);
+      const atlas = this.rotorAtlas();
+      const f = Math.min(ROTOR_FRAMES - 1, Math.floor(spin * ROTOR_FRAMES));
+      const cw = atlas.width / ROTOR_FRAMES;
+      ctx.drawImage(atlas, f * cw, 0, cw, atlas.height, -ROTOR_W / 2, ROTOR_Y, ROTOR_W, ROTOR_H);
     }
 
     // the hull is one picture (body, shade, window), made once per colour and facing
@@ -718,6 +894,40 @@ export class Renderer {
       const label = this.nameSprite(m.name, m.color);
       ctx.drawImage(label.c, x - label.w / 2, by - 4 - NAME_ASC, label.w, NAME_H);
     }
+  }
+
+  private rotors: HTMLCanvasElement | null = null;
+  private rotorScale = 0;
+  /** The rotor in ROTOR_FRAMES spin widths side by side (disc, blade and mast), at the canvas's pixel scale. */
+  private rotorAtlas(): HTMLCanvasElement {
+    if (this.rotors && this.rotorScale === this.scale) return this.rotors;
+    const cw = Math.ceil(ROTOR_W * this.scale);
+    const ch = Math.ceil(ROTOR_H * this.scale);
+    const c = document.createElement("canvas");
+    c.width = cw * ROTOR_FRAMES;
+    c.height = ch;
+    const g = c.getContext("2d")!;
+    for (let f = 0; f < ROTOR_FRAMES; f++) {
+      // frame f stands for spins in [f, f+1) / ROTOR_FRAMES: draw its middle
+      const spin = (f + 0.5) / ROTOR_FRAMES;
+      g.setTransform(cw / ROTOR_W, 0, 0, ch / ROTOR_H, f * cw + cw / 2, (-ROTOR_Y * ch) / ROTOR_H);
+      g.fillStyle = "rgba(220,225,240,0.10)";
+      g.beginPath();
+      g.ellipse(0, -HULL_R - 7, 24, 3, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "rgba(220,225,240,0.7)";
+      g.lineWidth = 3;
+      g.lineCap = "round";
+      g.beginPath();
+      g.moveTo(-24 * spin, -HULL_R - 7);
+      g.lineTo(24 * spin, -HULL_R - 7);
+      g.stroke();
+      g.fillStyle = "#3a3f4b";
+      g.fillRect(-1.5, -HULL_R - 7, 3, 7);
+    }
+    this.rotors = c;
+    this.rotorScale = this.scale;
+    return c;
   }
 
   private hulls = new Map<string, HTMLCanvasElement>();
@@ -797,9 +1007,9 @@ export class Renderer {
     if (!m.alive) return;
     const [x, y] = lerpBody(m.hull, alpha);
     const pad = 14;
-    if (x > -HULL_R && x < VIEW_W + HULL_R && y > -HULL_R && y < VIEW_H + HULL_R) return;
-    const cx = Math.max(pad, Math.min(VIEW_W - pad, x));
-    const cy = Math.max(pad, Math.min(VIEW_H - pad, y));
+    if (x > -HULL_R && x < this.worldW + HULL_R && y > -HULL_R && y < this.worldH + HULL_R) return;
+    const cx = Math.max(pad, Math.min(this.worldW - pad, x));
+    const cy = Math.max(pad, Math.min(this.worldH - pad, y));
     const ang = Math.atan2(y - cy, x - cx);
     const ctx = this.ctx;
     ctx.save();

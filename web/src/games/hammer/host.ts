@@ -7,11 +7,13 @@ import { colorFor } from "../../config.ts";
 import { audio } from "../../shell/sound.ts";
 import { isWebOS, startParam } from "../../shell/tv.ts";
 import { frameDrawn, setPerfExtras } from "../../shell/perf.ts";
+import { profBegin, profEnd } from "../../shell/profiler.ts";
 import { makeTour } from "./tour.ts";
 import { createGameAudio } from "./audio.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount } from "../types.ts";
-import { type Bot, driveBot, makeBot } from "./bots.ts";
+import { applyArenaKind, spawnPoint, STICK_DEFAULTS, type StickTune, stickPush as stickPushFor } from "./arenas.ts";
+import { type Bot, driveBot, makeBot, newRound, PROFILES, type ProfileId, profileLoadout, ROSTER } from "./bots.ts";
 import "./hammer.css";
 import { loadGameFont } from "./font.ts";
 import { Hud, type SeatView } from "./hud.ts";
@@ -23,17 +25,6 @@ import { DEFAULT_TUNING } from "./tuning.ts";
 import { GUN_KINDS, type GunKind, MACHINE, type Material, PLATE_KINDS, type PlateKind, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
 const MAX_SEATS = 8;
-const SPAWNS: [number, number][] = [
-  [220, 170],
-  [740, 170],
-  [220, 370],
-  [740, 370],
-  // seats 5-8: even slots (left HUD side, Red) on the left half, odd on the right
-  [110, 270],
-  [850, 270],
-  [390, 400],
-  [570, 400],
-];
 /** Computer players: colours away from the first human colours, and never white (white is the hit flash). */
 const BOT_COLORS = ["#c18cff", "#ff9f43", "#2de2c9", "#a3e048", "#ff7eb6", "#ffd84a", "#7ee0ff", "#b8c0d0"];
 /** Team modes: Red is the odd players P1, P3, P5, P7 (the left HUD side), Blue the even ones; each member gets a shade of the team colour. */
@@ -49,8 +40,12 @@ const PVE_TEAMS = [
 const MONSTER_TEAM = 9;
 const MAX_MONSTERS = 4;
 const MONSTER_COLOR = "#c8995a";
-const PICK_S = 8;
-const FIRST_PICK_S = 12;
+// The warm-up (weapon pick, no damage). Shorter after the play test: with ~15 s rounds, 4 s of result and 8 s of
+// pick were nearly half the session.
+const PICK_S = 5;
+const FIRST_PICK_S = 10;
+/** Between the rounds of a match when the weapon pick is "Each match only": just the 3-2-1. */
+const READY_S = 3;
 const RESULT_S = 4;
 const MATCH_S = 7;
 /** Real seconds after the last KO before the round is called (let the wreck fall). */
@@ -68,6 +63,8 @@ const BODY_BUDGET = 90;
 interface Seat {
   /** Real seconds since this player last moved the stick; an autopilot bot flies the machine while they're away. */
   idle: number;
+  /** Fought a round of this match (its loadout is fixed with "Weapon pick: each match only"). */
+  fought?: boolean;
   auto: Bot | null;
   id: string;
   name: string;
@@ -95,32 +92,20 @@ const mount: HostMount = (ctx) => {
   const host = ctx.host as Host<HammerGame>;
   const spec = gameById("hammer")!.controls!;
   const gain = spec.tune.gain ?? 6;
-  const stickGain = spec.tune.stick ?? 150;
-  const steer = spec.tune.steer ?? 8;
-  const hold = spec.tune.hold ?? 0.5;
-  /** Stick (not in Hammerfight): the tilt sets a target speed; the thrust closes the gap. The cap grows with the tilt (full
-   *  from half tilt), so a thumb that rests near the centre gives a small force, not a full brake, and no step at the dead zone. */
-  const stickPush = (m: Machine, x: number, y: number) => {
-    const l = Math.hypot(x, y);
-    if (l < 0.02) return;
-    const top = arena.tuning.speedClip * Math.min(1, l);
-    const tx = (x / l) * top;
-    const ty = (y / l) * top;
-    let ix = steer * (tx - m.hull.vx) + hold * tx;
-    let iy = steer * (ty - m.hull.vy) + hold * ty;
-    const cap = stickGain * Math.min(1, l / 0.5);
-    const il = Math.hypot(ix, iy);
-    if (il > cap) {
-      ix *= cap / il;
-      iy *= cap / il;
-    }
-    arena.pushRaw(m, ix, iy);
-  };
+  const stickTune: StickTune = { stick: spec.tune.stick ?? STICK_DEFAULTS.stick, steer: spec.tune.steer ?? STICK_DEFAULTS.steer, hold: spec.tune.hold ?? STICK_DEFAULTS.hold };
+  const stickPush = (m: Machine, x: number, y: number) => stickPushFor(arena, m, x, y, stickTune);
 
   const lite = isWebOS || !!startParam("lite");
   // lite (the TV): 15 joint passes instead of 30. Heavy chains cost about a third less per step; the mean chain
   // stretch goes from 0.05 to 0.1 px (measured, 4 orb maces + plates + a worm), which nobody can see.
-  const tuning = { ...DEFAULT_TUNING, ...(lite ? { passes: 15 } : {}) };
+  // perf A/B (perf builds only): passes=N joint passes, canvasw=W canvas width (min 320), hud=off, draw=off (the canvas keeps one picture)
+  const abPasses = import.meta.env.VITE_PERF === "1" ? Number(startParam("passes")) || 0 : 0;
+  const abHudOff = import.meta.env.VITE_PERF === "1" && startParam("hud") === "off";
+  const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
+  // kos=burst (perf builds): every 6 s in a fight, wreck 3 machines at once (the worst moment for shards and coins)
+  const abKoBurst = import.meta.env.VITE_PERF === "1" && startParam("kos") === "burst";
+  let koBurstAt = 6;
+  const tuning = { ...DEFAULT_TUNING, ...(lite ? { passes: 15, gibs: 3 } : {}), ...(abPasses ? { passes: abPasses } : {}), ...(import.meta.env.VITE_PERF === "1" && startParam("gibs") !== null ? { gibs: Number(startParam("gibs")) || 0 } : {}) };
   const arena = new Arena(tuning);
   // the weapon tours (TV tests only): every melee weapon, or every gun and plate, in turn, with physics, draw and
   // fight numbers in each perf report
@@ -149,12 +134,18 @@ const mount: HostMount = (ctx) => {
   const root = document.createElement("div");
   // hm-lite: the TV skips filters, gradient text and endless animations, which it repaints slowly
   root.className = lite ? "hm-root hm-lite" : "hm-root";
+  // HUD layer A/B on the TV (perf builds only): hudfix=layer+noskew (see hammer.css)
+  if (import.meta.env.VITE_PERF === "1") for (const f of (startParam("hudfix") ?? "").split("+").filter(Boolean)) root.classList.add(`hm-ab-${f}`);
   root.innerHTML = `<canvas class="hm-canvas"></canvas>`;
   ctx.root.appendChild(root);
   const canvas = root.querySelector<HTMLCanvasElement>(".hm-canvas")!;
   const hud = new Hud(root);
   // The TV draws at 1280 x 720 and lets the screen scale it up; its GPU can't afford a 4K canvas.
-  const renderer = new Renderer(canvas, { maxDpr: isWebOS ? 1 : 2, maxWidth: isWebOS ? 1280 : 4096, names: true });
+  // canvasw=<px>: the canvas width (perf A/B; `res` is a fraction in other games, so not that name)
+  const resAB = import.meta.env.VITE_PERF === "1" ? Math.max(0, Number(startParam("canvasw")) || 0) : 0;
+  if (resAB && resAB < 320) throw new Error(`canvasw=${resAB}: give the canvas width in pixels (320 or more)`);
+  const skipAB = import.meta.env.VITE_PERF === "1" && startParam("skip") ? new Set(startParam("skip")!.split("+")) : undefined;
+  const renderer = new Renderer(canvas, { maxDpr: isWebOS ? 1 : 2, maxWidth: resAB || (isWebOS ? 1280 : 4096), names: true, skip: skipAB });
 
   const fit = () => {
     const W = root.clientWidth;
@@ -176,9 +167,6 @@ const mount: HostMount = (ctx) => {
   let botSerial = 0;
   let machineSerial = 0;
 
-  const randomWeapon = (): WeaponKind => WEAPON_KINDS[Math.floor(Math.random() * WEAPON_KINDS.length)]!;
-  /** About one bot in three takes a gun. */
-  const randomSidearm = (): GunKind | null => (Math.random() < 0.35 ? GUN_KINDS[Math.floor(Math.random() * GUN_KINDS.length)]! : null);
   /** What the phone shows of a machine's gun and plates: sent again when it changes. */
   const gunSig = (m: Machine | null) => {
     const g = gunOf(m);
@@ -254,8 +242,8 @@ const mount: HostMount = (ctx) => {
     for (let i = 0; i < n; i++) {
       const left = i % 2 === 0;
       const kind = round >= 3 && i % 2 === 1 ? "armoredworm" : "worm";
-      const y = 120 + Math.random() * (VIEW_H - 240);
-      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, x: left ? -40 : VIEW_W + 40, y, dir: left ? 0 : Math.PI, segments }));
+      const y = 120 + Math.random() * (arena.h - 240);
+      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, x: left ? -40 : arena.w + 40, y, dir: left ? 0 : Math.PI, segments }));
     }
   };
 
@@ -284,21 +272,26 @@ const mount: HostMount = (ctx) => {
     for (let i = have.length; i < want; i++) {
       const id = `bot:${++botSerial}`;
       const n = bots().length;
+      // a personality not yet in the room (the roster has 8, so 7 bots are all different)
+      const taken = new Set(bots().map((b) => b.bot?.profile.id));
+      const free = ROSTER.filter((p) => !taken.has(p));
+      const pid: ProfileId = free[Math.floor(Math.random() * free.length)] ?? ROSTER[n % ROSTER.length]!;
+      const kit = profileLoadout(pid);
       seats.set(id, {
         id,
-        name: `CPU ${n + 1}`,
+        name: PROFILES[pid].name,
         color: BOT_COLORS[n % BOT_COLORS.length]!,
         human: false,
         idle: 0,
         auto: null,
-        weapon: randomWeapon(),
-        sidearm: randomSidearm(),
-        plate: Math.random() < 0.3 ? PLATE_KINDS[Math.floor(Math.random() * PLATE_KINDS.length)]! : null,
+        weapon: kit.weapon,
+        sidearm: kit.gun,
+        plate: kit.plate,
         gunSig: "",
         wins: 0,
         slot: -1,
         m: null,
-        bot: makeBot("fight", VIEW_W / 2, VIEW_H / 2),
+        bot: makeBot("fight", VIEW_W / 2, VIEW_H / 2, pid, botSerial),
         s: -1,
         k: -1,
         tx: 0,
@@ -320,7 +313,8 @@ const mount: HostMount = (ctx) => {
   };
 
   const spawn = (s: Seat) => {
-    const [x, y] = SPAWNS[s.slot] ?? [VIEW_W / 2, VIEW_H / 2];
+    // the spawn table is for the classic frame: the same shares of a bigger arena
+    const [x, y] = spawnPoint(arena, s.slot);
     if (s.m) {
       arena.respawn(s.m, x, y, s.weapon, s.sidearm, s.plate);
     } else {
@@ -382,6 +376,8 @@ const mount: HostMount = (ctx) => {
   let left = FIRST_PICK_S;
   /** This warm-up's full length (the first one is longer), for the countdown bar and while waiting for players. */
   let pickTotal = FIRST_PICK_S;
+  /** A 3-2-1 between rounds with "Each match only": everyone keeps their weapon (no picks, bots keep theirs). */
+  let readyOnly = false;
   /** Real seconds in the current phase. */
   let phaseFor = 0;
   let lastWhole = -1;
@@ -412,6 +408,7 @@ const mount: HostMount = (ctx) => {
       alive: !!s.m && s.m.alive,
       wins: s.wins,
       seated: s.slot >= 0,
+      fixed: readyOnly && s.fought,
     });
   };
   const pushShared = () => {
@@ -429,6 +426,14 @@ const mount: HostMount = (ctx) => {
   };
 
   // ---- phases ------------------------------------------------------------------------------------
+  let arenaKind = "";
+  /** Size and obstacles from the Arena setting; the coins and spawns follow the size. */
+  const applyArena = () => {
+    arenaKind = String(ctx.settings().arena ?? "classic");
+    const { w, h } = applyArenaKind(arena, arenaKind);
+    fx.coins.w = w;
+    fx.coins.h = h;
+  };
   const startPick = (seconds = PICK_S) => {
     phase = "pick";
     arena.suddenDeath = false;
@@ -441,6 +446,8 @@ const mount: HostMount = (ctx) => {
       round = 0;
     }
     round++;
+    // the arena is rebuilt for each round (fresh crates; a new Arena choice applies from the next round)
+    applyArena(); // every round: broken crates come back
     left = seconds;
     pickTotal = seconds;
     phaseFor = 0;
@@ -452,7 +459,18 @@ const mount: HostMount = (ctx) => {
     tuning.damage = 0; // warm-up: fly and swing, no damage
     tuning.slomo = 0;
     applyToggles();
-    for (const s of bots()) s.weapon = randomWeapon();
+    readyOnly = seconds === READY_S && round > 1;
+    if (round === 1) for (const s of seats.values()) s.fought = false;
+    // bots take their personality's loadout (mostly its first weapon); a new round gives them a new mood
+    for (const s of bots()) {
+      if (!s.bot) continue;
+      newRound(s.bot);
+      if (readyOnly) continue;
+      const kit = profileLoadout(s.bot.profile.id);
+      s.weapon = kit.weapon;
+      s.sidearm = kit.gun;
+      s.plate = kit.plate;
+    }
     syncBots();
     fillSeats();
     for (const s of seated()) spawn(s);
@@ -475,6 +493,7 @@ const mount: HostMount = (ctx) => {
 
   const startFight = () => {
     phase = "fight";
+    for (const s of seated()) s.fought = true;
     arena.suddenDeath = false;
     if (mode === "pvm") spawnWave();
     phaseFor = 0;
@@ -583,7 +602,7 @@ const mount: HostMount = (ctx) => {
     }
     if (left > 0) return;
     if (phase === "pick") startFight();
-    else if (phase === "result") startPick();
+    else if (phase === "result") startPick(ctx.settings().warmup === "match" ? READY_S : PICK_S);
     else {
       for (const s of seats.values()) s.wins = 0;
       round = 0;
@@ -611,6 +630,9 @@ const mount: HostMount = (ctx) => {
       if (isSys(d) || !d || typeof d !== "object") return;
       const s = seats.get(p.id);
       if (!s) return;
+      // "Each match only": the loadout is fixed between the rounds of a match
+      // (a player who hasn't fought in this match yet, e.g. one who just joined, still picks once)
+      if (readyOnly && phase === "pick" && s.fought) return;
       if (d.type === "weapon" && WEAPON_KINDS.includes(d.weapon)) s.weapon = d.weapon;
       else if (d.type === "gun" && (d.gun === null || GUN_KINDS.includes(d.gun))) s.sidearm = d.gun;
       else if (d.type === "plate" && (d.plate === null || PLATE_KINDS.includes(d.plate))) s.plate = d.plate;
@@ -647,7 +669,7 @@ const mount: HostMount = (ctx) => {
     s.idle = moving ? 0 : s.idle + STEP;
     // away (or phone asleep) in a fight: a bot flies for them, so the round doesn't stall
     if (phase === "fight" && s.idle > IDLE_S) {
-      s.auto ??= makeBot("fight", m.hull.x, m.hull.y);
+      s.auto ??= makeBot("fight", m.hull.x, m.hull.y, "pilot", m.id);
       driveBot(arena, m, s.auto);
       if (inp && inp.k === 0) {
         s.tx = inp.x;
@@ -732,6 +754,23 @@ const mount: HostMount = (ctx) => {
         clashCd = 0.06;
         const n = 4 + Math.min(10, Math.round(e.impact / 10));
         fx.burst(e.x, e.y, lite ? Math.ceil(n / 2) : n, 220, "#cfe3ff", 1.5);
+      } else if (e.type === "crack") {
+        sound?.hit(e.dmg, e.dmg * 4, 1, "wood");
+        fx.burst(e.x, e.y, lite ? 3 : 6, 200, "#c89a5e", 2);
+      } else if (e.type === "break") {
+        // a crate bursts: splinters (sim) and a handful of coins
+        sound?.disarm();
+        fx.burst(e.x, e.y, lite ? 12 : 24, 320, "#c89a5e", 2.5);
+        fx.shake = Math.min(12, fx.shake + 5);
+        const n = coinsOff ? 0 : fx.coins.spill(e.x, e.y, 24);
+        if (n) sound?.coin(n);
+      } else if (e.type === "slam") {
+        // a reeling machine smashed into something: more stun
+        sound?.clash(e.impact);
+        fx.burst(e.x, e.y, lite ? 6 : 12, 260, "#ffe066", 2);
+        fx.shake = Math.min(12, fx.shake + 4);
+        const s = byMachine.get(e.m);
+        if (s?.human) host.send(s.id, { type: "hurt", dmg: 0 });
       } else {
         fx.burst(e.x, e.y, 40, 420, "#ffb547", 3);
         fx.burst(e.x, e.y, 16, 200, e.victim.color, 4);
@@ -836,6 +875,8 @@ const mount: HostMount = (ctx) => {
   let acc = 0;
   let last = performance.now();
   let raf = 0;
+  let drewOnce = false;
+  if (abHudOff) hud.el.style.display = "none";
   let clashCd = 0;
   /** Frame rate cap for the current state: none while anyone can fight; 30 fps once a result is on screen. */
   const capFps = () => ((phase === "result" || phase === "match") && phaseFor > 1.5 ? 30 : 0);
@@ -856,6 +897,7 @@ const mount: HostMount = (ctx) => {
     const maxSteps = lite ? 3 : 5;
     let steps = 0;
     const l0 = tour ? performance.now() : 0;
+    profBegin("physics");
     while (acc >= STEP && steps < maxSteps) {
       for (const s of seated()) readInput(s);
       if (tour) {
@@ -872,11 +914,16 @@ const mount: HostMount = (ctx) => {
       steps++;
     }
     if (acc >= STEP) acc %= STEP;
+    profEnd("physics");
     const l1 = tour ? performance.now() : 0;
     // the phone shows the ammo: send a gun's state when it changes (a shot, the reload, a lost weapon)
     for (const s of seats.values()) {
       if (!s.human || !s.m) continue;
       if (gunSig(s.m) !== s.gunSig) pushOwn(s);
+    }
+    if (abKoBurst && phase === "fight" && arena.t > koBurstAt) {
+      koBurstAt = arena.t + 6;
+      for (const m of arena.machines.filter((x) => x.alive && !x.monster).slice(0, 3)) arena.wreck(m);
     }
     tickPhase(real);
     soundFrame();
@@ -888,10 +935,15 @@ const mount: HostMount = (ctx) => {
     }
     coinPickups.length = 0;
     const d0 = tour ? performance.now() : 0;
-    renderer.draw(arena, Math.min(1, acc / STEP), fx);
+    profBegin("draw");
+    if (!abDrawOff || !drewOnce) renderer.draw(arena, Math.min(1, acc / STEP), fx);
+    profEnd("draw");
+    drewOnce = true;
     const d1 = tour ? performance.now() : 0;
     frameDrawn(now);
-    maybeDrawHud();
+    profBegin("hud");
+    if (!abHudOff) maybeDrawHud();
+    profEnd("hud");
     if (tour) {
       const end = performance.now();
       tour.framed(steps, end - d0, end - now, { delay: f0 - now, loop: l1 - l0, mid: d0 - l1, hud: end - d1 });

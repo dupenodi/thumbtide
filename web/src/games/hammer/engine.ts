@@ -40,6 +40,8 @@ export class Body {
   spinDamp = 300000;
   /** Bodies with the same group never collide. */
   group = -1;
+  /** False: the body collides with nothing (Hammerfight m_layer 0: chain links, mace hands and handles). */
+  solid = true;
   /** Bodies with the same team (>= 0) never collide either; the game sets it only when teammates should pass through. */
   team = -1;
   dead = false;
@@ -174,6 +176,10 @@ export interface ContactReport {
   b: Body;
   /** Total impulse applied, mass·px/s. */
   impulse: number;
+  /** Closing speed along the normal at the contact, before the impulse (px/s). */
+  approach: number;
+  /** Relative speed at that contact point, before the impulse (px/s). */
+  rel: number;
   nx: number;
   ny: number;
   x: number;

@@ -174,9 +174,29 @@ export const GAMES: GameDef[] = [
         default: 3,
       },
       {
+        key: "arena",
+        label: "Arena",
+        options: [
+          { value: "classic", label: "Classic" },
+          { value: "crates", label: "Crates" },
+          { value: "big", label: "Big, with crates" },
+          { value: "huge", label: "Huge, with crates" },
+        ],
+        default: "classic",
+      },
+      {
+        key: "warmup",
+        label: "Weapon pick",
+        options: [
+          { value: "round", label: "Every round" },
+          { value: "match", label: "Each match only" },
+        ],
+        default: "round",
+      },
+      {
         key: "bots",
         label: "Computer players",
-        options: [0, 1, 2, 3].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
         default: 0,
         applies: "now",
       },

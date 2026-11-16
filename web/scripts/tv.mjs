@@ -6,13 +6,16 @@
 //   pnpm tv --inspect  DevTools for the app while it runs on the TV
 //   pnpm tv --perf=cascade [--look=reactor --bots=3 --fps=60 …]
 //                      open straight into a game with computer players and print its frame rate here
+//   pnpm tv --perf=hammer --profile
+//                      the same, plus the call profiler (canvas calls, sections, page changes per frame); the
+//                      profiler is only in builds made with this switch (VITE_PROFILE=1)
 //
 // The app holds the TV page only. It still connects to the relay, and phones still open the join page from a
 // server. By default both are this computer's `pnpm dev`, at its LAN address. For a deployed build, set
 // VITE_RELAY_URL (wss://…) and VITE_JOIN_URL (https://…/join/).
 // TV_DEVICE picks the TV, by its name in `pnpm --filter @thumbtide/web exec ares-setup-device -l`. The default is the first real TV.
 
-import { cpSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { connect } from "node:net";
 import { join } from "node:path";
@@ -49,7 +52,10 @@ const env = {
   VITE_JOIN_URL: process.env.VITE_JOIN_URL || `http://${ip}:5173/join/`,
   // --perf needs the frame monitor, which only test builds have
   ...(opts.perf ? { VITE_PERF: "1" } : {}),
+  // --profile (with --perf) adds the call profiler: a build of its own switch, never in a normal build
+  ...(opts.perf && args.has("--profile") ? { VITE_PROFILE: "1" } : {}),
 };
+if (args.has("--profile") && !opts.perf) fail("--profile goes with --perf=<game>.");
 console.log(`Building the TV app\n  relay  ${env.VITE_RELAY_URL}\n  phones ${env.VITE_JOIN_URL}\n`);
 if (!buildTvPage(web, { outDir: "dist-tv/app", env })) fail("Build failed.");
 
@@ -84,13 +90,22 @@ if (ip && !((await listening(8787)) && (await listening(5173)))) {
 /** Opens the app straight into a game with computer players, and prints the frame rate it reports. */
 async function perf(tv) {
   const port = 8799;
+  const profileLog = args.has("--profile") ? join(out, `profile-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`) : null;
+  if (profileLog) console.log(`Profiler reports go to ${profileLog}`);
   const server = createServer((req, res) => {
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {
       res.end();
       try {
-        const { fps, worst, p95, scale, ...rest } = JSON.parse(body);
+        const report = JSON.parse(body);
+        if (report.kind === "profile") {
+          if (profileLog) appendFileSync(profileLog, `${body}\n`);
+          const top = (o, n) => Object.entries(o).slice(0, n).map(([k, v]) => `${k} ${v}`).join(", ");
+          console.log(`  profile: ${report.fps} fps · ms/frame ${top(report.sectionsMsPerFrame, 6)} · canvas/frame ${top(report.canvasPerFrame, 6)} · page changes/frame ${top(report.domPerFrame, 4)} · ${report.domTop.slice(0, 3).join(", ")}`);
+          return;
+        }
+        const { fps, worst, p95, scale, ...rest } = report;
         const res = typeof scale === "number" ? ` · ${Math.round(scale * 100)}% resolution` : "";
         const extra = Object.entries(rest).map(([k, v]) => `${k} ${v}`).join(" · ");
         console.log(`${new Date().toLocaleTimeString()}  ${fps} fps · 95% of frames under ${p95}ms · slowest ${worst}ms${res} · ${extra}`);
@@ -101,7 +116,7 @@ async function perf(tv) {
   });
   await new Promise((res) => server.listen(port, "0.0.0.0", res));
   const { perf: game, ...rest } = opts;
-  const params = { bots: "3", ...rest, game, perf: `http://${lanIp(tv.host)}:${port}/` };
+  const params = { bots: "3", ...rest, game, perf: `http://${lanIp(tv.host)}:${port}/`, ...(profileLog ? { profile: `http://${lanIp(tv.host)}:${port}/profile` } : {}) };
   capture("ares-launch", "-d", tv.name, "--close", appinfo.id); // start fresh, so the launch options apply
   if (!run("ares-launch", "-d", tv.name, appinfo.id, "-p", JSON.stringify(params))) fail("Installed, but it didn't open.");
   console.log(`\nOpened ${game} on the TV. Its frame rate shows here every 2 seconds (Ctrl-C to stop).\n`);

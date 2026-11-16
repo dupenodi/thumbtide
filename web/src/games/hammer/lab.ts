@@ -220,10 +220,13 @@ function handleEvents(): void {
     } else if (e.type === "disarm") {
       fx.burst(e.x, e.y, 24, 360, "#cfe3ff", 2);
       fx.text(e.x, e.y - 20, "DISARMED", "#cfe3ff", 20);
-    } else if (e.type === "pickup" || e.type === "shot" || e.type === "blast" || e.type === "plateoff") {
+    } else if (e.type === "pickup" || e.type === "shot" || e.type === "blast" || e.type === "plateoff" || e.type === "crack" || e.type === "break") {
       // nothing to show beyond the weapon snapping on, or the shot itself
     } else if (e.type === "clash") {
       fx.burst(e.x, e.y, 4 + Math.min(10, Math.round(e.impact / 10)), 220, "#cfe3ff", 1.5);
+    } else if (e.type === "slam") {
+      fx.burst(e.x, e.y, 12, 260, "#ffe066", 2);
+      fx.text(e.x, e.y - 20, "SLAM", "#ffe066", 18);
     } else {
       fx.burst(e.x, e.y, 40, 420, "#ffb547", 3);
       fx.burst(e.x, e.y, 16, 200, e.victim.color, 4);

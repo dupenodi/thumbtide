@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Body, joint, World } from "./engine.ts";
-import { Arena, VIEW_W } from "./sim.ts";
+import { Arena, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
 import { MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
@@ -46,6 +46,7 @@ test("with no input the weapon's weight pulls the machine down at sqrt(weight/dr
   for (const weapon of WEAPON_KINDS) {
     const ar = arena();
     ar.tuning.limit = 1e5;
+    ar.tuning.walls = 0;
     const m = ar.add({ id: 0, name: "a", color: "#f00", weapon, x: 300, y: 100 });
     for (let i = 0; i < 600; i++) ar.step();
     const weight = m.parts.reduce((s, p) => s + p.mass, 0) * DEFAULT_TUNING.gravity;
@@ -54,6 +55,26 @@ test("with no input the weapon's weight pulls the machine down at sqrt(weight/dr
     assert.ok(Math.abs(m.hull.vy - terminal) < terminal * 0.2, `${weapon}: vy ${m.hull.vy}, want ${terminal}`);
     assert.ok(m.striker.y > m.hull.y + 20, `${weapon}: weapon not below`);
   }
+});
+
+test("the top and bottom walls keep a live hull inside the frame", () => {
+  const ar = arena();
+  const m = ar.add({ id: 0, name: "a", color: "#f00", weapon: "orbmace", x: 300, y: 100 });
+  let maxY = 0;
+  // the heaviest weapon pulls it down for 12 s with no input
+  for (let i = 0; i < 600; i++) {
+    ar.step();
+    maxY = Math.max(maxY, m.hull.y);
+  }
+  assert.ok(maxY <= VIEW_H - 18 + 0.01, `bottom: ${maxY}`);
+  // thrown upwards hard
+  m.hull.setVelocity(0, -2000, 0, 0.02);
+  let minY = 1e9;
+  for (let i = 0; i < 50; i++) {
+    ar.step();
+    minY = Math.min(minY, m.hull.y);
+  }
+  assert.ok(minY >= 30 - 0.01, `top: ${minY}`);
 });
 
 test("hover assist 1 cancels the weapon's weight", () => {
@@ -114,6 +135,115 @@ function hammerHit(speed: number, frames: number, setup?: (ar: Arena, b: ReturnT
   for (let i = 0; i < frames; i++) ar.step();
   return { ar, a, b };
 }
+
+test("hit types: a weapon pressed slowly against a machine does no damage; the same weapon swung in does", () => {
+  const press = () => {
+    const ar = arena();
+    ar.tuning.slomo = 0;
+    const a = ar.add({ id: 0, name: "a", color: "#f00", weapon: "hammer", x: 300, y: 200 });
+    const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 385, y: 200 });
+    for (let i = 0; i < 5; i++) ar.step();
+    let dmg = 0;
+    // push the head at b's hull at 60 px/s for 2 s (resting, grinding contact)
+    for (let i = 0; i < 100; i++) {
+      const dx = b.hull.x - a.striker.x;
+      const dy = b.hull.y - a.striker.y;
+      const l = Math.hypot(dx, dy) || 1;
+      a.striker.setVelocity((dx / l) * 60, (dy / l) * 60, 0, 0.02);
+      ar.step();
+      for (const e of ar.events) if (e.type === "hit" && e.victim === b) dmg += e.dmg;
+      ar.events.length = 0;
+    }
+    return dmg;
+  };
+  assert.equal(press(), 0);
+  const { b } = hammerHit(600, 30);
+  assert.ok(b.hp < 100, "a swung hammer did no damage");
+});
+
+test("slam: a machine stunned by a hit gets more stun when it then hits the floor", () => {
+  const { ar, b } = hammerHit(800, 6);
+  assert.ok(b.stun > 0 && b.slamUntil > ar.t, "no stun window after a big hit");
+  const before = b.stun;
+  // drive it into the floor
+  b.hull.place(b.hull.x, 520, 0);
+  b.hull.setVelocity(0, 400, 0, 0.02);
+  let slammed = false;
+  for (let i = 0; i < 5; i++) {
+    ar.step();
+    if (ar.events.some((e) => e.type === "slam" && e.m === b)) slammed = true;
+    ar.events.length = 0;
+  }
+  assert.ok(slammed, "no slam event");
+  assert.ok(b.stun > before - 0.2, `stun ${b.stun} (was ${before})`);
+  assert.ok(b.slamUntil === 0, "a slam is once per stunning hit");
+});
+
+test("gibs: a wreck bursts into shards that hurt for a moment, then pass through", () => {
+  const ar = arena();
+  ar.tuning.slomo = 0;
+  const a = ar.add({ id: 0, name: "a", color: "#f00", weapon: "hammer", x: 300, y: 200 });
+  const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 600, y: 200 });
+  ar.wreck(a);
+  const gibs = ar.world.bodies.filter((x) => (x.data as { gibUntil?: number } | null)?.gibUntil !== undefined);
+  assert.equal(gibs.length, DEFAULT_TUNING.gibs);
+  assert.ok(gibs.every((g) => g.solid && Math.hypot(g.vx, g.vy) > 150), "shards fly out, solid");
+  // throw one shard hard at b
+  const g = gibs[0]!;
+  g.place(b.hull.x - 40, b.hull.y, 0);
+  g.setVelocity(700, 0, 0, 0.02);
+  let dmg = 0;
+  for (let i = 0; i < 10; i++) {
+    ar.step();
+    for (const e of ar.events) if (e.type === "hit" && e.victim === b) dmg += e.dmg;
+    ar.events.length = 0;
+  }
+  assert.ok(dmg > 0, "a flying shard did no damage");
+  for (let i = 0; i < 150; i++) ar.step();
+  assert.ok(gibs.every((x) => !x.solid || x.dead), "shards still solid after the harm window");
+});
+
+test("arenas: a bigger arena moves the walls; crates break under hard hits, pillars don't", () => {
+  const ar = arena();
+  ar.tuning.slomo = 0;
+  ar.setArena(1440, 810, [
+    { kind: "crate", x: 700, y: 400, hw: 22, hh: 22, hp: 30 },
+    { kind: "pillar", x: 1000, y: 400, hw: 12, hh: 34 },
+  ]);
+  const a = ar.add({ id: 0, name: "a", color: "#f00", weapon: "hammer", x: 200, y: 700 });
+  // the bottom wall is now near 810, not 540
+  a.hull.setVelocity(0, 300, 0, 0.02);
+  for (let i = 0; i < 100; i++) ar.step();
+  assert.ok(a.hull.y > 600, `hull held at ${a.hull.y}: the old bottom wall`);
+  let broke = false;
+  for (let k = 0; k < 12 && !broke; k++) {
+    // the machine and its hammer thrown hard at the crate, again and again (head in front, on its rod)
+    a.hull.place(560, 400, 0);
+    a.hull.setVelocity(600, 0, 0, 0.02);
+    a.striker.place(620, 400, 0);
+    a.striker.setVelocity(800, 0, 0, 0.02);
+    for (let i = 0; i < 10; i++) {
+      ar.step();
+      if (ar.events.some((e) => e.type === "break")) broke = true;
+      ar.events.length = 0;
+    }
+  }
+  assert.ok(broke, "the crate never broke");
+  assert.equal(ar.obstacles.length, 1);
+  assert.equal(ar.obstacles[0]!.kind, "pillar");
+
+  // in the warm-up (damage 0) the same blows leave a crate whole
+  ar.setArena(1440, 810, [{ kind: "crate", x: 700, y: 400, hw: 22, hh: 22, hp: 30 }]);
+  ar.tuning.damage = 0;
+  for (let k = 0; k < 12; k++) {
+    a.hull.place(560, 400, 0);
+    a.hull.setVelocity(600, 0, 0, 0.02);
+    a.striker.place(620, 400, 0);
+    a.striker.setVelocity(800, 0, 0, 0.02);
+    for (let i = 0; i < 10; i++) ar.step();
+  }
+  assert.equal(ar.obstacles[0]!.hp, 30, "a crate took damage in the warm-up");
+});
 
 test("a big hit stuns: the victim's engine stops, then it recovers in about a second", () => {
   const { ar, b } = hammerHit(800, 6);

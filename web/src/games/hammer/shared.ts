@@ -60,5 +60,7 @@ export interface HammerGame {
     wins: number;
     /** False while waiting for the next round (joined mid-fight, or more than 8 players). */
     seated: boolean;
+    /** The loadout is fixed until the match ends ("Weapon pick: each match only", after a first fight). */
+    fixed?: boolean;
   };
 }
