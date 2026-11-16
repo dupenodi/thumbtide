@@ -22,6 +22,8 @@ export const solidPart = (kind: WeaponKind, key: string): boolean => !(/^(link\d
 /** A live hull's centre stays this far inside the top edge (hull half height 16.5 + the rotor) and the bottom. */
 const WALL_TOP = 30;
 const WALL_BOTTOM = 18;
+/** A live hull's centre stays this far inside the left and right edges (hull half width 12.5 + a little). */
+const WALL_SIDE = 16;
 /**
  * Where AI fliers (bots, monsters) keep to: EDGE_M px inside the left, right and bottom edges, and below EDGE_TOP
  * (the score cards cover the top ~75 px of the frame).
@@ -462,7 +464,7 @@ export class Arena {
       for (const b of this.brokenBodies) this.world.remove(b);
       this.brokenBodies.length = 0;
     }
-    if (tn.walls) for (const m of this.machines) if (m.alive && !m.monster) this.verticalWalls(m, dt);
+    if (tn.walls) for (const m of this.machines) if (m.alive && !m.monster) this.frameWalls(m, dt);
     this.dtPrev = dt;
     this.t += dt;
     if (this.shots.length) this.ageShots();
@@ -767,26 +769,31 @@ export class Arena {
   }
 
   /**
-   * Hard top and bottom walls for a live hull, so a machine (with its rotor) never leaves the frame up or down
-   * (the play test: machines went out of view at the top and bottom; the sides keep the soft limit). The hull
-   * bounces off with the game's restitution (0.3).
+   * Hard walls on all four frame edges for a live hull, so a machine (with its rotor) never leaves the picture
+   * (play tests: machines went out of view at the top and bottom, then at the sides). Hammerfight's arena clamp
+   * (RE_ARENAS.md §1) is also hard; ours bounces off with the game's restitution (0.3) instead of a dead stop.
    */
-  private verticalWalls(m: Machine, dt: number): void {
+  private frameWalls(m: Machine, dt: number): void {
     const h = m.hull;
-    const top = WALL_TOP;
-    const bottom = this.h - WALL_BOTTOM;
-    if (h.y >= top && h.y <= bottom) return;
-    const vy = (h.y - h.py) / dt;
-    h.y = h.y < top ? top : bottom;
-    const out = h.y === top ? vy < 0 : vy > 0;
-    // the speed into the wall turns round at 0.3; a speed already away from it is kept
-    h.py = h.y - (out ? -0.3 * vy : vy) * dt;
-    h.vy = out ? -0.3 * vy : vy;
-    // a stunned machine knocked into the floor or ceiling: a slam (the impact as a hull-on-wall collision would give)
-    if (out && Math.abs(vy) > WALL_SLAM_V) this.slam(m, (h.mass * 1.3 * Math.abs(vy)) * 1e-5, h.x, h.y);
+    const wall = (pos: number, prev: number, lo: number, hi: number): [number, number, number, boolean, number] | null => {
+      if (pos >= lo && pos <= hi) return null;
+      const v = (pos - prev) / dt;
+      const at = pos < lo ? lo : hi;
+      const out = at === lo ? v < 0 : v > 0;
+      // the speed into the wall turns round at 0.3; a speed already away from it is kept
+      const nv = out ? -0.3 * v : v;
+      return [at, at - nv * dt, nv, out, Math.abs(v)];
+    };
+    const y = wall(h.y, h.py, WALL_TOP, this.h - WALL_BOTTOM);
+    if (y) [h.y, h.py, h.vy] = y;
+    const x = wall(h.x, h.px, WALL_SIDE, this.w - WALL_SIDE);
+    if (x) [h.x, h.px, h.vx] = x;
+    // a stunned machine knocked into a wall: a slam (the impact as a hull-on-wall collision would give)
+    const hit = Math.max(y?.[3] ? y[4] : 0, x?.[3] ? x[4] : 0);
+    if (hit > WALL_SLAM_V) this.slam(m, (h.mass * 1.3 * hit) * 1e-5, h.x, h.y);
   }
 
-  /** Not in Hammerfight: a stiff spring a little outside the fixed camera frame (only the sides now). */
+  /** Not in Hammerfight: a stiff spring a little outside the fixed camera frame at the sides (with the walls off). */
   private limit(m: Machine): void {
     if (!m.alive) return;
     const tn = this.tuning;

@@ -36,7 +36,7 @@ export interface Tuning {
   limit: number;
   /** Stiffness of the soft limit, Hz. */
   limitHz: number;
-  /** Not in Hammerfight: 1 = hard top and bottom walls keep a live hull inside the frame (0 = off). */
+  /** Not in Hammerfight: 1 = hard walls on all four edges keep a live hull inside the frame (0 = off). */
   walls: number;
   // ---- hit types (not in Hammerfight, after the play test: "damage from inertia, not from resting contact";
   // "blades slice, blunt weapons bash"; "stun by hit type, damage and what the machine hits next")

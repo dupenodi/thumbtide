@@ -57,7 +57,7 @@ test("with no input the weapon's weight pulls the machine down at sqrt(weight/dr
   }
 });
 
-test("the top and bottom walls keep a live hull inside the frame", () => {
+test("the walls keep a live hull inside the frame (top, bottom and sides)", () => {
   const ar = arena();
   const m = ar.add({ id: 0, name: "a", color: "#f00", weapon: "orbmace", x: 300, y: 100 });
   let maxY = 0;
@@ -75,6 +75,18 @@ test("the top and bottom walls keep a live hull inside the frame", () => {
     minY = Math.min(minY, m.hull.y);
   }
   assert.ok(minY >= 30 - 0.01, `top: ${minY}`);
+  // and thrown hard to each side
+  for (const vx of [-2500, 2500]) {
+    m.hull.setVelocity(vx, 0, 0, 0.02);
+    let minX = 1e9;
+    let maxX = -1e9;
+    for (let i = 0; i < 50; i++) {
+      ar.step();
+      minX = Math.min(minX, m.hull.x);
+      maxX = Math.max(maxX, m.hull.x);
+    }
+    assert.ok(minX >= 16 - 0.01 && maxX <= VIEW_W - 16 + 0.01, `sides: ${minX}…${maxX}`);
+  }
 });
 
 test("hover assist 1 cancels the weapon's weight", () => {

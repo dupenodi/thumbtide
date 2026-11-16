@@ -81,7 +81,7 @@ export interface StickTune {
   hold: number;
 }
 /** The values of `tune` in hammer.pad (the phone's stick); keep them equal. */
-export const STICK_DEFAULTS: StickTune = { stick: 600, steer: 8, hold: 0.5 };
+export const STICK_DEFAULTS: StickTune = { stick: 420, steer: 5.6, hold: 0.5 };
 
 /**
  * Stick (not in Hammerfight): the tilt (x, y in −1…1) sets a target speed; the thrust closes the gap. The cap grows
