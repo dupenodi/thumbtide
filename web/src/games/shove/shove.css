@@ -1,0 +1,162 @@
+/* ============================================================ Shove: TV
+   A woodblock-print sumo ring on an indigo sea. Sizes are in --u: one pixel of a 1080p screen. */
+.shv {
+  --indigo: #1f2a44;
+  --wave: #2c3b5f;
+  --ink: #141a2c;
+  --sand: #e8d6a8;
+  --rope: #b98b4e;
+  --vermilion: #d8432f;
+  --foam: #f4f1e8;
+  --mute: #9aa6c4;
+  --display: "Shove Display", "Dela Gothic One", Impact, sans-serif;
+  --sans: "Shove Sans", Inter, system-ui, sans-serif;
+  --u: calc(100vh / 1080);
+  position: absolute; inset: 0; overflow: hidden; background: var(--indigo); color: var(--foam);
+  font-family: var(--sans);
+}
+.shv-stage { position: absolute; inset: 0; }
+.shv-sea { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.shv-box { position: absolute; }
+.shv-box canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* ------------------------------------------------------------ the board */
+.shv-board {
+  position: absolute; display: flex; flex-direction: column; gap: calc(var(--u) * 22); transform: translateY(-50%);
+  padding: calc(var(--u) * 34) calc(var(--u) * 36); box-sizing: border-box;
+  background: var(--ink); border-radius: calc(var(--u) * 6);
+  box-shadow: inset 0 calc(var(--u) * 8) 0 var(--rope), inset 0 calc(var(--u) * -8) 0 var(--rope);
+}
+.shv-head { display: flex; align-items: center; justify-content: space-between; padding-top: calc(var(--u) * 6); }
+.shv-logo { font: 400 calc(var(--u) * 72) / 1 var(--display); color: var(--foam); letter-spacing: 0.02em; }
+.shv-hanko, .shv-stamp {
+  position: relative; flex: none; width: calc(var(--u) * 58); height: calc(var(--u) * 58); border-radius: calc(var(--u) * 6);
+  background: var(--vermilion); transform: rotate(-6deg);
+  box-shadow: inset 0 0 0 calc(var(--u) * 5) var(--vermilion), inset 0 0 0 calc(var(--u) * 8) var(--foam);
+}
+.shv-hanko::after, .shv-stamp::after {
+  content: ""; position: absolute; left: 32%; top: 32%; width: 36%; height: 36%; border-radius: 50%; background: var(--foam);
+}
+.shv-rows {
+  list-style: none; margin: 0; padding: calc(var(--u) * 6) 0 0; display: flex; flex-direction: column;
+  gap: calc(var(--u) * 6); border-top: calc(var(--u) * 2) solid var(--wave); min-height: 0;
+}
+.shv-rows li {
+  display: flex; align-items: center; gap: calc(var(--u) * 14); height: calc(var(--u) * 80);
+  border-bottom: calc(var(--u) * 2) solid var(--wave); transition: opacity 300ms;
+}
+.shv-dot {
+  flex: none; width: calc(var(--u) * 30); height: calc(var(--u) * 30); border-radius: 50%; background: var(--k);
+  box-shadow: 0 0 0 calc(var(--u) * 3) var(--foam);
+}
+.shv-nm {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 700 calc(var(--u) * 32) / 1.1 var(--sans); color: var(--foam);
+}
+.shv-tag { flex: none; font: 600 calc(var(--u) * 20) / 1 var(--sans); font-style: normal; color: var(--mute); }
+.shv-rows li.out { opacity: 0.4; }
+.shv-rows li.next { opacity: 0.55; }
+.shv-seals { flex: none; display: flex; gap: calc(var(--u) * 6); }
+.shv-seal {
+  width: calc(var(--u) * 30); height: calc(var(--u) * 30); border-radius: calc(var(--u) * 4);
+  box-shadow: inset 0 0 0 calc(var(--u) * 2) var(--wave);
+}
+.shv-seal.on {
+  background: var(--vermilion); transform: rotate(-5deg);
+  box-shadow: inset 0 0 0 calc(var(--u) * 4) var(--vermilion), inset 0 0 0 calc(var(--u) * 6) var(--foam);
+}
+.shv-seal.on::after { content: ""; display: block; margin: 36%; height: 28%; border-radius: 50%; background: var(--foam); }
+.shv-seal.new { animation: shv-stamp 420ms cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+@keyframes shv-stamp { 0% { opacity: 0; transform: scale(1.9) rotate(-14deg); } 70% { opacity: 1; transform: scale(0.94) rotate(-5deg); } 100% { transform: rotate(-5deg); } }
+.shv-meta { display: flex; gap: calc(var(--u) * 48); padding-top: calc(var(--u) * 10); }
+.shv-meta div { display: flex; flex-direction: column; gap: calc(var(--u) * 6); }
+.shv-meta span { font: 600 calc(var(--u) * 22) / 1 var(--sans); color: var(--mute); }
+.shv-meta b { font: 400 calc(var(--u) * 44) / 1 var(--display); color: var(--foam); }
+
+/* ------------------------------------------------------------ over the ring */
+.shv-over { position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+.shv-count { display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 4); color: var(--indigo); }
+.shv-count span, .shv-card span, .shv-mk {
+  font: 800 calc(var(--u) * 28) / 1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase;
+}
+.shv-count b { font: 400 calc(var(--u) * 170) / 1 var(--display); animation: shv-in 380ms cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+.shv-count.go b { font-size: calc(var(--u) * 120); color: var(--vermilion); }
+@keyframes shv-in { from { opacity: 0; transform: scale(1.2); } }
+
+.shv-card {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 14);
+  padding: calc(var(--u) * 40) calc(var(--u) * 80) calc(var(--u) * 44); background: var(--foam); color: var(--indigo);
+  border-radius: calc(var(--u) * 4); box-shadow: 0 0 0 calc(var(--u) * 4) var(--ink), calc(var(--u) * 10) calc(var(--u) * 12) 0 rgba(20, 26, 44, 0.35);
+  animation: shv-card 320ms ease-out both;
+}
+/* the round result sits low in the box, so the one who stayed in stays in view */
+.shv-card.res { align-self: flex-end; margin-bottom: 7%; }
+@keyframes shv-card { from { opacity: 0; transform: translateY(calc(var(--u) * 16)); } }
+.shv-card span { color: var(--mute); color: #6b7591; }
+.shv-card b { font: 400 calc(var(--u) * 88) / 1 var(--display); color: var(--k, var(--indigo)); max-width: calc(var(--u) * 720); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shv-card em { font: 600 calc(var(--u) * 32) / 1 var(--sans); font-style: normal; }
+.shv-card .shv-stamp {
+  position: absolute; right: calc(var(--u) * -34); top: calc(var(--u) * -34); width: calc(var(--u) * 92); height: calc(var(--u) * 92);
+  border-radius: calc(var(--u) * 8); background: var(--vermilion);
+  box-shadow: inset 0 0 0 calc(var(--u) * 7) var(--vermilion), inset 0 0 0 calc(var(--u) * 11) var(--foam);
+  transform: rotate(-9deg); animation: shv-stamp-big 460ms 180ms cubic-bezier(0.3, 0.7, 0.4, 1) both;
+}
+@keyframes shv-stamp-big { 0% { opacity: 0; transform: scale(1.8) rotate(-20deg); } 70% { opacity: 1; transform: scale(0.95) rotate(-9deg); } 100% { transform: rotate(-9deg); } }
+
+.shv-match {
+  display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 14);
+  padding: calc(var(--u) * 48) calc(var(--u) * 72) calc(var(--u) * 40); background: var(--foam); color: var(--indigo);
+  border-radius: calc(var(--u) * 4); box-shadow: 0 0 0 calc(var(--u) * 4) var(--ink), calc(var(--u) * 12) calc(var(--u) * 14) 0 rgba(20, 26, 44, 0.4);
+  min-width: calc(var(--u) * 640); animation: shv-card 420ms ease-out both;
+}
+.shv-mk { color: #6b7591; }
+.shv-win { font: 400 calc(var(--u) * 120) / 1.05 var(--display); color: var(--k); max-width: calc(var(--u) * 840); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shv-wins { font: 600 calc(var(--u) * 34) / 1 var(--sans); font-style: normal; }
+.shv-final {
+  list-style: none; margin: calc(var(--u) * 26) 0 0; padding: 0; align-self: stretch;
+  display: flex; flex-direction: column; gap: calc(var(--u) * 4);
+}
+.shv-final li {
+  display: flex; align-items: center; gap: calc(var(--u) * 16); height: calc(var(--u) * 52);
+  border-top: calc(var(--u) * 2) solid #d9d2bf;
+}
+.shv-final .shv-rk { width: 1.2em; font: 400 calc(var(--u) * 28) / 1 var(--display); color: #6b7591; }
+.shv-final .shv-dot { width: calc(var(--u) * 24); height: calc(var(--u) * 24); box-shadow: 0 0 0 calc(var(--u) * 3) var(--ink); }
+.shv-final .shv-nm { font-size: calc(var(--u) * 30); color: var(--indigo); }
+.shv-final .shv-seal { box-shadow: inset 0 0 0 calc(var(--u) * 2) #c9c0aa; }
+.shv-final .shv-seal.on { box-shadow: inset 0 0 0 calc(var(--u) * 3) var(--vermilion), inset 0 0 0 calc(var(--u) * 5) var(--foam); }
+
+/* ============================================================ Shove: phone
+   The kit gamepad, made plain: indigo, Inter, the stick on the left and one big round Dash in the player's colour. */
+.gp.shv-pad { --c: #8a90a0; background: #1f2a44; color: #f4f1e8; font-family: Inter, system-ui, sans-serif; }
+.shv-pad .gp-stick { background: #18213a; box-shadow: inset 0 0 0 2px #2c3b5f; border-radius: 24px; }
+.shv-pad .gp-stick-hint { color: #9aa6c4; font: 600 16px/1.2 Inter, system-ui, sans-serif; }
+.shv-pad .gp-btns .gp-btn.round {
+  background: var(--c); color: #f4f1e8; text-shadow: none; font: 800 30px/1 Inter, system-ui, sans-serif; letter-spacing: 0;
+  box-shadow: 0 0 0 6px #1f2a44, 0 0 0 9px var(--c), 0 10px 0 6px #141a2c;
+}
+.shv-pad .gp-btn::before { content: none; }
+.shv-pad .gp-btn .gp-ico { display: none; }
+.shv-pad .gp-btn b { position: relative; z-index: 1; }
+.shv-pad .gp-btns .gp-btn.round.pressed { transform: translateY(6px) scale(0.97); filter: brightness(1.1); }
+.shv-cd {
+  position: absolute; inset: 0; border-radius: 50%; background: rgba(20, 26, 44, 0.6); transform-origin: 50% 100%;
+  transform: scaleY(0); pointer-events: none;
+}
+.shv-cd.run { animation: shv-cd 1500ms linear both; }
+@keyframes shv-cd { from { transform: scaleY(1); } to { transform: scaleY(0); } }
+.shv-pad.shv-idle .gp-btns .gp-btn.round { background: #2c3b5f; color: #9aa6c4; box-shadow: 0 0 0 6px #1f2a44, 0 0 0 9px #2c3b5f, 0 10px 0 6px #141a2c; }
+
+.shv-top { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 0; }
+.shv-who { display: flex; align-items: center; gap: 10px; font: 600 18px/1.2 Inter, system-ui, sans-serif; color: #c9cfdd; }
+.shv-who i { width: 16px; height: 16px; border-radius: 50%; background: var(--c); flex: none; box-shadow: 0 0 0 2px #f4f1e8; }
+.shv-who span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shv-status { margin: 0; font: 700 28px/1.2 Inter, system-ui, sans-serif; color: #f4f1e8; }
+.shv-again {
+  align-self: stretch; min-height: 60px; border: 0; border-radius: 16px; background: var(--c); color: #f4f1e8;
+  font: 700 22px/1 Inter, system-ui, sans-serif; touch-action: manipulation;
+}
+.shv-again[hidden] { display: none; }
+@media (orientation: portrait) {
+  .shv-top { padding-top: 12px; }
+}
