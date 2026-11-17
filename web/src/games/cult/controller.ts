@@ -275,8 +275,19 @@ const mount: ControllerMount = (ctx) => {
         return;
     }
     sentKey = scene?.key ?? "";
+    // a move the TV never got (lost on a reconnect, or refused) must not leave the panel settled for good: if
+    // the TV hasn't moved on after a while, the buttons work again (the rules ignore a repeat)
+    const k = sentKey;
+    clearTimeout(sentTimer);
+    sentTimer = setTimeout(() => {
+      if (sentKey === k && scene?.key === k) {
+        sentKey = "";
+        refresh();
+      }
+    }, 5000);
     refresh();
   }
+  let sentTimer: ReturnType<typeof setTimeout> | undefined;
 
   function wire() {
     panelOffs.forEach((f) => f());
@@ -358,6 +369,9 @@ const mount: ControllerMount = (ctx) => {
       const fresh = !scene || next.html !== scene.html;
       scene = next;
       selected = null;
+      // a new panel was never sent from, even when its key matches an older one (a refused veto brings the
+      // Sheriff's same hand back)
+      sentKey = "";
       root.classList.toggle("tall", !!next.tall);
       if (fresh) {
         panel.innerHTML = next.html;
@@ -398,6 +412,7 @@ const mount: ControllerMount = (ctx) => {
   render();
 
   return () => {
+    clearTimeout(sentTimer);
     offs.forEach((f) => f());
     panelOffs.forEach((f) => f());
     root.remove();

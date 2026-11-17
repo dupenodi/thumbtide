@@ -493,7 +493,12 @@ const mount: HostMount = (ctx) => {
 
   const startFight = () => {
     phase = "fight";
-    for (const s of seated()) s.fought = true;
+    for (const s of seated()) {
+      s.fought = true;
+      // time spent on the weapon pick is not "away": a fight starts with the player in control and no old stand-in
+      s.idle = 0;
+      s.auto = null;
+    }
     arena.suddenDeath = false;
     if (mode === "pvm") spawnWave();
     phaseFor = 0;
