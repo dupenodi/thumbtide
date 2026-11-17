@@ -3,7 +3,7 @@
 // They fall at the game's gravity (100 px/s²) and are picked up by touching a machine (not in the first 0.3 s,
 // not while stunned). OURS (play test): the held weapon picks them up too, so a swing through a spill collects. Hammerfight: gold 20 / 10, silver 4 / 2, copper 1, coins worth damage / 2.
 //
-// OURS: coins are draw-only particles, not physics bodies (the TV's body budget); one coin per 2 damage; they
+// OURS: coins are draw-only particles, not physics bodies (the TV's body budget); only hits over HEAVY_HIT (12) spill, one coin per 2.5 damage; they
 // bounce off the frame sides (CoR 0.3), fall out of the bottom (no floor) and blink out after 8 s; no score.
 
 import type { Machine } from "./sim.ts";
@@ -33,6 +33,8 @@ const DENOMS: readonly { metal: Metal; big: boolean; value: number }[] = [
 ];
 
 export const COIN_GRAVITY = 100;
+/** A hit must do more than this much damage to spill coins. */
+export const HEAVY_HIT = 12;
 const COR = 0.3;
 const PICKUP_AFTER = 0.3;
 const LIFE = 8;
@@ -59,10 +61,12 @@ export class Coins {
 
   /** A hit for `dmg` at (x, y): coins burst out. Returns how many came out. */
   spill(x: number, y: number, dmg: number): number {
-    if (dmg <= 5) return 0;
-    // OURS: one coin per 2 damage (Hammerfight: coins WORTH dmg / 2, often a single gold piece), so a hard hit
-    // reads as a shower; harder hits throw more gold.
-    const n = Math.min(this.perSpill, Math.max(3, Math.round(dmg / 2)));
+    // OURS (play test): only heavy hits spill (Hammerfight: over 5). Over 12 damage is about the hardest 11% of
+    // hits in bot matches (median 4, 90th percentile 14), so a spill marks a big blow, not every touch.
+    if (dmg <= HEAVY_HIT) return 0;
+    // the shower is in proportion to the damage: one coin per 2.5 (Hammerfight: coins WORTH dmg / 2, often a
+    // single gold piece); harder hits throw more gold.
+    const n = Math.min(this.perSpill, Math.round(dmg / 2.5));
     const gold = Math.min(0.6, dmg / 80);
     for (let i = 0; i < n; i++) {
       const r = Math.random();
