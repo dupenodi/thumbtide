@@ -24,6 +24,8 @@ export interface SettingDef {
   applies?: "now" | "round";
   /** Only shown while another setting has this value (e.g. a board's width once "Custom" is picked). */
   when?: { key: string; value: SettingValue };
+  /** Fine-tuning most hosts never touch: shown under "More settings", folded away by default. */
+  advanced?: boolean;
 }
 
 export function defaultSettings(defs: SettingDef[] = []): Settings {
@@ -45,7 +47,8 @@ export interface ShellState {
   locked: boolean;
   /** Lobby: the game the VIP is looking at (the TV shows its card). */
   selected: string | null;
-  players: { id: string; name: string; connected: boolean }[];
+  /** `away`: the phone is on another app or locked (the seat waits for them; see HostPlayer.away). */
+  players: { id: string; name: string; connected: boolean; away: boolean }[];
 }
 
 export type SysMessage =

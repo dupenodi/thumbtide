@@ -12,6 +12,8 @@ These come from playtesting and the owner's feedback. Follow them unless you've 
 - Every game is original: its own name, theme and art. Borrowing a mechanic is fine; copying an existing game's name,
   characters, art or look is not. Cult is an original hidden-role game; Cascade is an original take on chain-reaction
   board games.
+  - The one exception is **Rotor Brawl**, a prototype of an official, licensed port of Hammerfight. It may use
+    Hammerfight's sounds, music, weapons and physics.
 - Each game has its **own visual identity**. Don't reuse another game's style, or the lobby's, inside a game.
 - Don't explain the rules on screen. Label the controls; the **?** help sheet comes from the `.pad` file.
 - Motion is understated: something animates once, when it happens (a card slams down with a thud, a stamp, a dealt
@@ -46,7 +48,12 @@ These come from playtesting and the owner's feedback. Follow them unless you've 
   [Deploy](../README.md#deploy) and the Cloudflare plan in [lg-tv.md](lg-tv.md#not-done-yet).
 - **The LG TV app got stuck once**, cause unknown. See [lg-tv.md](lg-tv.md#freezes-and-other-problems).
 - **Cascade's sound levels** haven't been tuned by ear yet (the clips are in `cascade/sounds/`, volumes in `cascade/audio.ts`).
-- **TV performance** of Cascade's Marbles look and its big boards (14 × 8 and up) hasn't been measured.
+- **TV performance:** no game holds 60 fps on the TV yet. Rotor Brawl holds 55–58 fps on average with 3 computer
+  players in every arena (2026-11-17), but with 7 its average is 50–55 and its slowest 2-second windows drop to
+  28–31 fps (Melka and The Pit are the heaviest). Cascade's
+  big boards (14 × 8 and up) haven't been measured. See [lg-tv.md](lg-tv.md#performance-on-our-tv).
+- **More than 8 phones:** phones 9 and up watch. Cascade tells them "You're in next round", but it seats only the
+  first 8 phones, so that can be untrue.
 - **Local network limits:** without HTTPS, phones can't use tilt sensors or the screen wake lock.
 
 ## Plans

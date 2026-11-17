@@ -11,7 +11,7 @@
 
 import { STICK_DEFAULTS, type StickTune, stickPush } from "./arenas.ts";
 import type { Body } from "./engine.ts";
-import { type Arena, EDGE_M, EDGE_TOP, type Machine, STEP } from "./sim.ts";
+import { aimable, type Arena, EDGE_M, edgeTop, type Machine, STEP } from "./sim.ts";
 import { type GunKind, type PlateKind, WEAPON_KINDS, type WeaponKind } from "./weapons.ts";
 
 export type BotMode = "idle" | "wander" | "fight";
@@ -125,6 +125,12 @@ export interface Bot {
   /** Strike counts (the bench reads them). */
   pumpSteps: number;
   steps: number;
+  /** After landing a hit: stand off a little until this arena time (wind up again instead of grinding in). */
+  backUntil: number;
+  /** Seconds held off the strike spot, and a detour toward the middle (x) until this arena time. */
+  held: number;
+  detourUntil: number;
+  detourX: number;
 }
 
 const rand = (b: Bot) => {
@@ -154,6 +160,10 @@ export function makeBot(mode: BotMode, x: number, y: number, profile: ProfileId 
     tick: seed % 5,
     pumpSteps: 0,
     steps: 0,
+    backUntil: -1,
+    held: 0,
+    detourUntil: -1,
+    detourX: 0,
   };
   b.theta = rand(b) * Math.PI * 2;
   b.spin = rand(b) < 0.5 ? -1 : 1;
@@ -167,6 +177,9 @@ export function newRound(b: Bot): void {
   b.target = null;
   b.quiet = 0;
   b.passUntil = -1;
+  b.backUntil = -1;
+  b.held = 0;
+  b.detourUntil = -1;
   b.mood = 0.9 + rand(b) * 0.2;
   for (const [k, v] of b.grudge) b.grudge.set(k, v * 0.5);
 }
@@ -295,10 +308,12 @@ function pickTarget(arena: Arena, m: Machine, b: Bot, foes: Machine[]): Machine 
     if (p.style === "jackal" && o.stun <= 0.2 && o.hp > 25) s -= 1;
     // Flak: the highest machine is the easiest rocket
     if (p.style === "flak") s += ((m.hull.y - o.hull.y) / 300) * 0.5;
-    // the original's crowd rule: a second attacker is less keen, a third stays away (fights spread out); a
-    // stunned or 12-health machine is the exception (the third-party dive is the drama)
+    // the original's crowd rule: a second attacker is less keen, a third stays away (fights spread out). A stunned or
+    // 12-health machine draws a second attacker (the third-party dive is the drama), but not a third: before
+    // 2026-11-17 it drew everyone, and every stun turned into a pile of 3-5 machines (pile anatomy, modes.bench).
     const crowd = attackersOn(arena, o, m);
-    if (o.stun <= 0.2 && o.hp > 12) s -= crowd === 0 ? 0 : crowd === 1 ? 0.5 : 2;
+    const open = o.stun > 0.2 || o.hp <= 12;
+    s -= crowd === 0 ? 0 : crowd === 1 ? (open ? 0 : 0.5) : open ? 3 : 2.5;
     // kingslayer: the untouched leader draws everyone (no one sits out a free-for-all)
     if (foes.length > 1) s += (o.hp / 100) * 0.6;
     if (o === b.target) s += 0.25;
@@ -317,7 +332,7 @@ function stagePush(arena: Arena, m: Machine, out: [number, number]): void {
   const k = 1 / 80;
   if (h.x < EDGE_M + 40) out[0] += (EDGE_M + 40 - h.x) * k;
   if (h.x > arena.w - EDGE_M - 40) out[0] -= (h.x - (arena.w - EDGE_M - 40)) * k;
-  if (h.y < EDGE_TOP + 20) out[1] += (EDGE_TOP + 20 - h.y) * k;
+  if (h.y < edgeTop(arena) + 20) out[1] += (edgeTop(arena) + 20 - h.y) * k;
   if (h.y > arena.h - EDGE_M - 20) out[1] -= (h.y - (arena.h - EDGE_M - 20)) * k;
   // the next 0.2 s of the hull's path against each obstacle box
   const fx = h.x + h.vx * 0.2;
@@ -326,6 +341,19 @@ function stagePush(arena: Arena, m: Machine, out: [number, number]): void {
     if (o.hp <= 0) continue;
     const ox = o.body.x;
     const oy = o.body.y;
+    if (o.kind === "saw") {
+      // a saw: a wide berth (it cuts); slide round it
+      const dx = fx - ox;
+      const dy = fy - oy;
+      const dc = Math.hypot(dx, dy) || 1;
+      const d = dc - o.hw;
+      if (d < SAW_BERTH) {
+        const f = ((SAW_BERTH - d) / SAW_BERTH) * 2.5;
+        out[0] += (dx / dc) * f;
+        out[1] += (dy / dc) * f;
+      }
+      continue;
+    }
     const nx = Math.max(ox - o.hw, Math.min(ox + o.hw, fx));
     const ny = Math.max(oy - o.hh, Math.min(oy + o.hh, fy));
     const dx = fx - nx;
@@ -339,7 +367,81 @@ function stagePush(arena: Arena, m: Machine, out: [number, number]): void {
   }
 }
 
-const onStage = (arena: Arena, x: number, y: number) => x > EDGE_M + 30 && x < arena.w - EDGE_M - 30 && y > EDGE_TOP + 10 && y < arena.h - EDGE_M - 10;
+/** After landing a hit, a bot stands off this long (s) and this much farther (px): it winds up again instead of grinding in. */
+const BACK_S = 0.45;
+const BACK_PX = 45;
+/** Bots keep this far (px) from machines they are not fighting, allies most of all. */
+const SPACE_R = 170;
+/** Bots keep this far (px) from a saw's teeth. */
+const SAW_BERTH = 90;
+/** Strength of the spacing push (1 = the pump's thrust) from others and from allies. */
+const SPACE_K = 4;
+const SPACE_ALLY = 3;
+/** A wall or saw this close (px) to the target is worth hitting it into. */
+const SHOVE_R = 260;
+
+/**
+ * Spacing (2026-11-17, the play test: "the bots pile on top of each other"): a push away from every machine that is
+ * not my target, stronger from allies. With the crowd rule it keeps fights to pairs and threes. O(machines).
+ */
+function spacing(arena: Arena, m: Machine, T: Machine | null, out: [number, number]): void {
+  const h = m.hull;
+  for (const o of arena.machines) {
+    if (o === m || o === T || !o.alive || o.monster) continue;
+    const dx = h.x - o.hull.x;
+    const dy = h.y - o.hull.y;
+    const d = Math.hypot(dx, dy);
+    if (d >= SPACE_R || d < 1) continue;
+    const f = ((SPACE_R - d) / SPACE_R) * (o.team === m.team ? SPACE_ALLY : SPACE_K);
+    out[0] += (dx / d) * f;
+    out[1] += (dy / d) * f;
+  }
+}
+
+/**
+ * The side to strike T from (a unit vector from T toward my spot): turned away from the other attackers on T (flank:
+ * no two on one side), and toward the far side of T from a nearby wall or saw, so the hit drives T into it.
+ */
+function strikeSide(arena: Arena, m: Machine, T: Machine, ux: number, uy: number): [number, number] {
+  const c = claims.get(arena);
+  if (c) {
+    for (const [a, t] of c) {
+      if (t !== T || a === m || !a.alive) continue;
+      const vx = a.hull.x - T.hull.x;
+      const vy = a.hull.y - T.hull.y;
+      const vl = Math.hypot(vx, vy) || 1;
+      // within ~70° of my side: move off it
+      if ((ux * vx + uy * vy) / vl > 0.35) {
+        ux += ux - vx / vl;
+        uy += uy - vy / vl;
+      }
+    }
+  }
+  let best = SHOVE_R;
+  let sx = 0;
+  let sy = 0;
+  for (const o of arena.obstacles) {
+    if (o.kind !== "wall" && o.kind !== "saw") continue;
+    const dx = T.hull.x - o.body.x;
+    const dy = T.hull.y - o.body.y;
+    const d = Math.hypot(dx, dy) - Math.max(o.hw, o.hh) * 0.5;
+    if (d < best && d > 0) {
+      best = d;
+      const l = Math.hypot(dx, dy) || 1;
+      sx = dx / l;
+      sy = dy / l;
+    }
+  }
+  if (best < SHOVE_R) {
+    const k = 1.2 * (1 - best / SHOVE_R);
+    ux += sx * k;
+    uy += sy * k;
+  }
+  const l = Math.hypot(ux, uy) || 1;
+  return [ux / l, uy / l];
+}
+
+const onStage = (arena: Arena, x: number, y: number) => x > EDGE_M + 30 && x < arena.w - EDGE_M - 30 && y > edgeTop(arena) + 10 && y < arena.h - EDGE_M - 10;
 
 /** Steer toward (x, y) at up to `speed` px/s with a soft stick (arrive without overshoot). */
 function seek(arena: Arena, m: Machine, x: number, y: number, speed: number, t: StickTune): void {
@@ -365,6 +467,8 @@ function seek(arena: Arena, m: Machine, x: number, y: number, speed: number, t: 
 
 function guns(arena: Arena, m: Machine, enemy: Machine): void {
   for (const g of m.guns) {
+    // a reloading gun: don't hold fire (aiming would only slow the flying)
+    if (g.ammo < 1) continue;
     const b = g.body;
     const d0 = Math.hypot(enemy.hull.x - b.x, enemy.hull.y - b.y);
     if (d0 > (g.spec.pellets > 1 ? 280 : 650)) continue;
@@ -372,10 +476,14 @@ function guns(arena: Arena, m: Machine, enemy: Machine): void {
     const tFly = d0 / Math.max(300, g.spec.speed);
     const dx = enemy.hull.x + enemy.hull.vx * tFly - b.x;
     const dy = enemy.hull.y + enemy.hull.vy * tFly - b.y;
-    const d = Math.hypot(dx, dy);
+    // A sidearm aims as a phone does: hold fire and point at the lead point (sim.ts aim; it fires when lined up).
+    // Aiming slows the flying, so only once the gun is roughly that way already. A gun that can't aim (the tribune's
+    // back blade) fires along its axis: hold fire only when it points at the target.
+    const d = Math.hypot(dx, dy) || 1;
     const off = Math.abs(Math.atan2(Math.sin(Math.atan2(dy, dx) - b.a), Math.cos(Math.atan2(dy, dx) - b.a)));
-    if (off < Math.max(0.12, 30 / d)) {
+    if (off < (aimable(g) ? 1.05 : Math.max(0.12, 30 / d))) {
       arena.fire(m);
+      arena.aim(m, dx / d, dy / d);
       break;
     }
   }
@@ -386,6 +494,7 @@ function readEvents(arena: Arena, m: Machine, b: Bot): void {
   for (const e of arena.events) {
     if (e.type === "hit") {
       if (e.attacker === m || e.victim === m) b.quiet = 0;
+      if (e.attacker === m && e.victim !== m && e.dmg > 0) b.backUntil = arena.t + BACK_S;
       if (e.victim === m && e.attacker !== m) b.grudge.set(e.attacker.id, Math.min(3, (b.grudge.get(e.attacker.id) ?? 0) + e.dmg / 20));
     } else if (e.type === "clash" && (e.a === m || e.b === m)) b.quiet = 0;
     else if (e.type === "ko" && e.victim !== m && e.by && e.by !== m && b.target === e.victim) {
@@ -423,14 +532,22 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
     let gd = Infinity;
     for (const x of arena.looseGrips()) {
       const d = Math.hypot(x.x - h.x, x.y - h.y);
-      if (x.y < arena.h + 40 && d < gd) {
+      // only a grip a hull can reach (the pick-up range is 34 px; a hull stays 16 px inside the side walls and 18 px
+      // above the floor): one past a side wall or under the floor held disarmed bots against the wall for the round
+      if (x.x > -14 && x.x < arena.w + 14 && x.y < arena.h + 12 && d < gd) {
         gd = d;
         g = x;
       }
     }
     bot.intent = "retrieve";
     if (g) seek(arena, m, g.x, g.y + 6, 550, tune);
-    else if (foes[0]) seek(arena, m, h.x + (h.x - foes[0].hull.x), arena.h * 0.5, 400, tune);
+    else if (foes[0]) {
+      // nothing to pick up: keep away from the enemy, but on the stage and on the move (fleeing straight away pinned
+      // the machine to a side wall for the rest of the round)
+      const x = Math.max(EDGE_M + 60, Math.min(arena.w - EDGE_M - 60, h.x + (h.x - foes[0].hull.x)));
+      const y = arena.h * (0.5 + 0.25 * Math.sin(arena.t * 0.8 + m.id));
+      seek(arena, m, x, y, 400, tune);
+    }
     return;
   }
 
@@ -496,6 +613,7 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
     const du = Math.hypot(ux, uy) || 1;
     ux /= du;
     uy /= du;
+    [ux, uy] = strikeSide(arena, m, T, ux, uy);
     const ready = vh >= p.gate * c.vSwing;
     const finishing = T.hp <= 12 && !sudden;
     const strong = !finishing || vh >= c.vFinish * (c.blade ? 0.8 : 1);
@@ -513,6 +631,7 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
     if (inPhase && ready && strong) gap = 0;
     if (!strong) gap = Math.max(gap, s.radius + 50); // wait outside until a killing blow is wound up
     let want = c.L * p.standoff * bot.mood + (c.blade && p.style === "graze" ? s.radius + 10 : 0) + gap;
+    if (arena.t < bot.backUntil && !finishing) want += BACK_PX;
     // Flak keeps its rocket range and Jackal waits outside, but not in a showdown or after a quiet spell
     if (p.style === "flak" && !showdown && !stunned) want = Math.max(want, 220 * (1 - urge));
     if (p.style === "jackal" && !showdown && !stunned && T.hp > 25) want = Math.max(want, c.L * 2.2 * (1 - urge));
@@ -537,7 +656,7 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
         }
       }
       px = Math.max(EDGE_M + 30, Math.min(arena.w - EDGE_M - 30, px));
-      py = Math.max(EDGE_TOP + 10, Math.min(arena.h - EDGE_M - 10, py));
+      py = Math.max(edgeTop(arena) + 10, Math.min(arena.h - EDGE_M - 10, py));
     }
     bot.intent = stunned ? "combo" : finishing ? "finish" : inPhase && ready ? "strike" : "windup";
 
@@ -560,6 +679,20 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
       }
     }
 
+    // held off the spot (by a ledge or a wall between, or by the spacing) for over a second: go round, toward the
+    // open middle, for a moment (play test 2026-11-17: Flak sat on a balcony over its target under it)
+    if (Math.hypot(h.vx, h.vy) < 40 && Math.hypot(px - h.x, py - h.y) > 60) bot.held += dt;
+    else bot.held = 0;
+    if (bot.held > 1.2) {
+      bot.held = 0;
+      bot.detourUntil = arena.t + 1;
+      bot.detourX = h.x < arena.w / 2 ? Math.min(arena.w / 2, h.x + 320) : Math.max(arena.w / 2, h.x - 320);
+    }
+    if (arena.t < bot.detourUntil) {
+      px = bot.detourX;
+      py = h.y;
+      bot.intent = "detour";
+    }
     const ex = px - h.x;
     const ey = py - h.y;
     const ed = Math.hypot(ex, ey);
@@ -576,6 +709,7 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
   }
   if (!ready_(vh, c, p)) bot.pumpSteps++;
   stagePush(arena, m, dir);
+  spacing(arena, m, T, dir);
   const [sx, sy] = thrustStick(arena, m, dir[0], dir[1], tune);
   stickPush(arena, m, sx, sy, tune);
   if (m.guns.length) guns(arena, m, T);
@@ -606,7 +740,7 @@ function classicDrive(arena: Arena, m: Machine, bot: { theta: number; spin: numb
   }
   bot.theta += STEP * 3.2 * bot.spin;
   const x = Math.min(arena.w - EDGE_M, Math.max(EDGE_M, enemy.hull.x + Math.cos(bot.theta) * 90));
-  const y = Math.min(arena.h - EDGE_M, Math.max(EDGE_TOP, enemy.hull.y + Math.sin(bot.theta) * 90));
+  const y = Math.min(arena.h - EDGE_M, Math.max(edgeTop(arena), enemy.hull.y + Math.sin(bot.theta) * 90));
   if (viaStick) {
     seek(arena, m, x, y, 350, STICK_DEFAULTS);
   } else {

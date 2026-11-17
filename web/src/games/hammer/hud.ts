@@ -28,6 +28,7 @@ interface Card {
   chip: HTMLElement;
   pips: HTMLElement;
   icon: HTMLElement;
+  stamp: HTMLElement;
   key: string;
   /** What the icon and the pips show now (rebuilt only when these change, not on every hit). */
   weapon: string;
@@ -47,6 +48,15 @@ export class Hud {
   private layoutKey = "";
   private annTimer = 0;
   private warmKey = "";
+  private fpsEl: HTMLElement;
+  private fpsShown = -1;
+
+  /** The small frame-rate counter in the bottom-right corner; the page changes only when the number does. */
+  setFps(fps: number): void {
+    if (fps === this.fpsShown) return;
+    this.fpsShown = fps;
+    this.fpsEl.textContent = `${fps} fps`;
+  }
 
   constructor(root: HTMLElement) {
     this.el = document.createElement("div");
@@ -56,8 +66,10 @@ export class Hud {
       <div class="hm-side hm-right"></div>
       <div class="hm-feed"></div>
       <div class="hm-ann"></div>
-      <div class="hm-warm" hidden><b></b><i><s></s></i></div>`;
+      <div class="hm-warm" hidden><b></b><i><s></s></i></div>
+      <div class="hm-fps"></div>`;
     root.appendChild(this.el);
+    this.fpsEl = this.el.querySelector(".hm-fps")!;
     this.left = this.el.querySelector(".hm-left")!;
     this.right = this.el.querySelector(".hm-right")!;
     this.feedEl = this.el.querySelector(".hm-feed")!;
@@ -97,6 +109,7 @@ export class Hud {
           chip: el.querySelector(".hm-chip")!,
           pips: el.querySelector(".hm-pips")!,
           icon: el.querySelector(".hm-ico")!,
+          stamp: el.querySelector(".hm-stamp")!,
           key: "",
           weapon: "",
           pipKey: "",
@@ -127,7 +140,9 @@ export class Hud {
         c.pipKey = pipKey;
         c.pips.innerHTML = Array.from({ length: winsToMatch }, (_, i) => `<i${i < s.wins ? ' class="on"' : ""}></i>`).join("");
       }
-      (c.el.querySelector(".hm-stamp") as HTMLElement).textContent = !s.alive ? "K.O." : s.stunned ? "STUNNED" : !s.armed ? "NO WEAPON" : "";
+      // only when it changes: a new text node (even the same text) means layout and a repaint of the HUD on the TV
+      const stamp = !s.alive ? "K.O." : s.stunned ? "STUNNED" : !s.armed ? "NO WEAPON" : "";
+      if (c.stamp.textContent !== stamp) c.stamp.textContent = stamp;
     }
   }
 
@@ -167,15 +182,19 @@ export class Hud {
     this.feedEl.innerHTML = "";
   }
 
-  /** The bottom strip during warm-up: a line of text and how much of the countdown is left (0–1, or null for none). */
-  warmup(text: string | null, frac: number | null): void {
-    const key = `${text}|${frac === null ? "-" : Math.round(frac * 50)}`;
+  /**
+   * The bottom strip (the warm-up, and the wave timer in co-op vs monsters): a line of text and how much of the
+   * countdown is left (0–1, or null for none); `urgent` turns it red (the last seconds).
+   */
+  warmup(text: string | null, frac: number | null, urgent = false): void {
+    const key = `${text}|${frac === null ? "-" : Math.round(frac * 50)}|${urgent}`;
     if (key === this.warmKey) return;
     this.warmKey = key;
     this.warm.hidden = text === null;
     if (text === null) return;
     this.warmText.textContent = text;
     this.warm.classList.toggle("timed", frac !== null);
+    this.warm.classList.toggle("urgent", urgent);
     // transform, not width: the TV only recomposites the bar (width meant layout + paint all warm-up long)
     this.warmBar.style.transform = `scaleX(${Math.max(0, Math.min(1, frac ?? 0))})`;
   }

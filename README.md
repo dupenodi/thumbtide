@@ -154,8 +154,10 @@ role, their hand of cards).
 
 You don't need to build any of this into a game:
 
-- **Dropped phones.** A phone that sleeps, loses Wi-Fi or reloads keeps its place for 60 seconds and rejoins as the
+- **Dropped phones.** A phone that loses Wi-Fi or reloads keeps its place for 60 seconds and rejoins as the
   same player. A TV page reload keeps the same room and everyone stays in.
+- **Phones on another app.** A phone that switches app or locks tells the TV it's *away* first. Its player is
+  paused, not dropped: the seat waits up to 10 minutes and no computer takes it over.
 - **The host menu.** Pause, resume, restart, end the game, change settings, lock the room and remove players, all
   from the host's phone. The TV never needs a keyboard. A game switches on pause and restart by returning those functions.
 - **Phone-as-controller problems.** Fullscreen on Android (and an Add to Home Screen prompt on iPhone, which can't go
@@ -337,8 +339,9 @@ const mount: HostMount = (ctx) => {
 export default mount;
 ```
 
-Each player has `id`, `name`, `index` (their join order, used for colours), `connected` and `input`. Other events:
-`drop` (their phone disconnected, they may come back) and `rejoin`.
+Each player has `id`, `name`, `index` (their join order, used for colours), `connected`, `away` and `input`. Other events:
+`drop` (their phone disconnected, they may come back), `rejoin`, and `away` (`p.away` changed: their phone is on
+another app or locked; keep their seat, let their piece idle and don't hand it to a computer).
 Settings are read with `ctx.settings()`. `ctx.onSettings(fn)` tells you when the host changes one mid-game.
 `ctx.exit()` returns to the lobby.
 
@@ -450,7 +453,21 @@ machine round.
 
 With a weapon you can take a gun (arquebus, mortar, heavy mortar, rocket launcher; hold Fire on the phone) and a
 shield: two plates on short rods, from light wood to armour. A fast, hard hit knocks a plate off; holding Shield
-spreads the plates and halves thrust. The tribune's back blade is a gun of its own.
+spreads the plates and halves thrust. The tribune's back blade is a gun of its own. Hold Fire and push the stick to aim
+the arquebus (our addition: Hammerfight's guns don't aim): it swings toward the stick, fires once it points within
+11°. A gun's body never hurts anyone, but it is heavy and fragile: a few hard blows break it off (our addition).
+A shot that lands knocks the target back and is spent (a mortar's balls also stun); shots bounce only off walls and
+crates; a gun kicks the shooter back along the barrel (not the launcher: its rockets push themselves; see `web/src/games/hammer/RE_GUNS.md`). Blades cut on the side Hammerfight draws as the edge; the back of a one-sided axe
+only bludgeons. Weapons, guns and plates are drawn with Hammerfight's own sprites.
+
+The stick tune lives in `hammer.pad` (`stick 420`, `steer 5.6`; 30% softer than before after a play test).
+
+Arenas (setting **Arena**): Classic, Walls and crates, Big and Huge with a saw on each side wall (it cuts and stuns a
+machine shoved into it), and six after Hammerfight's levels (see
+`arenas.ts` and `RE_ARENAS.md`): **The Stands**, **Sunrise Towers**, **The Eye**, **Melka Arena** (cages swing on
+ropes), **Block Hall** (loose blocks to knock around) and **The Pit** (a hanging chain). The middle of every arena is
+open; plank walls toward the sides are slam surfaces (a reeling machine knocked into one gets more stun) and break
+after a beating. Machines can't leave the screen at any edge.
 
 Each round starts with a warm-up: fly and swing with no damage, and pick a weapon, a gun and a shield on the phone.
 

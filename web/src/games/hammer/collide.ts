@@ -167,7 +167,15 @@ export function collideAll(bodies: Body[], dt: number, onContact?: (c: ContactRe
       // Relative sweep this step.
       const mx = A.x - A.rx - (B.x - B.rx);
       const my = A.y - A.ry - (B.y - B.ry);
-      const sweep = Math.hypot(mx, my) + Math.abs(A.a - A.ra) * A.radius + Math.abs(B.a - B.ra) * B.radius;
+      const turnA = Math.abs(A.a - A.ra) * A.radius;
+      const turnB = Math.abs(B.a - B.ra) * B.radius;
+      // a cheap first test without square roots: |mx| + |my| is at least the sweep's length, so a pair this far apart
+      // on x or y also fails the exact test below (most pairs; with 8 machines there are thousands a step)
+      const far = A.radius + B.radius + Math.abs(mx) + Math.abs(my) + turnA + turnB + 1;
+      const ex = A.x - B.x;
+      const ey = A.y - B.y;
+      if (ex > far || ex < -far || ey > far || ey < -far) continue;
+      const sweep = Math.hypot(mx, my) + turnA + turnB;
       const reach = A.radius + B.radius + sweep;
       const dEnd = Math.hypot(A.x - B.x, A.y - B.y);
       if (dEnd > reach) continue;

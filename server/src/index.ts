@@ -18,6 +18,7 @@ import { RoomManager, type Conn, type Room } from "./rooms.ts";
 export interface StartOptions {
   port?: number;
   playerGraceMs?: number;
+  awayGraceMs?: number;
   hostGraceMs?: number;
   /** See RoomManager (tests use 0). */
   ghostMinMs?: number;
@@ -91,7 +92,12 @@ function parseFrame(ws: WebSocket, raw: Buffer | ArrayBuffer | Buffer[], limiter
 }
 
 export function startServer(opts: StartOptions = {}) {
-  const rooms = new RoomManager({ playerGraceMs: opts.playerGraceMs, hostGraceMs: opts.hostGraceMs, ghostMinMs: opts.ghostMinMs });
+  const rooms = new RoomManager({
+    playerGraceMs: opts.playerGraceMs,
+    awayGraceMs: opts.awayGraceMs,
+    hostGraceMs: opts.hostGraceMs,
+    ghostMinMs: opts.ghostMinMs,
+  });
   const allowed = new Set(opts.allowedOrigins?.filter(Boolean) ?? []);
   const rec = opts.record ? (line: object) => opts.record!({ ts: Date.now(), ...line }) : null;
 
@@ -177,6 +183,11 @@ export function startServer(opts: StartOptions = {}) {
     const conn = toConn(ws);
     const result = room.joinController(conn, url.searchParams.get("name") ?? "", url.searchParams.get("token"));
     if (typeof result === "number") {
+      if (result === CLOSE_CODES.left) {
+        // the away limit gave this phone's seat up while it was offline; the room already told it why
+        ws.close(result, "seat given up");
+        return;
+      }
       const errCode: ErrorCode = result === CLOSE_CODES.roomLocked ? "room-locked" : "room-full";
       sendError(ws, errCode, errCode === "room-locked" ? "game in progress" : "room is full");
       ws.close(result, errCode);

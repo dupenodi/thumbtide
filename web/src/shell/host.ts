@@ -57,7 +57,7 @@ shell.state = state;
 
 function publish() {
   state.vip = shell.vip;
-  state.players = host.list.map((p) => ({ id: p.id, name: p.name, connected: p.connected }));
+  state.players = host.list.map((p) => ({ id: p.id, name: p.name, connected: p.connected, away: p.away }));
   state.settings = settingsFor(state.selected ?? state.game);
   host.broadcast({ $sys: "shell", state });
   shell.emit();
@@ -137,9 +137,10 @@ const pauseMenu = createPauseMenu({
 });
 
 // --------------------------------------------------------------- VIP
-// The first connected player (by join order) controls menus from their phone.
+// The first connected player (by join order) controls menus from their phone. A phone that's away (on another
+// app, or locked) hands it on while it's away, so someone can still pause or remove a seat.
 function refreshVip() {
-  shell.vip = host.list.find((p) => p.connected)?.id ?? null;
+  shell.vip = (host.list.find((p) => p.connected && !p.away) ?? host.list.find((p) => p.connected))?.id ?? null;
   publish(); // also carries the player list, so send it on every change
 }
 
@@ -149,6 +150,7 @@ host.on("rejoin", (p) => {
   tell(p);
 });
 host.on("drop", () => refreshVip());
+host.on("away", () => refreshVip());
 host.on("leave", () => refreshVip());
 
 host.on("message", (p, data) => {

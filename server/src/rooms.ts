@@ -31,6 +31,8 @@ const DROPPABLE_BUFFER_LIMIT = 256 * 1024;
 export interface ManagerOptions {
   maxRooms?: number;
   playerGraceMs?: number;
+  /** How long a phone may stay away (connected or not) before its seat goes (default LIMITS.awayGraceMs). */
+  awayGraceMs?: number;
   hostGraceMs?: number;
   /** A dropped seat can go to a newcomer in a full room only after it has been empty this long (default 10 s). */
   ghostMinMs?: number;
@@ -41,6 +43,8 @@ interface Player {
   token: string;
   conn: Conn | null;
   graceTimer: ReturnType<typeof setTimeout> | null;
+  /** Runs while the phone says it's away (connected or not): the seat goes when it runs out. */
+  awayTimer: ReturnType<typeof setTimeout> | null;
   /** When the socket dropped (Date.now()), 0 while connected. */
   droppedAt: number;
   ownState: unknown;
@@ -49,6 +53,10 @@ interface Player {
 const cleanName = (raw: string) => raw.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, LIMITS.maxNameLength);
 
 const token = () => randomBytes(18).toString("base64url");
+/** How long a room remembers the token of a seat the away limit freed while its phone was offline. */
+const LOST_SEAT_MEMORY_MS = 60 * 60_000;
+/** At most this many remembered tokens per room (oldest go first). */
+const LOST_SEAT_MAX = 64;
 const shortId = () => randomBytes(4).toString("hex");
 
 function sendHost(conn: Conn, msg: ServerToHost) {
@@ -65,6 +73,11 @@ export class Room {
   players = new Map<string, Player>();
   sharedState: unknown = null;
   private nextIndex = 0;
+  /**
+   * Tokens of seats the away limit freed while their phone was offline, with when they were freed: when that phone
+   * reconnects, it is told its seat was given up (instead of quietly getting a new seat, or "room locked").
+   */
+  private lostAway = new Map<string, number>();
   private hostGraceTimer: ReturnType<typeof setTimeout> | null = null;
   closed = false;
 
@@ -154,6 +167,14 @@ export class Room {
       for (const p of this.players.values()) {
         if (p.token === playerToken) return this.resume(p, conn);
       }
+      // The away limit gave this phone's seat up while it was offline: say so. Not only once: a phone coming back
+      // often opens two sockets in a row (back online, and visible again) and the first answer can be lost with
+      // the socket it dropped. The SDK forgets the token when told, so joining again is a new tap without it.
+      const lostAt = this.lostAway.get(playerToken);
+      if (lostAt !== undefined && Date.now() - lostAt < LOST_SEAT_MEMORY_MS) {
+        sendCtl(conn, { t: "closed", reason: this.awayTimeoutReason() });
+        return CLOSE_CODES.left;
+      }
       // Unknown/expired token: fall through and join as a new player.
     }
 
@@ -175,20 +196,22 @@ export class Room {
     if (this.players.size >= this.config.maxPlayers) {
       // Full, but some seats may belong to phones that dropped and are still in their grace period.
       // A real person at the door beats a ghost: free the seat that has been empty longest, if it has been empty
-      // for ghostMinMs (a phone whose Wi-Fi blips for a second keeps its seat).
+      // for ghostMinMs (a phone whose Wi-Fi blips for a second keeps its seat). A phone that said it was away
+      // (another app, the screen locked) is still in its player's hand: its seat is not a ghost.
       let ghost: Player | null = null;
       for (const p of this.players.values()) {
-        if (!p.conn && Date.now() - p.droppedAt >= this.mgr.ghostMinMs && (!ghost || p.droppedAt < ghost.droppedAt)) ghost = p;
+        if (!p.conn && !p.info.away && Date.now() - p.droppedAt >= this.mgr.ghostMinMs && (!ghost || p.droppedAt < ghost.droppedAt)) ghost = p;
       }
       if (!ghost) return CLOSE_CODES.roomFull;
       this.removePlayer(ghost, "timeout");
     }
 
     const p: Player = {
-      info: { id: shortId(), name: this.uniqueName(name), index: this.nextIndex++, connected: true },
+      info: { id: shortId(), name: this.uniqueName(name), index: this.nextIndex++, connected: true, away: false },
       token: token(),
       conn,
       graceTimer: null,
+      awayTimer: null,
       droppedAt: 0,
       ownState: null,
     };
@@ -217,6 +240,9 @@ export class Room {
     p.info.connected = false;
     if (!this.players.has(p.info.id)) return;
     if (this.host) sendHost(this.host, { t: "drop", id: p.info.id });
+    // Away first (the page went to the background), then the socket died: the phone is still in use, so the
+    // seat waits for the away timer instead. A drop with no "away" before it is a real disconnect.
+    if (p.info.away) return;
     p.graceTimer = setTimeout(() => this.removePlayer(p, "timeout"), this.mgr.playerGraceMs);
   }
 
@@ -231,6 +257,18 @@ export class Room {
           sendHost(this.host, { t: "in", from: p.info.id, d: msg.d });
         }
         break;
+      case "away": {
+        // The phone owns this flag: the relay never clears it on a drop or a reconnect.
+        // Away has its own limit, from when it starts: a hidden phone can keep its socket (or reconnect in the
+        // background), and its seat must still go in the end.
+        const away = msg.away === true;
+        if (p.info.away === away) break;
+        p.info.away = away;
+        if (p.awayTimer) clearTimeout(p.awayTimer);
+        p.awayTimer = away ? setTimeout(() => this.awayExpired(p), this.mgr.awayGraceMs) : null;
+        if (this.host) sendHost(this.host, { t: "away", id: p.info.id, away });
+        break;
+      }
       case "leave":
         this.removePlayer(p, "left");
         break;
@@ -260,17 +298,36 @@ export class Room {
   private removePlayer(p: Player, reason: RemoveReason) {
     if (!this.players.delete(p.info.id)) return;
     if (p.graceTimer) clearTimeout(p.graceTimer);
-    p.graceTimer = null;
+    if (p.awayTimer) clearTimeout(p.awayTimer);
+    p.graceTimer = p.awayTimer = null;
     if (p.conn) {
       if (reason === "kicked") {
         sendCtl(p.conn, { t: "closed", reason: "kicked" });
         p.conn.close(CLOSE_CODES.kicked, "kicked");
+      } else if (reason === "timeout") {
+        // only the away limit times out a seat whose socket is still open: say so, not "you left"
+        sendCtl(p.conn, { t: "closed", reason: this.awayTimeoutReason() });
+        p.conn.close(CLOSE_CODES.left, "away too long");
       } else {
         p.conn.close(CLOSE_CODES.left, "left");
       }
       p.conn = null;
     }
     if (this.host) sendHost(this.host, { t: "remove", id: p.info.id, reason });
+  }
+
+  /** The away limit ran out. A phone that is offline hears about it when it reconnects (its token is remembered). */
+  private awayExpired(p: Player) {
+    if (!p.conn) {
+      const now = Date.now();
+      for (const [tok, at] of this.lostAway) if (now - at >= LOST_SEAT_MEMORY_MS || this.lostAway.size >= LOST_SEAT_MAX) this.lostAway.delete(tok);
+      this.lostAway.set(p.token, now);
+    }
+    this.removePlayer(p, "timeout");
+  }
+
+  private awayTimeoutReason() {
+    return this.config.locked ? ("away-timeout-locked" as const) : ("away-timeout" as const);
   }
 
   private resolve(to: Target): Player[] {
@@ -305,6 +362,7 @@ export class Room {
     if (this.hostGraceTimer) clearTimeout(this.hostGraceTimer);
     for (const p of this.players.values()) {
       if (p.graceTimer) clearTimeout(p.graceTimer);
+      if (p.awayTimer) clearTimeout(p.awayTimer);
       if (p.conn) {
         sendCtl(p.conn, { t: "closed", reason });
         p.conn.close(CLOSE_CODES.roomClosed, reason);
@@ -322,12 +380,14 @@ export class RoomManager {
   private byHostToken = new Map<string, Room>();
   readonly maxRooms: number;
   readonly playerGraceMs: number;
+  readonly awayGraceMs: number;
   readonly hostGraceMs: number;
   readonly ghostMinMs: number;
 
   constructor(opts: ManagerOptions = {}) {
     this.maxRooms = opts.maxRooms ?? 5000;
     this.playerGraceMs = opts.playerGraceMs ?? LIMITS.playerGraceMs;
+    this.awayGraceMs = opts.awayGraceMs ?? LIMITS.awayGraceMs;
     this.hostGraceMs = opts.hostGraceMs ?? LIMITS.hostGraceMs;
     this.ghostMinMs = opts.ghostMinMs ?? 10_000;
   }

@@ -12,7 +12,7 @@ import { makeTour } from "./tour.ts";
 import { createGameAudio } from "./audio.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount } from "../types.ts";
-import { applyArenaKind, spawnPoint, STICK_DEFAULTS, type StickTune, stickPush as stickPushFor } from "./arenas.ts";
+import { applyArenaKind, openSideRows, relaunchLost, spawnPoint, waveRoom, waveSeconds, wormSpawn, STICK_DEFAULTS, type StickTune, stickPush as stickPushFor } from "./arenas.ts";
 import { type Bot, driveBot, makeBot, newRound, PROFILES, type ProfileId, profileLoadout, ROSTER } from "./bots.ts";
 import "./hammer.css";
 import { loadGameFont } from "./font.ts";
@@ -36,9 +36,8 @@ const PVE_TEAMS = [
   { name: "Players", color: "#7cf29a" },
   { name: "CPU", color: "#c18cff" },
 ];
-/** Co-op vs monsters: the monsters' team, and how many may be alive at once (TV budget). */
+/** Co-op vs monsters: the monsters' team (how many may be alive at once: MAX_WORMS in arenas.ts). */
 const MONSTER_TEAM = 9;
-const MAX_MONSTERS = 4;
 const MONSTER_COLOR = "#c8995a";
 // The warm-up (weapon pick, no damage). Shorter after the play test: with ~15 s rounds, 4 s of result and 8 s of
 // pick were nearly half the session.
@@ -101,6 +100,8 @@ const mount: HostMount = (ctx) => {
   // perf A/B (perf builds only): passes=N joint passes, canvasw=W canvas width (min 320), hud=off, draw=off (the canvas keeps one picture)
   const abPasses = import.meta.env.VITE_PERF === "1" ? Number(startParam("passes")) || 0 : 0;
   const abHudOff = import.meta.env.VITE_PERF === "1" && startParam("hud") === "off";
+  // hud=frozen: the cards stop updating during a fight (they stay on screen): what the card updates cost
+  const abHudFrozen = import.meta.env.VITE_PERF === "1" && startParam("hud") === "frozen";
   const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
   // kos=burst (perf builds): every 6 s in a fight, wreck 3 machines at once (the worst moment for shards and coins)
   const abKoBurst = import.meta.env.VITE_PERF === "1" && startParam("kos") === "burst";
@@ -231,20 +232,51 @@ const mount: HostMount = (ctx) => {
     }
     monsters = [];
   };
-  /** Wave n: 1, 2, 2, 3, 4… worms (at most 4 alive); armoured worms from wave 3. They fly in from the sides. */
-  const spawnWave = () => {
-    // fit the wave in the body budget (each worm is 10 bodies), but always at least one worm. When heavy weapons
-    // leave no room for a full worm, the one worm is shorter (core + jaw + at least 3 segments) to fit what is left.
+  /**
+   * Wave n: 1, 2, 2, 3, 4… worms (at most MAX_WORMS alive, leftovers of the last wave included); armoured worms from
+   * wave 3. They fly in from the sides. Returns how many came.
+   */
+  const spawnWave = (wave: number): number => {
+    // fit the wave in the body budget (each worm is 10 bodies), but a fight always starts with at least one worm. When
+    // heavy weapons leave no room for a full worm, that worm is shorter (core + jaw + at least 3 segments).
     const free = (lite ? BODY_BUDGET_LITE : BODY_BUDGET) - arena.world.bodies.length;
-    const room = Math.floor(free / 10);
-    const n = Math.max(1, Math.min(MAX_MONSTERS, 1 + Math.floor(round / 2), room));
-    const segments = room < 1 ? free - 2 : undefined;
-    for (let i = 0; i < n; i++) {
-      const left = i % 2 === 0;
-      const kind = round >= 3 && i % 2 === 1 ? "armoredworm" : "worm";
-      const y = 120 + Math.random() * (arena.h - 240);
-      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, x: left ? -40 : arena.w + 40, y, dir: left ? 0 : Math.PI, segments }));
+    const alive = monsters.filter((w) => w.alive).length;
+    let n = waveRoom(wave, alive, free);
+    let segments: number | undefined;
+    if (n === 0 && alive === 0) {
+      n = 1;
+      segments = free - 2;
     }
+    // only at heights where the side is open to the fight (not into a sealed corner behind a slab)
+    const rows = openSideRows(arena);
+    for (let i = 0; i < n; i++) {
+      const kind = wave >= 3 && i % 2 === 1 ? "armoredworm" : "worm";
+      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, ...wormSpawn(arena, alive + i, rows), segments }));
+    }
+    return n;
+  };
+  // The wave timer (OURS, 2026-11-17): when it runs out the next wave comes even if worms are left (a worm that hid
+  // held a wave open for ever, and it is time pressure). waveSeconds: 15 + 5 per live worm.
+  let waveLeft = 0;
+  let waveTotal = 0;
+  let waveWhole = -1;
+  /** Waves fought in this fight (the timer adds waves); clearing them all counts each one toward the match. */
+  let wavesThisFight = 0;
+  const startWaveTimer = () => {
+    waveTotal = waveLeft = waveSeconds(Math.max(1, monsters.filter((w) => w.alive).length));
+    waveWhole = -1;
+    hudDirty = true;
+  };
+  const nextWave = () => {
+    // a leftover far from everyone (hidden, or stuck behind something) flies in again from a side
+    relaunchLost(arena, monsters, seated().flatMap((s) => (s.m?.alive ? [s.m] : [])));
+    round++;
+    wavesThisFight++;
+    const n = spawnWave(round);
+    hud.announce("round", `Wave ${round}`, n ? "More worms!" : "Clear them faster!", "#ff7a3d", 1400);
+    sound?.sting("round");
+    pushShared();
+    startWaveTimer();
   };
 
   const teamsAlive = () => {
@@ -493,9 +525,18 @@ const mount: HostMount = (ctx) => {
 
   const startFight = () => {
     phase = "fight";
-    for (const s of seated()) s.fought = true;
+    for (const s of seated()) {
+      s.fought = true;
+      // time spent on the weapon pick is not "away": a fight starts with the player in control and no old stand-in
+      s.idle = 0;
+      s.auto = null;
+    }
     arena.suddenDeath = false;
-    if (mode === "pvm") spawnWave();
+    if (mode === "pvm") {
+      wavesThisFight = 1;
+      spawnWave(round);
+      startWaveTimer();
+    } else waveTotal = 0;
     phaseFor = 0;
     tuning.damage = DEFAULT_TUNING.damage;
     tuning.slomo = ctx.settings().slomo === false ? 0 : 1;
@@ -523,7 +564,8 @@ const mount: HostMount = (ctx) => {
     timeUp = false;
     const winners = team === null || team === MONSTER_TEAM ? [] : seated().filter((s) => teamOf(s) === team);
     for (const w of winners) {
-      w.wins++;
+      // co-op vs monsters: every wave cleared counts (the timer may have brought more than one)
+      w.wins += mode === "pvm" ? Math.max(1, wavesThisFight) : 1;
       if (w.human) host.send(w.id, { type: "win" });
     }
     const solo = mode === "ffa" ? winners[0] : undefined;
@@ -571,6 +613,16 @@ const mount: HostMount = (ctx) => {
     if (phase === "fight") {
       // the round ends when one team (or one machine) is left flying
       if (teamsAlive().size <= 1 && callAt < 0) callAt = CALL_S;
+      if (mode === "pvm" && callAt < 0 && waveTotal > 0) {
+        waveLeft -= real;
+        const whole = Math.max(0, Math.ceil(waveLeft));
+        if (whole !== waveWhole) {
+          waveWhole = whole;
+          hudDirty = true;
+          if (whole >= 1 && whole <= 3) sound?.sting("count", whole);
+        }
+        if (waveLeft <= 0) nextWave();
+      }
       if (mode !== "pvm" && phaseFor >= TIME_LIMIT_S && callAt < 0) {
         timeUp = true;
         endRound();
@@ -667,8 +719,9 @@ const mount: HostMount = (ctx) => {
     const inp = p?.connected ? p.input : null;
     const moving = !!inp && (inp.f === 1 || inp.g === 1 || (inp.k === 1 ? Math.abs(inp.x) + Math.abs(inp.y) > 0.05 : inp.x !== s.tx || inp.y !== s.ty));
     s.idle = moving ? 0 : s.idle + STEP;
-    // away (or phone asleep) in a fight: a bot flies for them, so the round doesn't stall
-    if (phase === "fight" && s.idle > IDLE_S) {
+    // idle (or phone asleep) in a fight: a bot flies for them, so the round doesn't stall. Not while their phone
+    // is on another app or locked (p.away): they're coming back, so their machine just hangs idle
+    if (phase === "fight" && s.idle > IDLE_S && !p?.away) {
       s.auto ??= makeBot("fight", m.hull.x, m.hull.y, "pilot", m.id);
       driveBot(arena, m, s.auto);
       if (inp && inp.k === 0) {
@@ -683,6 +736,8 @@ const mount: HostMount = (ctx) => {
     if (inp.g === 1) arena.shield(m);
     if (inp.k === 1) {
       s.k = 1;
+      // with fire held, the stick also aims the guns (sim.ts aim)
+      if (inp.f === 1) arena.aim(m, inp.x, inp.y);
       stickPush(m, inp.x, inp.y);
       return;
     }
@@ -716,7 +771,8 @@ const mount: HostMount = (ctx) => {
         const a = byMachine.get(e.attacker);
         const v = byMachine.get(e.victim);
         if (e.dmg > 0) {
-          if (a?.human) host.send(a.id, { type: "hit", dmg: e.dmg });
+          // (a saw cut with nobody to credit names the victim as its own attacker)
+          if (a?.human && e.attacker !== e.victim) host.send(a.id, { type: "hit", dmg: e.dmg });
           if (v?.human) host.send(v.id, { type: "hurt", dmg: e.dmg });
         }
         if (v) pushOwn(v);
@@ -742,6 +798,23 @@ const mount: HostMount = (ctx) => {
       } else if (e.type === "shot") {
         sound?.shot(e.ball);
         if (e.ball) fx.shake = Math.min(12, fx.shake + 3);
+      } else if (e.type === "ping") {
+        // a shot spent on a weapon, plate or gun: a spark (and a clank for a heavy one); the bullets of a burst
+        // share the clash cooldown, so a stream of them stays cheap
+        if (clashCd > 0) continue;
+        clashCd = 0.06;
+        if (e.heavy) sound?.clash(30);
+        fx.burst(e.x, e.y, lite ? 3 : 6, 260, "#ffe9a8", 1.5);
+      } else if (e.type === "gunbreak") {
+        sound?.disarm();
+        fx.burst(e.x, e.y, lite ? 10 : 20, 340, "#ffb347", 2);
+        fx.text(e.x, e.y - 16, "GUN BROKEN", "#ffcf8a", 16);
+        fx.shake = Math.min(12, fx.shake + 4);
+        const v = byMachine.get(e.m);
+        const a = byMachine.get(e.by);
+        if (v?.human) host.send(v.id, { type: "hurt", dmg: 0 });
+        if (a?.human) host.send(a.id, { type: "hit", dmg: 0 });
+        hudDirty = true;
       } else if (e.type === "pickup") {
         sound?.pickup();
         const s = byMachine.get(e.m);
@@ -771,6 +844,14 @@ const mount: HostMount = (ctx) => {
         fx.shake = Math.min(12, fx.shake + 4);
         const s = byMachine.get(e.m);
         if (s?.human) host.send(s.id, { type: "hurt", dmg: 0 });
+      } else if (e.type === "hazard") {
+        // a saw cut (the damage, numbers and coins come with its "hit"): a spray of steel sparks
+        sound?.clash(60);
+        fx.burst(e.x, e.y, lite ? 8 : 16, 340, "#e8eef5", 1.5);
+      } else if (e.type === "hook" || e.type === "tear") {
+        // a spike dug in, or tore out (its damage comes with a "hit"): a clank and a few sparks
+        if (e.type === "hook" || e.dmg > 0) sound?.clash(e.type === "hook" ? 70 : 40);
+        fx.burst(e.x, e.y, lite ? 5 : 10, 220, "#e8eef5", 1.5);
       } else {
         fx.burst(e.x, e.y, 40, 420, "#ffb547", 3);
         fx.burst(e.x, e.y, 16, 200, e.victim.color, 4);
@@ -834,6 +915,9 @@ const mount: HostMount = (ctx) => {
         waiting ? "Warm-up · waiting for a second player (or add computer players in Settings)" : "Warm-up · pick your weapon on your phone",
         waiting ? null : left / pickTotal,
       );
+    } else if (phase === "fight" && mode === "pvm" && waveTotal > 0 && callAt < 0) {
+      // the wave timer: text and bar change once a second; red for the last 5 s
+      hud.warmup(`Wave ${round} · next wave in ${waveWhole} s`, waveWhole / waveTotal, waveWhole <= 5);
     } else {
       hud.warmup(null, null);
     }
@@ -880,6 +964,8 @@ const mount: HostMount = (ctx) => {
   let clashCd = 0;
   /** Frame rate cap for the current state: none while anyone can fight; 30 fps once a result is on screen. */
   const capFps = () => ((phase === "result" || phase === "match") && phaseFor > 1.5 ? 30 : 0);
+  let fpsFrames = 0;
+  let fpsFrom = performance.now();
   const frame = (now: number) => {
     raf = requestAnimationFrame(frame);
     // Paused: the canvas keeps its last picture. Drawing on under the pause menu made the TV redraw the
@@ -941,8 +1027,15 @@ const mount: HostMount = (ctx) => {
     drewOnce = true;
     const d1 = tour ? performance.now() : 0;
     frameDrawn(now);
+    // the on-screen counter: frames drawn over the last half second (the text changes at most twice a second)
+    fpsFrames++;
+    if (now - fpsFrom >= 500) {
+      hud.setFps(Math.round((fpsFrames * 1000) / (now - fpsFrom)));
+      fpsFrames = 0;
+      fpsFrom = now;
+    }
     profBegin("hud");
-    if (!abHudOff) maybeDrawHud();
+    if (!abHudOff && !(abHudFrozen && phase === "fight")) maybeDrawHud();
     profEnd("hud");
     if (tour) {
       const end = performance.now();

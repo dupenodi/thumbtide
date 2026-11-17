@@ -381,6 +381,15 @@
 }
 
 /* ---- warm-up strip */
+/* the frame-rate counter: tiny, dim, in the free bottom-right corner (no effects, so it stays cheap on the TV) */
+.hm-fps {
+  position: absolute;
+  right: 0.6vw;
+  bottom: 0.4vh;
+  font: 1.1vh/1 ui-monospace, monospace;
+  color: rgba(255, 255, 255, 0.4);
+}
+
 .hm-warm {
   position: absolute;
   bottom: 4vh;
@@ -424,6 +433,15 @@
   background: #ffd84d;
   transform-origin: left center;
   transition: transform 0.2s linear;
+}
+
+/* the wave timer's last seconds (co-op vs monsters): red text and bar */
+.hm-warm.urgent b {
+  color: #ff5d4d;
+}
+
+.hm-warm.urgent s {
+  background: #ff3d2d;
 }
 
 /* ---- lite (the TV): no filters, no gradient text, no endless animations */

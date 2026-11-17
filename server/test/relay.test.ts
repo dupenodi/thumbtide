@@ -8,7 +8,7 @@ let url = "";
 const cleanup: Array<{ close?: () => void; leave?: () => void }> = [];
 
 before(async () => {
-  server = startServer({ port: 0, playerGraceMs: 400, hostGraceMs: 400, ghostMinMs: 0 });
+  server = startServer({ port: 0, playerGraceMs: 400, awayGraceMs: 1500, hostGraceMs: 400, ghostMinMs: 0 });
   url = `ws://127.0.0.1:${await server.ready}`;
 });
 after(async () => {
@@ -55,6 +55,22 @@ function blipPlayer(host: Host, playerId: string) {
 /** The phone's tab goes away (closed, or the browser dropped it): no leave message, no reconnect. */
 function closeTab(ctl: Controller) {
   (ctl as any).link.close();
+}
+
+/**
+ * Make a Controller that starts with `tok` as its saved token, as a phone does after a reload or a reconnect:
+ * the SDK reads it from sessionStorage, which Node lacks, so a stand-in holds it while the Controller is made.
+ */
+async function withToken(room: string, tok: string, make: () => Controller): Promise<Controller> {
+  const g = globalThis as { sessionStorage?: unknown };
+  const had = g.sessionStorage;
+  const store = new Map([[`thumbtide:player:${room}`, tok]]);
+  g.sessionStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) };
+  try {
+    return make();
+  } finally {
+    g.sessionStorage = had;
+  }
 }
 
 describe("relay", () => {
@@ -136,6 +152,171 @@ describe("relay", () => {
     assert.equal(ctl.me!.id, id);
     assert.equal(host.players.size, 1);
     assert.equal(host.players.get(id)!.connected, true);
+  });
+
+  test("away and back reach the host, and away clears the player's input", async () => {
+    const host = await newHost();
+    const ctl = await newController(host);
+    const id = ctl.me!.id;
+    assert.equal(host.players.get(id)!.away, false);
+    const moved = next(host, "input");
+    ctl.input({ x: 1, y: 0 });
+    await moved;
+    const away = next(host, "away");
+    ctl.setAway(true);
+    const p = await away;
+    assert.equal(p.id, id);
+    assert.equal(p.away, true);
+    assert.equal(p.input, null);
+    assert.equal(p.connected, true);
+    const back = next(host, "away");
+    ctl.setAway(false);
+    assert.equal((await back).away, false);
+    assert.equal(server.rooms.get(host.code)!.players.get(id)!.info.away, false);
+  });
+
+  test("an away phone whose socket dies keeps its seat past the normal grace, up to the away limit", async () => {
+    const host = await newHost();
+    const ctl = await newController(host);
+    const id = ctl.me!.id;
+    const away = next(host, "away");
+    ctl.setAway(true);
+    await away;
+    const dropped = next(host, "drop");
+    closeTab(ctl);
+    const p = await dropped;
+    assert.equal(p.away, true);
+    await sleep(700); // past playerGraceMs (400)
+    assert.equal(host.players.has(id), true);
+    const [gone, reason] = await next(host, "leave", 3000); // awayGraceMs (1500)
+    assert.equal(gone.id, id);
+    assert.equal(reason, "timeout");
+  });
+
+  test("an away phone that was offline past the away limit is told on reconnect that its seat was given up", async () => {
+    const host = await newHost();
+    const ctl = await newController(host, "Gone");
+    const tok = (ctl as any).token as string;
+    const away = next(host, "away");
+    ctl.setAway(true);
+    await away;
+    closeTab(ctl); // offline: the socket dies while away
+    await next(host, "leave", 3000); // awayGraceMs (1500)
+    // the phone's network is back: it reconnects with its old token (the SDK, from sessionStorage)
+    const back = await withToken(host.code, tok, () => new Controller({ server: url, room: host.code, name: "Gone" }));
+    assert.equal(await next(back, "closed"), "away-timeout");
+    assert.equal(host.players.size, 0); // no new seat behind the player's back
+    // a second socket with the same token (a phone often reconnects twice in a row) is told too
+    const twice = await withToken(host.code, tok, () => new Controller({ server: url, room: host.code, name: "Gone" }));
+    assert.equal(await next(twice, "closed"), "away-timeout");
+    assert.equal(host.players.size, 0);
+    // tapping Join again (the SDK forgot the token) gives a new seat
+    const again = await newController(host, "Gone");
+    assert.equal(again.me?.name, "Gone");
+  });
+
+  test("an away phone back after the limit in a locked room hears that too, not just 'room locked'", async () => {
+    const host = await newHost();
+    await newController(host, "Stays");
+    const ctl = await newController(host, "Gone");
+    const tok = (ctl as any).token as string;
+    const away = next(host, "away");
+    ctl.setAway(true);
+    await away;
+    closeTab(ctl);
+    host.lock(true);
+    await next(host, "leave", 3000);
+    const back = await withToken(host.code, tok, () => new Controller({ server: url, room: host.code, name: "Gone" }));
+    assert.equal(await next(back, "closed"), "away-timeout-locked");
+  });
+
+  test("a seat freed by the normal drop grace is not reported as away (the phone just joins again)", async () => {
+    const host = await newHost();
+    const ctl = await newController(host, "Blip");
+    const tok = (ctl as any).token as string;
+    closeTab(ctl);
+    await next(host, "leave", 2000); // playerGraceMs (400)
+    const back = await withToken(host.code, tok, () => new Controller({ server: url, room: host.code, name: "Blip" }));
+    cleanup.push({ close: () => back.leave() });
+    const { resumed } = await next(back, "ready");
+    assert.equal(resumed, false);
+  });
+
+  test("an away phone that keeps its socket still loses its seat at the away limit; back stops the clock", async () => {
+    const host = await newHost();
+    const stays = await newController(host, "Stays");
+    const returns = await newController(host, "Returns");
+    let n = 0;
+    const both = new Promise<void>((resolve) => host.on("away", () => ++n === 2 && resolve()));
+    stays.setAway(true);
+    returns.setAway(true);
+    await both;
+    await sleep(500);
+    const back = next(host, "away");
+    returns.setAway(false);
+    await back;
+    const told = next<string>(stays, "closed", 3000);
+    const [gone, reason] = await next(host, "leave", 3000); // awayGraceMs (1500), socket open all along
+    assert.equal(gone.id, stays.me!.id);
+    assert.equal(reason, "timeout");
+    assert.equal(await told, "away-timeout"); // the phone hears why, not "left"
+    await sleep(1300);
+    assert.deepEqual(host.list.map((p) => p.name), ["Returns"]);
+  });
+
+  test("a phone that came back, then dropped, gets the normal grace (a real disconnect)", async () => {
+    const host = await newHost();
+    const ctl = await newController(host);
+    const away = next(host, "away");
+    ctl.setAway(true);
+    await away;
+    const back = next(host, "away");
+    ctl.setAway(false);
+    await back;
+    const t0 = Date.now();
+    const left = next(host, "leave", 1200);
+    closeTab(ctl);
+    const [gone] = await left;
+    assert.equal(gone.id, ctl.me!.id);
+    assert.ok(Date.now() - t0 < 1200);
+  });
+
+  test("a full room does not give an away phone's seat to a newcomer", async () => {
+    const host = await newHost({ maxPlayers: 2 });
+    await sleep(50);
+    const a = await newController(host, "A");
+    await newController(host, "B");
+    const away = next(host, "away");
+    a.setAway(true);
+    await away;
+    const dropped = next(host, "drop");
+    closeTab(a);
+    await dropped;
+    const late = new Controller({ server: url, room: host.code, name: "C", persist: false });
+    assert.equal(await next(late, "closed"), "room-full");
+    assert.deepEqual(host.list.map((p) => p.name), ["A", "B"]);
+  });
+
+  test("the away flag outlives a reconnect, and the phone says back again after the welcome", async () => {
+    const host = await newHost();
+    const ctl = await newController(host);
+    const id = ctl.me!.id;
+    const away = next(host, "away");
+    ctl.setAway(true);
+    await away;
+    // reconnect while still away: the relay keeps the flag
+    let rejoined = next(host, "rejoin");
+    blipPlayer(host, id);
+    assert.equal((await rejoined).away, true);
+    assert.equal(host.players.get(id)!.away, true);
+    // the phone came back, but its "back" went into a dead socket: the next welcome puts it right
+    (ctl as any).away = false;
+    rejoined = next(host, "rejoin");
+    const back = next(host, "away");
+    blipPlayer(host, id);
+    await rejoined;
+    assert.equal((await back).away, false);
+    assert.equal(host.players.get(id)!.away, false);
   });
 
   test("continuous input is coalesced and latest-wins", async () => {

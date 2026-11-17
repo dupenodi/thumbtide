@@ -1,9 +1,10 @@
 // Hammer lab: a workbench for the fight's feel, played with the mouse (only while `pnpm dev` runs).
-// Open http://localhost:5173/lab/hammer/
+// Open http://localhost:5173/lab/hammer/ (?bots=3, ?arena=<arenas.ts key> for an arena layout)
 //
 // Click the arena to capture the mouse. Your mouse moves the machine, as in Hammerfight.
 // 1 / 2 / 3 pick hammer / chain ball / sword. R resets. Hold Space for slow motion. P pauses. H hides the panel.
 
+import { applyArenaKind, spawnPoint } from "./arenas.ts";
 import { type Bot, type BotMode, driveBot, makeBot } from "./bots.ts";
 import "./lab.css";
 import { Fx, Renderer } from "./render.ts";
@@ -40,6 +41,10 @@ function saveTuning(t: Tuning): void {
 
 const tuning = loadTuning();
 const arena = new Arena(tuning);
+const arenaKind = new URLSearchParams(location.search).get("arena");
+if (arenaKind) applyArenaKind(arena, arenaKind);
+/** Seat i's start: the arena's own spawns with ?arena=, else the lab's. */
+const spot = (i: number): [number, number] => (arenaKind ? spawnPoint(arena, i) : (SPAWNS[i] ?? [VIEW_W / 2, VIEW_H / 3]));
 const fx = new Fx();
 
 const app = document.getElementById("app")!;
@@ -77,10 +82,10 @@ function reset(): void {
   bots.clear();
   respawnAt.clear();
   fx.trails.clear();
-  const [px0, py0] = SPAWNS[0]!;
+  const [px0, py0] = spot(0);
   player = arena.add({ id: 0, name: "You", color: COLORS[0]!, weapon: playerWeapon, x: px0, y: py0 });
   for (let i = 1; i <= botCount; i++) {
-    const [x, y] = SPAWNS[i]!;
+    const [x, y] = spot(i);
     const m = arena.add({ id: i, name: `Bot ${i}`, color: COLORS[i]!, weapon: botWeaponFor(i), x, y });
     bots.set(m, makeBot(botMode, x, y));
   }
@@ -88,7 +93,7 @@ function reset(): void {
 }
 
 function respawn(m: Machine): void {
-  const [x, y] = SPAWNS[m.id] ?? [VIEW_W / 2, VIEW_H / 3];
+  const [x, y] = spot(m.id);
   arena.respawn(m, x, y, m === player ? playerWeapon : m.weapon);
   fx.trails.delete(m);
   const bot = bots.get(m);
@@ -220,8 +225,13 @@ function handleEvents(): void {
     } else if (e.type === "disarm") {
       fx.burst(e.x, e.y, 24, 360, "#cfe3ff", 2);
       fx.text(e.x, e.y - 20, "DISARMED", "#cfe3ff", 20);
-    } else if (e.type === "pickup" || e.type === "shot" || e.type === "blast" || e.type === "plateoff" || e.type === "crack" || e.type === "break") {
+    } else if (e.type === "pickup" || e.type === "shot" || e.type === "blast" || e.type === "plateoff" || e.type === "crack" || e.type === "break" || e.type === "hazard") {
       // nothing to show beyond the weapon snapping on, or the shot itself
+    } else if (e.type === "ping") {
+      fx.burst(e.x, e.y, 6, 260, "#ffe9a8", 1.5);
+    } else if (e.type === "gunbreak") {
+      fx.burst(e.x, e.y, 20, 340, "#ffb347", 2);
+      fx.text(e.x, e.y - 16, "GUN BROKEN", "#ffcf8a", 16);
     } else if (e.type === "clash") {
       fx.burst(e.x, e.y, 4 + Math.min(10, Math.round(e.impact / 10)), 220, "#cfe3ff", 1.5);
     } else if (e.type === "slam") {

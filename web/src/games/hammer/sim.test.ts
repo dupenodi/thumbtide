@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Body, joint, World } from "./engine.ts";
-import { Arena, VIEW_H, VIEW_W } from "./sim.ts";
-import { DEFAULT_TUNING } from "./tuning.ts";
-import { MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
+import { stickPush } from "./arenas.ts";
+import { Arena, cutFactor, edgeAt, edgeOut, faceAt, GUN_HP, STEP, VIEW_H, VIEW_W } from "./sim.ts";
+import { DEFAULT_TUNING, type Tuning } from "./tuning.ts";
+import { facesOf, GUN_KINDS, MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
 const arena = () => new Arena({ ...DEFAULT_TUNING });
 
@@ -57,7 +58,7 @@ test("with no input the weapon's weight pulls the machine down at sqrt(weight/dr
   }
 });
 
-test("the top and bottom walls keep a live hull inside the frame", () => {
+test("the walls keep a live hull inside the frame (top, bottom and sides)", () => {
   const ar = arena();
   const m = ar.add({ id: 0, name: "a", color: "#f00", weapon: "orbmace", x: 300, y: 100 });
   let maxY = 0;
@@ -75,6 +76,18 @@ test("the top and bottom walls keep a live hull inside the frame", () => {
     minY = Math.min(minY, m.hull.y);
   }
   assert.ok(minY >= 30 - 0.01, `top: ${minY}`);
+  // and thrown hard to each side
+  for (const vx of [-2500, 2500]) {
+    m.hull.setVelocity(vx, 0, 0, 0.02);
+    let minX = 1e9;
+    let maxX = -1e9;
+    for (let i = 0; i < 50; i++) {
+      ar.step();
+      minX = Math.min(minX, m.hull.x);
+      maxX = Math.max(maxX, m.hull.x);
+    }
+    assert.ok(minX >= 16 - 0.01 && maxX <= VIEW_W - 16 + 0.01, `sides: ${minX}…${maxX}`);
+  }
 });
 
 test("hover assist 1 cancels the weapon's weight", () => {
@@ -553,7 +566,8 @@ test("plates: two per machine, the shield spreads them and halves thrust, a fast
   // a heavy, fast weapon knocks a light plate off
   const victim = m;
   const p = victim.plates[0]!.body;
-  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "krankhammer", x: p.x + 120, y: p.y });
+  // (the iron hammer: since the krank hammer's mesh got its drawn conical caps, its head meets the hull first here)
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: p.x + 120, y: p.y });
   let off = 0;
   for (let i = 0; i < 40 && !off; i++) {
     // a hard swing: 1500 px/s straight at the plate
@@ -575,6 +589,8 @@ test("guns: the arquebus fires every 0.1 s while held, bullets hurt, the clip re
   const target = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 300, y: 120 });
   // the target's hammer would hang in the line of fire: take it away
   (a as unknown as { destroy(m: typeof target): void }).destroy(target);
+  // 40-odd bullets would bring it to health_low, where a shot is lethal: keep it alive for the body count
+  target.hp = 1e6;
   const bodies = a.world.bodies.length;
   assert.equal(shooter.guns.length, 1);
   const gun = shooter.guns[0]!;
@@ -598,14 +614,41 @@ test("guns: the arquebus fires every 0.1 s while held, bullets hurt, the clip re
   assert.ok(shots >= 4 && shots <= 6, `shots in 0.5 s: ${shots}`);
   assert.ok(hits.length > 0, "a bullet hit the target");
   assert.ok(Math.max(...hits) <= 15, `bullet damage ${hits.join(",")}`);
-  run(200, true); // empties the clip and reloads (2 s) at least once
+  run(400, true); // empties the clip and reloads (5 s) at least once
   assert.ok(shots > 20, `shots after the reload: ${shots}`);
   // the clip refills only once it is empty (as in the exe): empty it, then wait out the reload
   while (gun.ammo > 0) run(1, true);
-  run(150, false);
+  run(300, false);
   assert.equal(gun.ammo, gun.spec.clip);
   assert.equal(a.shots.length, 0);
   assert.equal(a.world.bodies.length, bodies);
+});
+
+test("guns: with the trigger held, an aim turns the gun that way and it fires only when lined up", () => {
+  for (const weapon of ["hammer", "flail"] as const) {
+    const a = arena();
+    const m = a.add({ id: 1, name: "A", color: "#f00", weapon, sidearm: "arquebus", x: 480, y: 270 });
+    const gun = m.guns[0]!;
+    const off = () => Math.abs(Math.atan2(Math.sin(gun.body.a), Math.cos(gun.body.a)));
+    let shots = 0;
+    let offAtShot = 0;
+    for (let i = 0; i < 75; i++) {
+      // a phone: fire held and the stick to the right (it flies and aims); the gun starts pointing up
+      a.fire(m);
+      a.aim(m, 1, 0);
+      stickPush(a, m, 1, 0);
+      a.step();
+      for (const e of a.events) {
+        if (e.type !== "shot") continue;
+        shots++;
+        offAtShot = Math.max(offAtShot, off());
+      }
+      a.events.length = 0;
+    }
+    assert.ok(off() < 0.3, `${weapon}: gun angle after 1.5 s ${off().toFixed(2)} rad`);
+    assert.ok(shots > 3, `${weapon}: shots ${shots}`);
+    assert.ok(offAtShot < 0.4, `${weapon}: fired ${offAtShot.toFixed(2)} rad off the aim`);
+  }
 });
 
 test("guns: the mortar fires 5 balls and kicks the machine back; the tribune's back blade shoots", () => {
@@ -640,4 +683,601 @@ test("guns: the mortar fires 5 balls and kicks the machine back; the tribune's b
   // dual weapons take no sidearm
   const d = a.add({ id: 3, name: "D", color: "#0ff", weapon: "twin", sidearm: "arquebus", x: 200, y: 300 });
   assert.equal(d.guns.length, 0);
+});
+
+test("level arenas: seats start clear of obstacles, cages hang on their ropes, blocks stay in the frame", async () => {
+  const { ARENAS, applyArenaKind, spawnPoint } = await import("./arenas.ts");
+  for (const kind of Object.keys(ARENAS)) {
+    const ar = arena();
+    applyArenaKind(ar, kind);
+    const ms = Array.from({ length: 8 }, (_, slot) => {
+      const [x, y] = spawnPoint(ar, slot);
+      // the turned slabs (eye, melka, blocks) were checked with designs.py; here the upright boxes
+      for (const o of ar.obstacles) if (o.body.a === 0 && o.body.invMass === 0) assert.ok(!(Math.abs(x - o.body.x) < o.hw + 12 && Math.abs(y - o.body.y) < o.hh + 16), `${kind} seat ${slot} in a ${o.kind}`);
+      return ar.add({ id: slot, name: `m${slot}`, color: "#f00", weapon: "hammer", x, y });
+    });
+    for (let i = 0; i < 300; i++) ar.step();
+    for (const o of ar.obstacles) {
+      const b = o.body;
+      if (b.invMass === 0) continue;
+      assert.ok(b.x >= 0 && b.x <= ar.w && b.y >= 0 && b.y <= ar.h, `${kind}: ${o.kind} left the frame at ${b.x | 0},${b.y | 0}`);
+      if (o.rope) assert.ok(b.y > o.rope.y, `${kind}: cage above its rope`);
+    }
+    assert.equal(ms.filter((m) => m.alive).length, 8, `${kind}: a machine died with no fight`);
+  }
+});
+
+test("saws cut a machine that flies into them (credited to its last attacker), kick it away, and rest between cuts", () => {
+  const ar = arena();
+  ar.setArena(960, 540, [{ kind: "saw", x: 0, y: 300, hw: 34, hh: 34 }]);
+  const a = ar.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", x: 200, y: 300 });
+  const b = ar.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 700, y: 300 });
+  a.lastHitBy = b;
+  let cuts = 0;
+  let credit: unknown = null;
+  for (let i = 0; i < 60; i++) {
+    stickPush(ar, a, -1, 0);
+    ar.step();
+    for (const e of ar.events) {
+      if (e.type === "hazard" && e.victim === a) cuts++;
+      if (e.type === "hit" && e.victim === a) credit = e.attacker;
+    }
+    ar.events.length = 0;
+  }
+  assert.ok(cuts >= 1 && cuts <= 3, `cuts ${cuts}`);
+  assert.ok(a.hp < 100, "no damage");
+  assert.equal(credit, b, "the cut goes to the last attacker");
+  // warm-up: no cuts
+  const w = arena();
+  w.tuning.damage = 0;
+  w.setArena(960, 540, [{ kind: "saw", x: 0, y: 300, hw: 34, hh: 34 }]);
+  const c = w.add({ id: 1, name: "C", color: "#f00", weapon: "hammer", x: 120, y: 300 });
+  for (let i = 0; i < 60; i++) {
+    stickPush(w, c, -1, 0);
+    w.step();
+  }
+  assert.equal(c.hp, 100);
+});
+
+test("walls: a reeling machine slams into one; hard hits break it", () => {
+  const ar = arena();
+  ar.setArena(960, 540, [{ kind: "wall", x: 400, y: 300, hw: 12, hh: 70, hp: 60 }]);
+  const a = ar.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", x: 330, y: 300 });
+  a.stun = 1;
+  a.slamUntil = ar.t + 0.8;
+  a.hull.setVelocity(500, 0, 0, STEP);
+  let slam = false;
+  for (let i = 0; i < 20; i++) {
+    ar.step();
+    if (ar.events.some((e) => e.type === "slam" && e.m === a)) slam = true;
+    ar.events.length = 0;
+  }
+  assert.ok(slam, "no slam");
+  assert.ok(ar.obstacles[0]!.hp < 60 && ar.obstacles[0]!.hp > 0, `wall hp ${ar.obstacles[0]!.hp}`);
+});
+
+test("wave timer: leftovers count toward the worm cap; a lost worm flies in again whole", async () => {
+  const { MAX_WORMS, relaunchLost, waveRoom, waveSeconds, waveWorms } = await import("./arenas.ts");
+  assert.equal(waveRoom(4, 0, 100), waveWorms(4));
+  assert.equal(waveRoom(8, MAX_WORMS - 1, 100), 1, "leftovers count");
+  assert.equal(waveRoom(8, 0, 25), 2, "body budget");
+  assert.ok(waveSeconds(1) < waveSeconds(4));
+  const ar = arena();
+  const m = ar.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", x: 200, y: 270 });
+  const w = ar.addMonster({ id: 50, team: 9, kind: "worm", x: 900, y: 450, dir: 0 });
+  for (let i = 0; i < 5; i++) ar.step();
+  const gaps = () => w.parts.map((b, i) => Math.hypot(b.x - (i ? w.parts[i - 1]! : w.hull).x, b.y - (i ? w.parts[i - 1]! : w.hull).y));
+  const before = gaps();
+  assert.equal(relaunchLost(ar, [w], [m]), 1);
+  assert.ok(w.hull.x < 0 || w.hull.x > ar.w, "back at a side");
+  gaps().forEach((g, i) => assert.ok(Math.abs(g - before[i]!) < 0.01, "the worm kept its shape"));
+  // near a machine: stays
+  assert.equal(relaunchLost(ar, [w], [ar.add({ id: 2, name: "B", color: "#0f0", weapon: "hammer", x: w.hull.x + 10, y: w.hull.y })]), 0);
+});
+
+test("worms fly in only where the side is open to the fight", async () => {
+  const { ARENAS, applyArenaKind, openSideRows } = await import("./arenas.ts");
+  for (const kind of Object.keys(ARENAS)) {
+    const ar = arena();
+    applyArenaKind(ar, kind);
+    const [l, r] = openSideRows(ar);
+    assert.ok(l.length >= 3 && r.length >= 3, `${kind}: rows ${l.length}/${r.length}`);
+  }
+  // the eye's mouths: only between the slabs (y 43-64 % of the height)
+  const ar = arena();
+  applyArenaKind(ar, "eye");
+  for (const y of openSideRows(ar)[0]) assert.ok(y > ar.h * 0.43 && y < ar.h * 0.64, `eye row at ${y}`);
+});
+
+test("edges: a one-sided axe cuts with its +y face (the edge the sprite draws) and is blunt on its back", () => {
+  const axe = WEAPONS.axe.parts.find((p) => p.key === WEAPONS.axe.striker)!;
+  const t = { bladeable: axe.bladeable, bladeableU: axe.bladeableU ?? axe.bladeable, sharpness: axe.sharpness, sharpnessU: axe.sharpnessU ?? axe.sharpness };
+  for (const a of [0, 1.2, -2.5]) {
+    const b = new Body(axe.mesh, axe.density).place(100, 50, a);
+    // a contact 8 px out on the part's +y, then on its −y
+    edgeAt(t, b, 100 - 8 * Math.sin(a), 50 + 8 * Math.cos(a));
+    assert.deepEqual({ ...edgeOut }, { bladeable: axe.bladeable, sharpness: axe.sharpness }, `+y at a=${a}`);
+    edgeAt(t, b, 100 + 8 * Math.sin(a), 50 - 8 * Math.cos(a));
+    assert.deepEqual({ ...edgeOut }, { bladeable: t.bladeableU, sharpness: t.sharpnessU }, `−y at a=${a}`);
+  }
+});
+
+test("guns: only a loaded sidearm aims; the tribune's back blade and a reloading gun don't slow the flying", () => {
+  const fly = (weapon: "tribune" | "hammer", sidearm: "arquebus" | null, empty: boolean, fire: boolean) => {
+    const a = arena();
+    const m = a.add({ id: 1, name: "A", color: "#f00", weapon, sidearm, x: 300, y: 270 });
+    if (empty) for (const g of m.guns) (g.ammo = 0), (g.timer = 5);
+    for (let i = 0; i < 40; i++) {
+      if (fire) {
+        a.fire(m);
+        a.aim(m, 1, 0);
+      }
+      stickPush(a, m, 1, 0);
+      a.step();
+    }
+    return m.hull.x;
+  };
+  assert.ok(Math.abs(fly("tribune", null, false, true) - fly("tribune", null, false, false)) < 30, "tribune slowed by aiming");
+  assert.ok(Math.abs(fly("hammer", "arquebus", true, true) - fly("hammer", "arquebus", true, false)) < 30, "reloading gun slowed the flying");
+  assert.ok(fly("hammer", "arquebus", false, true) < fly("hammer", "arquebus", false, false) - 30, "a loaded gun's aim slows the flying");
+});
+
+type Hidden = { destroy(m: unknown): void; gunHurt(m: unknown, g: unknown, impact: number, by: unknown, x: number, y: number): void };
+
+test("guns: mortar balls land with a push, damage and stun on a machine, then they are spent (no bounce)", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "axe", sidearm: "mortar", x: 400, y: 330 });
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 400, y: 100 });
+  (a as unknown as Hidden).destroy(foe);
+  for (let i = 0; i < 10; i++) a.step();
+  // the foe 90 px out along the barrel
+  const g = m.guns[0]!.body;
+  const ux = Math.cos(g.a);
+  const uy = Math.sin(g.a);
+  foe.hull.place(g.x + ux * 90, g.y + uy * 90);
+  let dmg = 0;
+  let hits = 0;
+  let pushed = 0;
+  let stun = 0;
+  a.fire(m);
+  for (let i = 0; i < 12; i++) {
+    a.step();
+    pushed = Math.max(pushed, foe.hull.vx * ux + foe.hull.vy * uy);
+    stun = Math.max(stun, foe.stun);
+    for (const e of a.events) if (e.type === "hit" && e.victim === foe) (dmg += e.dmg), hits++;
+    a.events.length = 0;
+  }
+  assert.ok(hits >= 2, `balls that hit: ${hits}`);
+  assert.ok(dmg >= 8, `damage ${dmg}`);
+  // the foe is knocked away along the barrel
+  assert.ok(pushed > 100, `push ${pushed.toFixed(0)} px/s`);
+  assert.ok(stun > 0.1, `a close blast stuns: ${stun.toFixed(2)}`);
+  // the balls that hit are gone (they don't bounce around the foe)
+  assert.ok(a.shots.length <= 5 - hits, `shots left ${a.shots.length}`);
+});
+
+test("guns: a shot on a weapon pushes it and is spent; it does no damage to the machine", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "axe", sidearm: "heavymortar", x: 400, y: 330 });
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 700, y: 100 });
+  for (let i = 0; i < 10; i++) a.step();
+  // the foe's hammer head in the line of fire, its hull off to the side
+  const g = m.guns[0]!.body;
+  const ux = Math.cos(g.a);
+  const uy = Math.sin(g.a);
+  const head = foe.part.get("head")!;
+  const hx = g.x + ux * 100;
+  const hy = g.y + uy * 100;
+  foe.hull.place(hx - uy * 60, hy + ux * 60);
+  head.place(hx, hy, head.a);
+  let hits = 0;
+  let pings = 0;
+  let dv = 0;
+  a.fire(m);
+  for (let i = 0; i < 10; i++) {
+    const v0 = head.vx * ux + head.vy * uy;
+    a.step();
+    dv = Math.max(dv, head.vx * ux + head.vy * uy - v0);
+    for (const e of a.events) {
+      if (e.type === "hit" && e.victim === foe) hits++;
+      if (e.type === "ping") pings++;
+    }
+    a.events.length = 0;
+  }
+  assert.equal(pings, 1);
+  assert.equal(hits, 0);
+  assert.ok(dv > 100, `the head was knocked: ${dv.toFixed(0)} px/s`);
+  assert.equal(a.shots.length, 0);
+});
+
+test("guns: firing kicks the shooter back along the barrel (arquebus too)", () => {
+  for (const gun of ["arquebus", "mortar", "heavymortar"] as const) {
+    const a = arena();
+    const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", sidearm: gun, x: 400, y: 300 });
+    for (let i = 0; i < 10; i++) a.step();
+    const vy = m.hull.vy;
+    a.fire(m);
+    a.step();
+    // the gun points up: the kick pushes the hull down
+    assert.ok(m.hull.vy - vy > (gun === "arquebus" ? 5 : 50), `${gun}: kick ${(m.hull.vy - vy).toFixed(0)}`);
+  }
+});
+
+test("guns: a sidearm's body does no contact damage, takes blows, and breaks off after a few", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", sidearm: "arquebus", x: 300, y: 300 });
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 300, y: 215 });
+  (a as unknown as Hidden).destroy(foe);
+  for (let i = 0; i < 5; i++) a.step();
+  const g = m.guns[0]!;
+  // swing the gun hard into the foe's hull
+  g.body.setVelocity(0, -900, 0, 0.02);
+  let hits = 0;
+  for (let i = 0; i < 10; i++) {
+    a.step();
+    for (const e of a.events) if (e.type === "hit" && e.victim === foe) hits++;
+    a.events.length = 0;
+  }
+  assert.equal(hits, 0, "the gun body hurt the foe");
+  assert.equal(foe.hp, 100);
+  // one huge blow doesn't break it, a few hard ones do: the machine keeps its hammer and loses the gun's body and joints
+  const bodies = m.parts.length;
+  let breaks = 0;
+  const blow = (impact: number) => {
+    // blows in one step: only the first counts (a grind), so each one here is a new clash
+    g.hitAt = -1;
+    (a as unknown as Hidden).gunHurt(m, g, impact, foe, g.body.x, g.body.y);
+    for (const e of a.events) if (e.type === "gunbreak") breaks++;
+    a.events.length = 0;
+  };
+  blow(500);
+  assert.equal(breaks, 0);
+  assert.equal(m.guns.length, 1);
+  // a grind: many contacts in one step count once
+  for (let i = 0; i < 6; i++) (a as unknown as Hidden).gunHurt(m, g, 60, foe, g.body.x, g.body.y);
+  assert.equal(m.guns.length, 1);
+  for (let i = 0; i < 3; i++) blow(60);
+  assert.equal(breaks, 1);
+  assert.equal(m.guns.length, 0);
+  assert.ok(m.armed);
+  assert.equal(m.sidearm, null);
+  assert.equal(m.parts.length, bodies - 1);
+  assert.ok(!m.joints.some((j) => j.a === g.body || j.b === g.body));
+  // it falls through everything as debris
+  assert.equal(g.body.solid, false);
+  // the hammer still hits
+  assert.ok(m.part.get("head"));
+  // the next round brings it back
+  a.respawn(m, 300, 300, "hammer", "arquebus");
+  assert.equal(m.guns.length, 1);
+  assert.equal(m.guns[0]!.hp, GUN_HP);
+});
+
+test("guns: in teams (collision on, friendly fire off) a shot flies through an ally and lands on the foe", () => {
+  const a = new Arena({ ...DEFAULT_TUNING, teamCollision: 1, teamDamage: 0 });
+  const m = a.add({ id: 1, team: 0, name: "A", color: "#f00", weapon: "axe", sidearm: "arquebus", x: 400, y: 400 });
+  const ally = a.add({ id: 2, team: 0, name: "B", color: "#f00", weapon: "hammer", x: 700, y: 100 });
+  const foe = a.add({ id: 3, team: 1, name: "C", color: "#00f", weapon: "hammer", x: 100, y: 100 });
+  const hidden = a as unknown as Hidden;
+  hidden.destroy(ally);
+  hidden.destroy(foe);
+  for (let i = 0; i < 10; i++) a.step();
+  const g = m.guns[0]!.body;
+  const ux = Math.cos(g.a);
+  const uy = Math.sin(g.a);
+  ally.hull.place(g.x + ux * 70, g.y + uy * 70);
+  foe.hull.place(g.x + ux * 200, g.y + uy * 200);
+  let foeHits = 0;
+  let allyHits = 0;
+  a.fire(m);
+  for (let i = 0; i < 10; i++) {
+    a.step();
+    for (const e of a.events) {
+      if (e.type === "hit" && e.victim === foe) foeHits++;
+      if ((e.type === "hit" && e.victim === ally) || (e.type === "ping" && e.m === ally)) allyHits++;
+    }
+    a.events.length = 0;
+  }
+  assert.equal(allyHits, 0);
+  assert.equal(foeHits, 1);
+});
+
+test("guns: every sidearm aims round with its weight (the mortars are heavier now) and fires near the aim", () => {
+  for (const gun of GUN_KINDS) {
+    const a = arena();
+    const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", sidearm: gun, x: 480, y: 270 });
+    const g = m.guns[0]!;
+    const off = () => Math.abs(Math.atan2(Math.sin(g.body.a), Math.cos(g.body.a)));
+    let shots = 0;
+    let offAtShot = 0;
+    for (let i = 0; i < 75; i++) {
+      a.fire(m);
+      a.aim(m, 1, 0);
+      stickPush(a, m, 1, 0);
+      a.step();
+      for (const e of a.events) {
+        if (e.type !== "shot") continue;
+        shots++;
+        offAtShot = Math.max(offAtShot, off());
+      }
+      a.events.length = 0;
+    }
+    assert.ok(shots >= 1, `${gun}: shots ${shots}`);
+    assert.ok(offAtShot < 0.4, `${gun}: fired ${offAtShot.toFixed(2)} rad off the aim`);
+  }
+});
+
+test("guns: at health_low a shot is the lethal hit (the exe's bullet does about 155); a blast ignores health_low", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "axe", sidearm: "arquebus", x: 400, y: 400 });
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 100, y: 100 });
+  (a as unknown as Hidden).destroy(foe);
+  for (let i = 0; i < 10; i++) a.step();
+  const g = m.guns[0]!.body;
+  foe.hull.place(g.x + Math.cos(g.a) * 120, g.y + Math.sin(g.a) * 120);
+  foe.hp = MACHINE.healthLow;
+  a.fire(m);
+  for (let i = 0; i < 10; i++) a.step();
+  assert.equal(foe.alive, false);
+  // a rocket's blast at 13 health: 13 − blast damage, with no stop at 12
+  const b = arena();
+  const l = b.add({ id: 1, name: "L", color: "#f00", weapon: "hammer", sidearm: "launcher", x: 300, y: 300 });
+  const f2 = b.add({ id: 2, name: "F", color: "#00f", weapon: "hammer", x: 300, y: 160 });
+  (b as unknown as Hidden).destroy(f2);
+  f2.hp = 13;
+  b.fire(l);
+  for (let i = 0; i < 40; i++) b.step();
+  assert.ok(f2.hp < MACHINE.healthLow, `hp after the blast ${f2.hp}`);
+});
+
+test("guns: a rocket bounces off a held weapon (no blast; the exe's rocket takes no damage from it) and flies on", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "axe", sidearm: "launcher", x: 400, y: 330 });
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 700, y: 100 });
+  for (let i = 0; i < 10; i++) a.step();
+  const g = m.guns[0]!.body;
+  const ux = Math.cos(g.a);
+  const uy = Math.sin(g.a);
+  const head = foe.part.get("head")!;
+  const hx = g.x + ux * 100;
+  const hy = g.y + uy * 100;
+  foe.hull.place(hx - uy * 60, hy + ux * 60);
+  head.place(hx, hy, head.a);
+  let pingAt = -1;
+  let blastAt = -1;
+  let after = 0;
+  a.fire(m);
+  for (let i = 0; i < 20; i++) {
+    a.step();
+    for (const e of a.events) {
+      if (e.type === "ping" && e.m === foe && pingAt < 0) pingAt = i;
+      if (e.type === "blast" && blastAt < 0) blastAt = i;
+    }
+    a.events.length = 0;
+    // two steps after the bounce: still flying, and back up to speed (it may then hit the hull and go off)
+    if (pingAt >= 0 && i === pingAt + 2 && a.shots.length) after = Math.hypot(a.shots[0]!.body.vx, a.shots[0]!.body.vy);
+  }
+  assert.ok(pingAt >= 0, "the rocket met the head");
+  assert.ok(blastAt < 0 || blastAt > pingAt + 2, `it went off on the weapon (ping ${pingAt}, blast ${blastAt})`);
+  assert.ok(after > 300, `speed after the bounce ${after.toFixed(0)}`);
+});
+
+// ---------------------------------------------------------------- weapon faces (WEAPON_SHAPES.md)
+
+test("faces: the part's feature that meets the other body picks the face (spike tips, blunt block, shaft edge, chain ring)", () => {
+  // the face a part shows toward a contact normal given in the part's own frame, at body angle `a`
+  const at = (k: WeaponKind, key: string, nx: number, ny: number, a: number) => {
+    const p = WEAPONS[k].parts.find((q) => q.key === key)!;
+    const b = new Body(p.mesh, p.density).place(50, 20, a);
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    return faceAt(facesOf(p), b, nx * c - ny * s, nx * s + ny * c).kind;
+  };
+  for (const a of [0, 1, Math.PI / 2, -2.5]) {
+    // the klevec's spikes on both striking faces; the block's end is blunt
+    assert.equal(at("klevec", "head", 0, 1, a), "spike");
+    assert.equal(at("klevec", "head", 0, -1, a), "spike");
+    assert.equal(at("klevec", "head", 1, 0, a), "blunt");
+    assert.equal(at("pike", "head", 0, 1, a), "spike");
+    assert.equal(at("pike", "head", 1, 0, a), "blunt");
+    // the berdish's shaft runs along its top; its blade hangs below
+    assert.equal(at("berdish", "head", 0, -1, a), "shaft");
+    assert.equal(at("berdish", "head", 0, 1, a), "blade");
+    // a spiked flail segment: the chain ring behind, the crescent blade in front
+    assert.equal(at("spikedflail", "spike3", -1, 0, a), "shaft");
+    assert.equal(at("spikedflail", "spike3", 1, 0, a), "blade");
+    // one-sided: the axe's edge (+y) and its back; the gold axe's horn spike on its back
+    assert.equal(at("axe", "head", 0, 1, a), "blade");
+    assert.equal(at("axe", "head", 0, -1, a), "blunt");
+    assert.equal(at("goldaxe", "head", 0, -1, a), "spike");
+    assert.equal(at("cyclone", "head", 1, 0, a), "saw");
+    assert.equal(at("hammer", "head", 0, 1, a), "blunt");
+    assert.equal(at("starmace", "hand", 0, 1, a), "shaft");
+  }
+});
+
+test("faces: meshes redrawn to the art keep each part's mass; every face list ends with a catch-all", () => {
+  const mass = (k: WeaponKind, key: string) => {
+    const p = WEAPONS[k].parts.find((q) => q.key === key)!;
+    return new Body(p.mesh, p.density).mass;
+  };
+  // the old boxes: klevec 16 × 32 at 60, pike 9 × 45 at 70, gold axe 19 × 35 at 55, krank 17 × 34 at 64
+  assert.ok(Math.abs(mass("klevec", "head") - 16 * 32 * 60) < 1);
+  assert.ok(Math.abs(mass("pike", "head") - 9 * 45 * 70) < 1);
+  assert.ok(Math.abs(mass("goldaxe", "head") - 19 * 35 * 55) < 1);
+  assert.ok(Math.abs(mass("krankhammer", "head") - 17 * 34 * 64) < 1);
+  for (const k of WEAPON_KINDS) {
+    for (const p of WEAPONS[k].parts) {
+      // a collider must be convex (the SAT), hold the origin (the mass fan), and fit the collision buffers (16)
+      const b = new Body(p.mesh, p.density);
+      assert.ok(b.count <= 16, `${k}.${p.key}: ${b.count} vertices`);
+      for (let i = 0; i < b.count; i++) {
+        const j = (i + 1) % b.count;
+        const l = (i + 2) % b.count;
+        const turn = (b.lx[j]! - b.lx[i]!) * (b.ly[l]! - b.ly[j]!) - (b.ly[j]! - b.ly[i]!) * (b.lx[l]! - b.lx[j]!);
+        assert.ok(turn > 0, `${k}.${p.key}: not convex at vertex ${j}`);
+        assert.ok(b.lx[i]! * b.ly[j]! - b.lx[j]! * b.ly[i]! > 0, `${k}.${p.key}: the origin is outside edge ${i}`);
+      }
+      const f = facesOf(p);
+      const last = f[f.length - 1]!;
+      assert.ok(last.x0 === undefined && last.x1 === undefined && last.y0 === undefined && last.y1 === undefined, `${k}.${p.key}: no catch-all face`);
+      for (const x of f) if (x.kind === "spike") assert.ok((x.spike ?? 0) > 0, `${k}.${p.key}: a spike face with no spike value`);
+    }
+  }
+});
+
+/**
+ * a's weapon thrown at `speed` along +x with its −y face leading, into b's hull just beside the hanging head; steps
+ * until it lands (the events of that step are kept).
+ */
+function faceHit(weapon: WeaponKind, speed: number, tune?: (t: Tuning) => void) {
+  const ar = arena();
+  ar.tuning.slomo = 0;
+  tune?.(ar.tuning);
+  const a = ar.add({ id: 0, name: "a", color: "#f00", weapon, x: 300, y: 200 });
+  const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 345, y: 260 });
+  a.striker.setVelocity(speed, 0, 0, 0.02);
+  for (let i = 0; i < 4 && !ar.events.some((e) => e.type === "hit" && e.victim === b); i++) {
+    ar.events.length = 0;
+    ar.step();
+  }
+  return { ar, a, b };
+}
+
+test("spikes: a point-first hit pierces and hooks in; the hook holds the victim, then tears out with damage", () => {
+  const { ar, a, b } = faceHit("klevec", 600);
+  // the machines' own joints (the two weapons' rods)
+  const joints = a.joints.length + b.joints.length;
+  const hit = ar.events.find((e) => e.type === "hit" && e.victim === b);
+  assert.ok(hit && hit.type === "hit");
+  // a pierce: sharpness 3 × tuning.pierce (a blunt face of the klevec hits at 2)
+  assert.equal(hit.dmg, Math.floor(0.1 * 3 * DEFAULT_TUNING.pierce * hit.impact));
+  assert.ok(ar.events.some((e) => e.type === "hook" && e.victim === b && e.attacker === a));
+  assert.equal(ar.hooked(), 1);
+  assert.equal(ar.world.joints.length, joints + 2);
+  ar.events.length = 0;
+  // it holds: the spike passes through things and b stays on it
+  let tear = null as null | Extract<(typeof ar.events)[number], { type: "tear" }>;
+  let at = 0;
+  for (let i = 1; i < 120 && !tear; i++) {
+    if (ar.hooked()) {
+      assert.equal(a.striker.solid, false);
+      assert.ok(Math.hypot(a.striker.x - b.hull.x, a.striker.y - b.hull.y) < 30, "the victim came off the spike");
+    }
+    ar.step();
+    for (const e of ar.events) {
+      if (e.type === "tear") {
+        tear = e;
+        at = i * STEP;
+      }
+    }
+    ar.events.length = 0;
+  }
+  assert.ok(tear, "it never let go");
+  // the exe's life 0.005 · spike · (|v| + 1) × tuning.hold, from 0.25 s
+  assert.ok(at > 0.25 && at < 1.6, `held ${at.toFixed(2)} s`);
+  assert.equal(tear.pulled, false);
+  assert.ok(tear.dmg > 0, "tearing out did no damage");
+  assert.equal(ar.world.joints.length, joints);
+  for (let i = 0; i < 10; i++) ar.step();
+  assert.equal(a.striker.solid, true, "the spike stayed a ghost");
+  assert.equal(ar.hooked(), 0);
+});
+
+test("spikes: a hard knock on the hooked victim tears the spike out early; hold 0 turns hooks off", () => {
+  const { ar, b } = faceHit("klevec", 600);
+  assert.equal(ar.hooked(), 1);
+  let pulled = false;
+  for (let i = 0; i < 20 && !pulled; i++) {
+    if (i === 6) b.hull.setVelocity(b.hull.vx + 500, b.hull.vy, 0, STEP);
+    ar.step();
+    for (const e of ar.events) if (e.type === "tear") pulled = e.pulled && e.dmg > 0;
+    ar.events.length = 0;
+  }
+  assert.ok(pulled, "the knock did not tear it out");
+  const off = faceHit("klevec", 600, (t) => (t.hold = 0));
+  assert.equal(off.ar.hooked(), 0);
+  assert.ok(off.b.hp < 100, "no hook, but still a pierce");
+});
+
+test("spikes: a spike hit side-on (on its flank) neither pierces nor hooks in", () => {
+  // hammerHit's swing: the head curls up into b's hull and meets its corner on the spike's flank
+  const ar = arena();
+  ar.tuning.slomo = 0;
+  const a = ar.add({ id: 0, name: "a", color: "#f00", weapon: "klevec", x: 300, y: 200 });
+  const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 385, y: 200 });
+  for (let i = 0; i < 5; i++) ar.step();
+  a.striker.setVelocity(600, -120, 0, 0.02);
+  let dmg = 0;
+  for (let i = 0; i < 30; i++) {
+    ar.step();
+    for (const e of ar.events) {
+      assert.notEqual(e.type, "hook");
+      if (e.type === "hit" && e.victim === b) dmg += e.dmg;
+    }
+    ar.events.length = 0;
+  }
+  assert.ok(dmg > 0, "the knock did no damage");
+});
+
+test("shafts: a shaft edge only pushes (the berdish's top); a blunt face knocks the victim back", () => {
+  const { ar, b } = faceHit("berdish", 500);
+  let hits = 0;
+  for (let i = 0; i < 6; i++) {
+    ar.step();
+    for (const e of ar.events) if (e.type === "hit" && e.victim === b) hits++;
+    ar.events.length = 0;
+  }
+  assert.equal(hits, 0);
+  assert.ok(b.hull.vx > 50, `b was not pushed: vx ${b.hull.vx.toFixed(0)}`);
+  // the iron hammer's face: the same blow, with and without the knockback
+  const knock = (kick: number) => {
+    const h = faceHit("hammer", 600, (t) => (t.kick = kick));
+    assert.ok(h.ar.events.some((e) => e.type === "hit" && e.victim === h.b), "the hammer missed");
+    return h.b.hull.vx;
+  };
+  const plain = knock(0);
+  const kicked = knock(DEFAULT_TUNING.kick);
+  assert.ok(kicked > plain + 30, `knockback ${plain.toFixed(0)} -> ${kicked.toFixed(0)} px/s`);
+});
+
+test("blades: an edge cuts more the faster it slides across; head-on or with no edge it doesn't", () => {
+  const b = new Body(WEAPONS.axe.parts[0]!.mesh, 65).place(0, 0, 0);
+  // the contact normal (0, 1): the +y edge; sliding is motion along x
+  const slide = (vx: number, vy: number, blade: number) => {
+    b.vx = vx;
+    b.vy = vy;
+    return cutFactor(b, blade, 0, 1);
+  };
+  assert.ok(slide(600, 0, 1) > 2.5);
+  assert.ok(slide(900, 0, 1) > slide(600, 0, 1));
+  assert.equal(slide(0, 600, 1), 1);
+  assert.equal(slide(600, 0, 0), 1);
+  // and the axe's back face has no edge, its front has (faceAt picks them; see the faces test)
+  const f = facesOf(WEAPONS.axe.parts[0]!);
+  assert.equal(faceAt(f, b, 0, -1).blade, 0);
+  assert.equal(faceAt(f, b, 0, 1).blade, 1);
+});
+
+test("saws: the cyclone's disc grinds a machine sliding along it, in small bites, even too slowly for a blow", () => {
+  const ar = arena();
+  ar.tuning.slomo = 0;
+  const a = ar.add({ id: 0, name: "a", color: "#f00", weapon: "cyclone", x: 300, y: 200 });
+  const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 328, y: 175 });
+  const disc = a.part.get("head")!;
+  const dx = disc.x;
+  const dy = disc.y;
+  const bites: number[] = [];
+  for (let i = 0; i < 50; i++) {
+    // b slides down past the disc, pressing in a little (40 px/s: under bluntMinV); the disc is held in place
+    b.hull.setVelocity(-40, 100, 0, STEP);
+    a.hull.setVelocity(0, 0, 0, STEP);
+    ar.step();
+    disc.x = disc.px = dx;
+    disc.y = disc.py = dy;
+    for (const e of ar.events) if (e.type === "hit" && e.victim === b) bites.push(e.dmg);
+    ar.events.length = 0;
+  }
+  assert.ok(bites.length >= 3, `bites ${bites.join(",")}`);
+  assert.ok(bites.every((d) => d === DEFAULT_TUNING.sawDmg), `bites ${bites.join(",")}`);
 });

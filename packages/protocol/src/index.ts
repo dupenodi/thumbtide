@@ -24,6 +24,12 @@ export const LIMITS = {
   maxPlayers: 16,
   /** How long a dropped controller keeps its slot (ms). */
   playerGraceMs: 60_000,
+  /**
+   * How long a controller that said it was away (its page went to the background: another app, the screen
+   * locked) keeps its slot (ms), counted from when it went away, with or without its socket. The phone is
+   * still in someone's hand.
+   */
+  awayGraceMs: 10 * 60_000,
   /** How long a room survives without its host (ms) — covers a page refresh. */
   hostGraceMs: 90_000,
   /** Token bucket per socket: sustained msgs/sec and burst size. */
@@ -45,6 +51,11 @@ export interface PlayerInfo {
   /** Join order, starting at 0. Stable across reconnects. Handy for colors / "VIP". */
   index: number;
   connected: boolean;
+  /**
+   * The phone's page is in the background (another app, the screen locked): the player is still there and
+   * will be back. Set and cleared only by the phone; it can be true while `connected` is either value.
+   */
+  away: boolean;
 }
 
 export interface RoomConfig {
@@ -93,6 +104,8 @@ export type ServerToHost =
   /** Player socket dropped; slot is held for `LIMITS.playerGraceMs`. */
   | { t: "drop"; id: PlayerId }
   | { t: "rejoin"; p: PlayerInfo }
+  /** Player's phone went to the background (`away`) or came back. */
+  | { t: "away"; id: PlayerId; away: boolean }
   /** Player is gone for good (grace expired, kicked, or left). */
   | { t: "remove"; id: PlayerId; reason: RemoveReason }
   | { t: "msg"; from: PlayerId; d: unknown }
@@ -107,6 +120,8 @@ export type ServerToHost =
 export type ControllerToServer =
   | { t: "msg"; d: unknown }
   | { t: "in"; d: unknown }
+  /** The page went to the background (true) or is back (false). Sent on every change and after every welcome. */
+  | { t: "away"; away: boolean }
   | { t: "leave" }
   | { t: "ping"; ts: number };
 
@@ -135,7 +150,12 @@ export type ServerToController =
   | { t: "error"; code: ErrorCode; message: string };
 
 export type RemoveReason = "timeout" | "kicked" | "left";
-export type CloseReason = "host-closed" | "host-timeout" | "kicked" | "left";
+/**
+ * `away-timeout`: the phone stayed away (another app, locked) past `LIMITS.awayGraceMs` and its seat was freed.
+ * Sent when it happens (socket open) or when the phone reconnects later with that seat's token (it was offline).
+ * `away-timeout-locked`: the same, and the room is locked now, so joining again must wait for the lobby.
+ */
+export type CloseReason = "host-closed" | "host-timeout" | "kicked" | "left" | "away-timeout" | "away-timeout-locked";
 
 export type ErrorCode =
   | "bad-request"

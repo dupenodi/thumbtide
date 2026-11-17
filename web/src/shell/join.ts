@@ -44,6 +44,8 @@ const CLOSE_TEXT: Record<ControllerCloseReason, string> = {
   "host-closed": "The screen ended the session.",
   "host-timeout": "Lost the screen. The room has closed.",
   left: "You left the room.",
+  "away-timeout": "You were away too long, so your seat was given up. Join again to play.",
+  "away-timeout-locked": "You were away too long, so your seat was given up. The host locked the room for this game: join again in the lobby.",
   replaced: "You joined from another tab.",
 };
 
@@ -273,30 +275,33 @@ function join(room: string, name: string) {
       const s = state;
       const inGame = game !== "lobby";
       const others = (s?.players ?? []).filter((p) => p.id !== ctl.me?.id);
-      sheetPanel.innerHTML = `${head("Host controls")}
-        <div class="sh-body" data-scroll>
-          ${
-            inGame
-              ? `<section><h3>${esc(def?.title ?? "Game")}</h3>
-                  <div class="sh-actions">
-                    ${s?.canPause ? `<button class="sh-act" data-cmd="${s.paused ? "resume" : "pause"}">${s.paused ? "▶ Resume" : "❚❚ Pause"}</button>` : ""}
-                    ${s?.canPause ? `<button class="sh-act" data-cmd="restart">↻ Restart round</button>` : ""}
-                    <button class="sh-act danger" data-cmd="exit">⏏ End game</button>
-                  </div></section>
-                 ${def?.settings?.length ? `<section><h3>Settings</h3>${settingsHtml(def, s?.settings ?? {})}</section>` : ""}`
-              : ""
-          }
-          <section><h3>Room ${esc(room)}</h3>
-            ${inGame ? `<label class="sh-toggle"><span>Lock the room<small>New players can't join mid-game</small></span><button class="sh-switch ${s?.locked ? "on" : ""}" data-cmd="lock"></button></label>` : ""}
+      // Upright phone: the game's settings first (key ones, then "More settings" folded), then the room and its
+      // players, End game last, and Pause / Restart pinned to the bottom under the thumb.
+      const scroll = sheetPanel.scrollTop;
+      sheetPanel.innerHTML = `${head(inGame ? esc(def?.title ?? "Game") : "Host controls")}
+        <div class="sh-body sh-host" data-scroll>
+          ${inGame && def?.settings?.length ? `<section><h3>Settings</h3>${settingsHtml(def, s?.settings ?? {})}</section>` : ""}
+          <section><h3>Room ${esc(room)}<span class="sh-count">${others.length + 1} ${others.length ? "players" : "player"}</span></h3>
+            ${inGame ? `<button class="sh-toggle sh-lock" data-cmd="lock"><span>Lock the room<small>New players can't join mid-game</small></span><i class="sh-switch ${s?.locked ? "on" : ""}"></i></button>` : ""}
             <ul class="sh-players">${
               others.length
                 ? others
-                    .map((p) => `<li class="${p.connected ? "" : "away"}"><span>${esc(p.name)}${p.connected ? "" : " <small>(away)</small>"}</span><button class="sh-kick" data-id="${esc(p.id)}">Remove</button></li>`)
+                    .map((p) => `<li class="${p.connected && !p.away ? "" : "away"}"><span>${esc(p.name)}${p.connected && !p.away ? "" : " <small>(away)</small>"}</span><button class="sh-kick" data-id="${esc(p.id)}">Remove</button></li>`)
                     .join("")
                 : `<li class="sh-empty">Nobody else here yet</li>`
             }</ul>
           </section>
-        </div>`;
+          ${inGame ? `<button class="sh-act danger sh-end" data-cmd="exit">⏏ End game</button>` : ""}
+        </div>
+        ${
+          inGame && s?.canPause
+            ? `<div class="sh-foot">
+                <button class="sh-act" data-cmd="${s.paused ? "resume" : "pause"}">${s.paused ? "▶ Resume" : "❚❚ Pause"}</button>
+                <button class="sh-act" data-cmd="restart">↻ Restart round</button>
+              </div>`
+            : ""
+        }`;
+      sheetPanel.scrollTop = scroll;
       for (const b of sheetPanel.querySelectorAll<HTMLButtonElement>(".sh-kick")) {
         button(b, {
           mode: "tap",
@@ -344,6 +349,7 @@ function join(room: string, name: string) {
         },
       });
     }
+    sheetPanel.classList.toggle("has-foot", !!sheetPanel.querySelector(".sh-foot"));
     const x = sheetPanel.querySelector(".sh-x") as HTMLButtonElement | null;
     if (x) button(x, { mode: "tap", onPress: closeSheet });
   }
@@ -410,5 +416,7 @@ function join(room: string, name: string) {
     gameRoot.replaceChildren();
     form.hidden = false;
     errorEl.textContent = CLOSE_TEXT[reason] ?? "Disconnected.";
+    // seat given up while away: the code and name are filled in, so joining again is one tap
+    if (reason === "away-timeout" || reason === "away-timeout-locked") codeInput.value = room;
   });
 }
