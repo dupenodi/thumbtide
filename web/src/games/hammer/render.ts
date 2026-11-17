@@ -216,7 +216,10 @@ export class Renderer {
     if (!skip?.has("weapons")) for (const m of arena.machines) if (!m.monster) this.weapon(m, alpha);
     // a wreck that has faded out (or left play) draws nothing: skip its paths entirely
     if (!skip?.has("machines")) {
-      if (!skip?.has("hulls")) for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
+      if (!skip?.has("hulls")) {
+        for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
+        this.leave();
+      }
       if (!skip?.has("labels")) this.labels(arena, alpha);
     }
     if (arena.shots.length) this.shots(arena, alpha);
@@ -1037,7 +1040,7 @@ export class Renderer {
       // the wreck: the hull alone, greyed (body, shade, window), made once per facing
       ctx.drawImage(this.hullSprite("#3b3b44", m.hull.vx >= 0), -HULL_SW / 2, -HULL_SH / 2, HULL_SW, HULL_SH);
     }
-    this.leave();
+    // no leave(): the next machine sets its own frame; draw() leaves once after the last one
     ctx.globalAlpha = 1;
   }
 
