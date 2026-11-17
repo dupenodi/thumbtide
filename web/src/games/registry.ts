@@ -4,6 +4,7 @@ import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
 import hammerPad from "./hammer/hammer.pad?raw";
 import sandboxPad from "./sandbox/sandbox.pad?raw";
+import liftoffPad from "./liftoff/liftoff.pad?raw";
 import shovePad from "./shove/shove.pad?raw";
 import stackPad from "./stack/stack.pad?raw";
 import trailsPad from "./trails/trails.pad?raw";
@@ -329,6 +330,44 @@ export const GAMES: GameDef[] = [
     ],
     host: () => import("./shove/host.ts"),
     controller: () => import("./shove/controller.ts"),
+  },
+  {
+    id: "liftoff",
+    title: "Lift-off",
+    tagline: "One rocket, one thruster each. Climb together.",
+    minPlayers: 1,
+    maxPlayers: 8,
+    colors: ["#ff6a2b", "#29b3a8"],
+    glyph: "jump",
+    controls: parsePad(liftoffPad, "liftoff.pad"),
+    settings: [
+      {
+        key: "runs",
+        label: "Runs per match",
+        options: [1, 3, 5].map((n) => ({ value: n, label: String(n) })),
+        default: 3,
+        applies: "now",
+      },
+      {
+        key: "difficulty",
+        label: "Course",
+        options: [
+          { value: "easy", label: "Easy" },
+          { value: "normal", label: "Normal" },
+          { value: "hard", label: "Hard" },
+        ],
+        default: "normal",
+      },
+      {
+        key: "bots",
+        label: "Computer pilots",
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+        applies: "now",
+      },
+    ],
+    host: () => import("./liftoff/host.ts"),
+    controller: () => import("./liftoff/controller.ts"),
   },
   {
     id: "sandbox",
