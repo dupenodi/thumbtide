@@ -5,15 +5,15 @@
 // Effects: hits by material (metall / wood / stone, a blade cut adds bladaway), clashes (spark), disarm (chain),
 // gunshot (shoot_03), blast (explo_02), K.O. (explo_03), coins (gold), gong, drum and applause for the announcer;
 // synth: rotor hum, swing whoosh, stun, pickup, countdown. Effects decode one at a time after start (small buffers).
-// Music: Hammerfight's battle_small_01 (warm-up) and battle_mid_02 (fight), streamed by one <audio> element (never
-// decoded into memory: the TV has little); the synth groove plays if the file fails.
+// Music: Hammerfight's battle_small_01 (warm-up) and battle_mid_02 (fight), streamed by one <audio> element; on the
+// TV (bufferMusic) mono copies decoded once and looped by WebAudio, as the element cost frames there (see syncBuffered).
+// The synth groove plays if the file fails.
 // Slow motion closes a low-pass filter over the effects, so big hits sound heavy and muffled.
 
 import type { Material } from "./weapons.ts";
 
 const SOUND_URLS = import.meta.glob("./sounds/*.ogg", { query: "?url", import: "default", eager: true }) as Record<string, string>;
-const soundUrl = (name: string): string | undefined => SOUND_URLS[`./sounds/${name}.ogg`];
-const EFFECTS = [
+const soundUrl = (name: string): string | undefined => SOUND_URLS[`./sounds/${name}.ogg`];const EFFECTS = [
   "metall_01", "metall_02", "metall_03", "metall_04", "metall_05", "wood_01", "wood_02", "wood_03", "stone_01", "stone_02", "stone_03",
   "bladaway_01", "bladaway_02", "bladaway_03", "spark_01", "spark_02", "chain_01", "explo_02", "explo_03", "shoot_03",
   "gold_01", "gold_02", "gong", "drum_01", "aplause_01",
@@ -64,7 +64,7 @@ const BASS: (number | null)[] = [0, null, 0, 12, null, 0, 7, null, 0, null, 10, 
 const hz = (semis: number, base = 55) => base * 2 ** (semis / 12);
 
 /** lite (the TV): no hi-hats and a single partial for metal rings, to save audio-thread time. */
-export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean; samples?: boolean; fileMusic?: boolean } = {}): GameAudio | null {
+export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean; samples?: boolean; fileMusic?: boolean; bufferMusic?: boolean } = {}): GameAudio | null {
   if (!ctx) return null;
   const c = ctx;
   const lite = !!opts.lite;
@@ -254,7 +254,56 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
   /** False once a track failed to load: the synth groove takes over for good. */
   let fileMusic = opts.fileMusic !== false && !!soundUrl(TRACKS.fight) && typeof Audio !== "undefined";
   let track = "";
+  // bufferMusic (the TV): the tracks (mono copies, sounds/*.mono.ogg) decoded once and looped by WebAudio, not
+  // streamed by an <audio> element. On the TV the element cost ~3 fps in every fight, whatever the file format
+  // (Vorbis, AAC, MP3, mono 22 kHz: all the same); WebAudio playback nearly nothing (TV A/B, Co-op vs monsters,
+  // classic, 4 bots: element 53.7, WebAudio 56.1, no music 56.7 fps). Memory: 32 s mono at the context's rate is
+  // ~6 MB per track, both kept.
+  let bufferMusic = !!opts.bufferMusic && fileMusic && !!soundUrl(`${TRACKS.fight}.mono`) && !!soundUrl(`${TRACKS.warm}.mono`);
+  const bufs = new Map<string, AudioBuffer | null>();
+  let bufSrc: AudioBufferSourceNode | null = null;
+  let bufTrack = "";
+  const bufOut = c.createGain();
+  bufOut.gain.value = MUSIC_VOL;
+  // straight to the speakers, as the element was: the slow-motion filter doesn't touch the music
+  bufOut.connect(c.destination);
+  const syncBuffered = () => {
+    const want = mood === "off" || !musicOn || paused ? "" : TRACKS[mood];
+    if (want === bufTrack && (bufSrc || !want)) return;
+    bufSrc?.stop();
+    bufSrc = null;
+    bufTrack = want;
+    if (!want) return;
+    const buf = bufs.get(want);
+    if (buf) {
+      bufSrc = c.createBufferSource();
+      bufSrc.buffer = buf;
+      bufSrc.loop = true;
+      bufSrc.connect(bufOut);
+      bufSrc.start();
+      return;
+    }
+    if (buf === null) return; // decoding; it starts when ready
+    bufs.set(want, null);
+    void loadBytes(soundUrl(`${want}.mono`)!)
+      .then((d) => new Promise<AudioBuffer>((res, rej) => c.decodeAudioData(d, res, rej)))
+      .then((b) => {
+        if (disposed) return;
+        bufs.set(want, b);
+        if (bufTrack === want && !bufSrc) {
+          bufTrack = "";
+          syncBuffered();
+        }
+      })
+      .catch(() => {
+        // the element streams it instead
+        bufferMusic = false;
+        bufs.clear();
+        syncMusic();
+      });
+  };
   const syncMusic = () => {
+    if (bufferMusic) return syncBuffered();
     if (!fileMusic) return;
     const want = mood === "off" || !musicOn || paused ? "" : TRACKS[mood];
     if (!want) {
@@ -434,7 +483,7 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
       syncMusic();
     },
     samples() {
-      return { loaded: bank.size, failed, music: fileMusic ? (el && !el.paused ? track : "file, idle") : "synth" };
+      return { loaded: bank.size, failed, music: bufferMusic ? `buffer ${bufSrc ? bufTrack : "idle"}` : fileMusic ? (el && !el.paused ? track : "file, idle") : "synth" };
     },
     dispose() {
       disposed = true;

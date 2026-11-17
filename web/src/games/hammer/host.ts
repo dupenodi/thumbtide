@@ -126,7 +126,7 @@ const mount: HostMount = (ctx) => {
   // perf A/B (perf builds only): audio=synth (no samples, no file music), nomusic (no file music), nosamples
   const coinsOff = import.meta.env.VITE_PERF === "1" && startParam("coins") === "off";
   const audioAB = import.meta.env.VITE_PERF === "1" ? startParam("audio") : null;
-  const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite"), samples: audioAB !== "synth" && audioAB !== "nosamples", fileMusic: audioAB !== "synth" && audioAB !== "nomusic" });
+  const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite"), samples: audioAB !== "synth" && audioAB !== "nosamples", fileMusic: audioAB !== "synth" && audioAB !== "nomusic", bufferMusic: lite && audioAB !== "element" });
   const sound = tour ? tour.wrapSound(sound0) : sound0;
   sound?.setMusicOn(ctx.settings().music !== false);
   /** The material of a machine's striking part, for the hit sound. */
@@ -935,6 +935,7 @@ const mount: HostMount = (ctx) => {
       canvas: `${canvas.width}x${canvas.height}`,
       phase,
       machines: arena.machines.length,
+      music: sound?.samples().music ?? "none",
       ...(tour ? tour.report() : {}),
     };
   });
