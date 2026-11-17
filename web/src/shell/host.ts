@@ -21,6 +21,8 @@ const banner = document.getElementById("banner")!;
 // (Wet Paint, Cult and Cascade 8) and the rest watch, so a 9th friend can still get in.
 const host = new Host({ server: RELAY_URL, game: "lobby", maxPlayers: LIMITS.maxPlayers });
 shell.host = host;
+// dev only: test scripts read the room code here (window.__tt.host.code) to join headless phones
+if (import.meta.env.DEV) (window as unknown as { __tt: unknown }).__tt = { host };
 
 // sound is on from the start wherever the browser allows it, and from the first key press or click otherwise
 audio();
