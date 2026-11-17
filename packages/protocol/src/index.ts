@@ -150,8 +150,12 @@ export type ServerToController =
   | { t: "error"; code: ErrorCode; message: string };
 
 export type RemoveReason = "timeout" | "kicked" | "left";
-/** `away-timeout`: the phone stayed away (another app, locked) past `LIMITS.awayGraceMs` and its seat was freed. */
-export type CloseReason = "host-closed" | "host-timeout" | "kicked" | "left" | "away-timeout";
+/**
+ * `away-timeout`: the phone stayed away (another app, locked) past `LIMITS.awayGraceMs` and its seat was freed.
+ * Sent when it happens (socket open) or when the phone reconnects later with that seat's token (it was offline).
+ * `away-timeout-locked`: the same, and the room is locked now, so joining again must wait for the lobby.
+ */
+export type CloseReason = "host-closed" | "host-timeout" | "kicked" | "left" | "away-timeout" | "away-timeout-locked";
 
 export type ErrorCode =
   | "bad-request"

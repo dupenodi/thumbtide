@@ -57,6 +57,22 @@ function closeTab(ctl: Controller) {
   (ctl as any).link.close();
 }
 
+/**
+ * Make a Controller that starts with `tok` as its saved token, as a phone does after a reload or a reconnect:
+ * the SDK reads it from sessionStorage, which Node lacks, so a stand-in holds it while the Controller is made.
+ */
+async function withToken(room: string, tok: string, make: () => Controller): Promise<Controller> {
+  const g = globalThis as { sessionStorage?: unknown };
+  const had = g.sessionStorage;
+  const store = new Map([[`thumbtide:player:${room}`, tok]]);
+  g.sessionStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) };
+  try {
+    return make();
+  } finally {
+    g.sessionStorage = had;
+  }
+}
+
 describe("relay", () => {
   test("host creates a room and a controller joins it", async () => {
     const host = await newHost();
@@ -175,6 +191,55 @@ describe("relay", () => {
     const [gone, reason] = await next(host, "leave", 3000); // awayGraceMs (1500)
     assert.equal(gone.id, id);
     assert.equal(reason, "timeout");
+  });
+
+  test("an away phone that was offline past the away limit is told on reconnect that its seat was given up", async () => {
+    const host = await newHost();
+    const ctl = await newController(host, "Gone");
+    const tok = (ctl as any).token as string;
+    const away = next(host, "away");
+    ctl.setAway(true);
+    await away;
+    closeTab(ctl); // offline: the socket dies while away
+    await next(host, "leave", 3000); // awayGraceMs (1500)
+    // the phone's network is back: it reconnects with its old token (the SDK, from sessionStorage)
+    const back = await withToken(host.code, tok, () => new Controller({ server: url, room: host.code, name: "Gone" }));
+    assert.equal(await next(back, "closed"), "away-timeout");
+    assert.equal(host.players.size, 0); // no new seat behind the player's back
+    // a second socket with the same token (a phone often reconnects twice in a row) is told too
+    const twice = await withToken(host.code, tok, () => new Controller({ server: url, room: host.code, name: "Gone" }));
+    assert.equal(await next(twice, "closed"), "away-timeout");
+    assert.equal(host.players.size, 0);
+    // tapping Join again (the SDK forgot the token) gives a new seat
+    const again = await newController(host, "Gone");
+    assert.equal(again.me?.name, "Gone");
+  });
+
+  test("an away phone back after the limit in a locked room hears that too, not just 'room locked'", async () => {
+    const host = await newHost();
+    await newController(host, "Stays");
+    const ctl = await newController(host, "Gone");
+    const tok = (ctl as any).token as string;
+    const away = next(host, "away");
+    ctl.setAway(true);
+    await away;
+    closeTab(ctl);
+    host.lock(true);
+    await next(host, "leave", 3000);
+    const back = await withToken(host.code, tok, () => new Controller({ server: url, room: host.code, name: "Gone" }));
+    assert.equal(await next(back, "closed"), "away-timeout-locked");
+  });
+
+  test("a seat freed by the normal drop grace is not reported as away (the phone just joins again)", async () => {
+    const host = await newHost();
+    const ctl = await newController(host, "Blip");
+    const tok = (ctl as any).token as string;
+    closeTab(ctl);
+    await next(host, "leave", 2000); // playerGraceMs (400)
+    const back = await withToken(host.code, tok, () => new Controller({ server: url, room: host.code, name: "Blip" }));
+    cleanup.push({ close: () => back.leave() });
+    const { resumed } = await next(back, "ready");
+    assert.equal(resumed, false);
   });
 
   test("an away phone that keeps its socket still loses its seat at the away limit; back stops the clock", async () => {
