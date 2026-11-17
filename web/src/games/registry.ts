@@ -1,5 +1,6 @@
 import { parsePad } from "./kit/pad.ts";
 import type { GameDef } from "./types.ts";
+import blastPad from "./blast/blast.pad?raw";
 import boomtownPad from "./boomtown/boomtown.pad?raw";
 import bridgePad from "./bridge/bridge.pad?raw";
 import cascadePad from "./cascade/cascade.pad?raw";
@@ -574,6 +575,54 @@ export const GAMES: GameDef[] = [
     ],
     host: () => import("./boomtown/host.ts"),
     controller: () => import("./boomtown/controller.ts"),
+  },
+  {
+    id: "blast",
+    title: "Blast Party",
+    tagline: "Throw bombs, punch, hop. Knock everyone off the edge.",
+    minPlayers: 1,
+    maxPlayers: 8,
+    colors: ["#ff8a1f", "#3d7a4f"],
+    glyph: "action",
+    controls: parsePad(blastPad, "blast.pad"),
+    settings: [
+      {
+        key: "mode",
+        label: "Mode",
+        options: [
+          { value: "ffa", label: "Last one standing" },
+          { value: "team", label: "Team brawl" },
+        ],
+        default: "ffa",
+      },
+      {
+        key: "wins",
+        label: "Round wins to take the match",
+        options: [3, 5].map((n) => ({ value: n, label: String(n) })),
+        default: 3,
+        applies: "now",
+      },
+      {
+        key: "arena",
+        label: "Arena",
+        options: [
+          { value: "rotate", label: "Rotate" },
+          { value: "shelf", label: "Toy shelf" },
+          { value: "blanket", label: "Picnic blanket" },
+          { value: "tub", label: "Bathtub" },
+        ],
+        default: "rotate",
+      },
+      {
+        key: "bots",
+        label: "Computer fighters",
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+        applies: "now",
+      },
+    ],
+    host: () => import("./blast/host.ts"),
+    controller: () => import("./blast/controller.ts"),
   },
   {
     id: "sandbox",
