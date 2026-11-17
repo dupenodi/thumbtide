@@ -3,7 +3,7 @@
 //
 // One step = one Hammerfight frame: 50 Hz real time, dt = 0.02 × time warp.
 
-import { Body, type ContactReport, joint, type Joint, World, wrapPi } from "./engine.ts";
+import { Body, type ContactReport, joint, type Joint, JointType, World, wrapPi } from "./engine.ts";
 import type { Tuning } from "./tuning.ts";
 import { type CreatureLayout, type MonsterKind, wormLayout } from "./monsters.ts";
 import { armedSpec, type GunKind, type GunSpec, MACHINE, type PartSpec, PLATE_COUNT, type PlateKind, PLATES, type WeaponKind, type WeaponSpec } from "./weapons.ts";
@@ -190,24 +190,37 @@ export type SimEvent =
   | { type: "break"; by: Machine; obstacle: Obstacle; x: number; y: number }
   | { type: "ko"; victim: Machine; by: Machine | null; x: number; y: number };
 
-/** A crate breaks after enough damage; a pillar never does. */
+/**
+ * Static: pillar (a stone box, may be turned), ledge (a plank), floor, crate (breaks). Dynamic (gravity on): cage (hangs
+ * on a rope, breaks) and block (a heavy octagon that weapons and machines push; never breaks).
+ */
+export type ObstacleKind = "crate" | "pillar" | "ledge" | "floor" | "cage" | "block";
+export const breakable = (k: ObstacleKind) => k === "crate" || k === "cage";
 export interface Obstacle {
-  kind: "crate" | "pillar";
+  kind: ObstacleKind;
   body: Body;
   hw: number;
   hh: number;
   hp: number;
   max: number;
+  /** A cage's rope anchor (world px), drawn as a line to the cage's top. */
+  rope?: { x: number; y: number };
 }
 
 /** Where an obstacle goes, in the arena's own px. */
 export interface ObstacleSpec {
-  kind: "crate" | "pillar";
+  kind: ObstacleKind;
   x: number;
   y: number;
   hw: number;
   hh: number;
+  /** Angle, rad. */
+  a?: number;
   hp?: number;
+  /** Density of a dynamic kind (cage 50, block 40 as in Hammerfight). */
+  d?: number;
+  /** A cage's rope: the anchor (world px) and the length. */
+  rope?: { x: number; y: number; len: number };
 }
 
 interface Loose {
@@ -234,8 +247,14 @@ export class Arena {
   /** The arena in world px (the TV shows all of it: a bigger arena is a zoomed-out view). */
   w = VIEW_W;
   h = VIEW_H;
-  /** Static obstacles (OURS; Hammerfight's multiplayer arenas have none, its story ARENA has crates and cages). */
+  /** Obstacles (see arenas.ts for which come from Hammerfight's levels). */
   obstacles: Obstacle[] = [];
+  /** Which arena layout (arenas.ts ARENAS key), its colour theme, and decoration chains (no bodies). */
+  kind = "classic";
+  theme = "dusk";
+  chains: { x: number; y: number; len: number }[] = [];
+  /** Counts setArena calls: the renderer repaints its cached backdrop (with the static obstacles) when it changes. */
+  layout = 0;
   private obstacleOf = new Map<Body, Obstacle>();
   /** Crates broken during this step's collisions, removed after it. */
   private brokenBodies: Body[] = [];
@@ -465,6 +484,7 @@ export class Arena {
       this.brokenBodies.length = 0;
     }
     if (tn.walls) for (const m of this.machines) if (m.alive && !m.monster) this.frameWalls(m, dt);
+    if (this.obstacles.length) this.obstacleWalls();
     this.dtPrev = dt;
     this.t += dt;
     if (this.shots.length) this.ageShots();
@@ -814,25 +834,54 @@ export class Arena {
   setArena(w: number, h: number, obstacles: ObstacleSpec[]): void {
     this.w = w;
     this.h = h;
+    this.layout++;
+    for (const b of this.ropeAnchors) this.world.remove(b);
+    this.ropeAnchors = [];
     for (const o of this.obstacles) this.world.remove(o.body);
     this.obstacles = [];
     this.obstacleOf.clear();
     for (const s of obstacles) {
+      const dynamic = s.kind === "cage" || s.kind === "block";
+      const mesh = s.kind === "block" ? octagon(s.hw) : [-s.hw, -s.hh, s.hw, -s.hh, s.hw, s.hh, -s.hw, s.hh];
       // density 0: static (it never moves; the solver gives it no share of a correction)
-      const body = new Body([-s.hw, -s.hh, s.hw, -s.hh, s.hw, s.hh, -s.hw, s.hh], 0).place(s.x, s.y, 0);
-      body.gravity = false;
-      const hp = s.kind === "crate" ? (s.hp ?? 30) : Infinity;
+      const body = new Body(mesh, dynamic ? (s.d ?? 40) : 0).place(s.x, s.y, s.a ?? 0);
+      body.gravity = dynamic;
+      const hp = breakable(s.kind) ? (s.hp ?? 30) : Infinity;
       const o: Obstacle = { kind: s.kind, body, hw: s.hw, hh: s.hh, hp, max: hp };
       this.world.add(body);
+      if (s.kind === "cage" && s.rope) {
+        // Hammerfight hangs its cages on ropes (joint type 5) from a beam: a static, non-solid anchor here
+        const anchor = new Body([-1, -1, 1, -1, 1, 1, -1, 1], 0).place(s.rope.x, s.rope.y, 0);
+        anchor.gravity = false;
+        anchor.solid = false;
+        this.world.add(anchor);
+        this.world.joints.push(joint(anchor, body, JointType.Rope, s.rope.len, { sby: -s.hh }));
+        o.rope = { x: s.rope.x, y: s.rope.y };
+        this.ropeAnchors.push(anchor);
+      }
       this.obstacles.push(o);
       this.obstacleOf.set(body, o);
+    }
+  }
+  /** The static bodies that hold the cage ropes (removed with the layout). */
+  private ropeAnchors: Body[] = [];
+
+  /** Loose obstacles (blocks, a cage off its rope) stay inside the frame: the same walls as the hulls, no slam. */
+  private obstacleWalls(): void {
+    for (const o of this.obstacles) {
+      if (o.body.invMass === 0) continue;
+      const b = o.body;
+      const r = b.radius;
+      if (b.x < r) b.x = b.px = r;
+      else if (b.x > this.w - r) b.x = b.px = this.w - r;
+      if (b.y > this.h - r) b.y = b.py = this.h - r;
     }
   }
 
   /** A weapon, shot or machine hits a crate: the game's damage formula (blunt rule included) takes its health. */
   private hitObstacle(o: Obstacle, by: Tag, byBody: Body, c: ContactReport): void {
     // no damage in the warm-up (damage 0): the crates are there for the fight
-    if (o.kind !== "crate" || o.hp <= 0 || !this.owned(by) || this.tuning.damage <= 0) return;
+    if (!breakable(o.kind) || o.hp <= 0 || !this.owned(by) || this.tuning.damage <= 0) return;
     const impact = c.impulse * 1e-5;
     if (!by.shot && c.approach < this.tuning.bluntMinV) return;
     const dmg = Math.floor(this.tuning.damage * Math.max(1, by.sharpness) * impact);

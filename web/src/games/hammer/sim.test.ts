@@ -653,3 +653,25 @@ test("guns: the mortar fires 5 balls and kicks the machine back; the tribune's b
   const d = a.add({ id: 3, name: "D", color: "#0ff", weapon: "twin", sidearm: "arquebus", x: 200, y: 300 });
   assert.equal(d.guns.length, 0);
 });
+
+test("level arenas: seats start clear of obstacles, cages hang on their ropes, blocks stay in the frame", async () => {
+  const { ARENAS, applyArenaKind, spawnPoint } = await import("./arenas.ts");
+  for (const kind of Object.keys(ARENAS)) {
+    const ar = arena();
+    applyArenaKind(ar, kind);
+    const ms = Array.from({ length: 8 }, (_, slot) => {
+      const [x, y] = spawnPoint(ar, slot);
+      // the turned slabs (eye, melka, blocks) were checked with designs.py; here the upright boxes
+      for (const o of ar.obstacles) if (o.body.a === 0 && o.body.invMass === 0) assert.ok(!(Math.abs(x - o.body.x) < o.hw + 12 && Math.abs(y - o.body.y) < o.hh + 16), `${kind} seat ${slot} in a ${o.kind}`);
+      return ar.add({ id: slot, name: `m${slot}`, color: "#f00", weapon: "hammer", x, y });
+    });
+    for (let i = 0; i < 300; i++) ar.step();
+    for (const o of ar.obstacles) {
+      const b = o.body;
+      if (b.invMass === 0) continue;
+      assert.ok(b.x >= 0 && b.x <= ar.w && b.y >= 0 && b.y <= ar.h, `${kind}: ${o.kind} left the frame at ${b.x | 0},${b.y | 0}`);
+      if (o.rope) assert.ok(b.y > o.rope.y, `${kind}: cage above its rope`);
+    }
+    assert.equal(ms.filter((m) => m.alive).length, 8, `${kind}: a machine died with no fight`);
+  }
+});

@@ -134,8 +134,11 @@ export class Renderer {
     this.canvas.width = w;
     this.canvas.height = Math.round((w * this.worldH) / this.worldW);
     this.scale = this.canvas.width / this.worldW;
-    this.bg = paintBackdrop(this.canvas.width, this.canvas.height, this.scale);
+    this.bgFor = -1; // repainted on the next draw, with the arena's theme and static obstacles
   }
+
+  /** The arena layout (Arena.layout) the backdrop was painted for. */
+  private bgFor = -1;
 
   draw(arena: Arena, alpha: number, fx: Fx): void {
     // a new arena size (between rounds): a new scale; the sprite caches follow the scale
@@ -143,6 +146,13 @@ export class Renderer {
       this.worldW = arena.w;
       this.worldH = arena.h;
       this.resize();
+    }
+    // a new layout (between rounds): the themed sky with the pillars, ledges and floors painted in once
+    if (this.bgFor !== arena.layout) {
+      this.bgFor = arena.layout;
+      const th = THEMES[arena.theme] ?? THEMES.dusk!;
+      this.bg = paintBackdrop(this.canvas.width, this.canvas.height, this.scale, th);
+      paintStatics(this.bg, arena, this.scale, th);
     }
     const ctx = this.ctx;
     const s = this.scale;
@@ -166,7 +176,7 @@ export class Renderer {
     if (!skip?.has("machines")) for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
     if (arena.shots.length) this.shots(arena, alpha);
     this.plates(arena, alpha);
-    if (arena.obstacles.length) this.obstacles(arena);
+    if (arena.obstacles.length) this.obstacles(arena, alpha);
     if (fx.coins.list.length) this.coins(fx.coins);
 
     ctx.lineCap = "round";
@@ -618,20 +628,54 @@ export class Renderer {
     }
   }
 
-  /** Crates (planks; cracks as they lose health) and stone pillars. Static: a few rects each. */
-  private obstacles(arena: Arena): void {
+  /**
+   * The obstacles that change: crates (planks; cracks as they lose health), cages on their ropes and heavy blocks.
+   * Pillars, ledges and floors never move or break: they are in the cached backdrop (staticObstacles).
+   */
+  private obstacles(arena: Arena, alpha: number): void {
     const ctx = this.ctx;
+    const th = THEMES[arena.theme] ?? THEMES.dusk!;
     for (const o of arena.obstacles) {
-      const { x, y } = o.body;
+      if (o.kind === "pillar" || o.kind === "ledge" || o.kind === "floor") continue;
       const { hw, hh } = o;
-      if (o.kind === "pillar") {
-        ctx.fillStyle = "#4d5361";
-        ctx.fillRect(x - hw, y - hh, 2 * hw, 2 * hh);
-        ctx.fillStyle = "#666d7d";
-        ctx.fillRect(x - hw, y - hh, 2 * hw, 5);
-        ctx.fillRect(x - hw, y + hh - 5, 2 * hw, 5);
+      if (o.kind === "block") {
+        this.enter(o.body, alpha);
+        this.solid(o.body, { fill: th.block, stroke: "rgba(0,0,0,0.5)" }, 2);
+        ctx.restore();
         continue;
       }
+      if (o.kind === "cage") {
+        const b = o.body;
+        if (o.rope) {
+          worldAt(b, 0, -hh, alpha);
+          ctx.strokeStyle = th.rope;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(o.rope.x, o.rope.y);
+          ctx.lineTo(scratch[0], scratch[1]);
+          ctx.stroke();
+        }
+        this.enter(b, alpha);
+        ctx.fillStyle = "#2a1d10";
+        ctx.fillRect(-hw, -hh, 2 * hw, 2 * hh);
+        // bars, and fewer of them once it is half broken
+        ctx.strokeStyle = o.hp < o.max * 0.5 ? "#6b4a26" : "#9a6b3a";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        for (let k = 0; k <= 4; k++) {
+          const px = -hw + (2 * hw * k) / 4;
+          ctx.moveTo(px, -hh);
+          ctx.lineTo(px, hh);
+        }
+        ctx.moveTo(-hw, -hh);
+        ctx.lineTo(hw, -hh);
+        ctx.moveTo(-hw, hh);
+        ctx.lineTo(hw, hh);
+        ctx.stroke();
+        ctx.restore();
+        continue;
+      }
+      const { x, y } = o.body;
       ctx.fillStyle = "#3a2a18";
       ctx.fillRect(x - hw, y - hh, 2 * hw, 2 * hh);
       ctx.fillStyle = "#9a6b3a";
@@ -1029,37 +1073,97 @@ export class Renderer {
   }
 }
 
-/** Dusk over a mountain range: gradient sky, a low sun, two ridges, haze and a faint dot grid for speed cues. */
-function paintBackdrop(w: number, h: number, s: number): HTMLCanvasElement {
+/**
+ * Arena colour themes (arenas.ts). dusk is ours; the others follow the day time and materials of the Hammerfight level
+ * each arena comes from (LEVELS notes): sky stops top → bottom, the sun's glow, the two ridges, stone, its lit top,
+ * wood (ledges), the heavy blocks and the cage ropes.
+ */
+interface Theme { sky: [string, string, string, string]; glow: string; sun: string | null; stars: boolean; ridges: [string, string]; stone: string; lit: string; wood: string; block: string; rope: string }
+const THEMES: Record<string, Theme> = {
+  dusk: { sky: ["#10142c", "#2a2552", "#7a3a62", "#d0674f"], glow: "255,190,120", sun: "#ffd29a", stars: true, ridges: ["#3a2550", "#21173a"], stone: "#4d5361", lit: "#666d7d", wood: "#7a5530", block: "#6b6e60", rope: "#8a8f99" },
+  aria: { sky: ["#5f86c0", "#86a3c8", "#c9c09a", "#e3c98f"], glow: "255,240,200", sun: "#fff4d6", stars: false, ridges: ["#7d6a52", "#5e452a"], stone: "#5e452a", lit: "#c8b89a", wood: "#7a5530", block: "#6b6e60", rope: "#8a8f99" },
+  sunrise: { sky: ["#2b2f5e", "#6a4a78", "#e6866a", "#f4c27a"], glow: "255,200,140", sun: "#ffe3a8", stars: true, ridges: ["#4a3a4a", "#2e2436"], stone: "#62553c", lit: "#a48a5e", wood: "#7a5530", block: "#6b6e60", rope: "#8a8f99" },
+  hammerball: { sky: ["#3a0000", "#7a0a0a", "#ff7a00", "#ffd060"], glow: "255,200,90", sun: null, stars: false, ridges: ["#5a1a08", "#3a0c04"], stone: "#62553c", lit: "#8f7d58", wood: "#7a5530", block: "#55524a", rope: "#8a8f99" },
+  "arena-night": { sky: ["#0b0b10", "#14121c", "#2a1e1a", "#4a3020"], glow: "255,176,96", sun: null, stars: true, ridges: ["#1e1814", "#120e0c"], stone: "#62553c", lit: "#9a8158", wood: "#6a4a26", block: "#55524a", rope: "#a08a6a" },
+  "kadish-dusk": { sky: ["#3b2a4a", "#6a4058", "#a85a4e", "#c0704a"], glow: "255,170,110", sun: "#ffcf9a", stars: true, ridges: ["#4a3040", "#2e1e2a"], stone: "#5e452a", lit: "#8a6a44", wood: "#5e452a", block: "#6b6e60", rope: "#8a8f99" },
+  "pit-night": { sky: ["#07070c", "#0e0d14", "#1a1512", "#2a1e14"], glow: "255,154,64", sun: null, stars: false, ridges: ["#1a1612", "#100d0b"], stone: "#4a4032", lit: "#6e5e46", wood: "#5a3e20", block: "#4a4a42", rope: "#8a8f99" },
+};
+
+/** The static obstacles (pillars, ledges, floors) and the decoration chains, painted once into the backdrop. */
+function paintStatics(c: HTMLCanvasElement, arena: Arena, s: number, th: Theme): void {
+  const g = c.getContext("2d")!;
+  g.setTransform(s, 0, 0, s, 0, 0);
+  for (const o of arena.obstacles) {
+    if (o.kind !== "pillar" && o.kind !== "ledge" && o.kind !== "floor") continue;
+    const { hw, hh } = o;
+    g.save();
+    g.translate(o.body.x, o.body.y);
+    g.rotate(o.body.a);
+    if (o.kind === "ledge") {
+      // planks with a dark edge
+      g.fillStyle = "#2a1d10";
+      g.fillRect(-hw, -hh, 2 * hw, 2 * hh);
+      g.fillStyle = th.wood;
+      g.fillRect(-hw + 2, -hh + 2, 2 * hw - 4, 2 * hh - 4);
+      g.fillStyle = "rgba(0,0,0,0.25)";
+      for (let x = -hw + 40; x < hw - 10; x += 40) g.fillRect(x, -hh + 2, 2, 2 * hh - 4);
+    } else {
+      g.fillStyle = th.stone;
+      g.fillRect(-hw, -hh, 2 * hw, 2 * hh);
+      g.fillStyle = th.lit;
+      g.fillRect(-hw, -hh, 2 * hw, Math.min(5, hh));
+      g.fillStyle = "rgba(0,0,0,0.25)";
+      g.fillRect(-hw, hh - Math.min(5, hh), 2 * hw, Math.min(5, hh));
+    }
+    g.restore();
+  }
+  // hanging chains: links straight down (decoration; Hammerfight's chains never touch anything)
+  g.strokeStyle = th.rope;
+  g.lineWidth = 2;
+  for (const ch of arena.chains) {
+    g.beginPath();
+    for (let y = 0; y < ch.len; y += 8) {
+      g.moveTo(ch.x, ch.y + y);
+      g.lineTo(ch.x, ch.y + y + 5);
+    }
+    g.stroke();
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+/** A themed sky (default: dusk over a mountain range): gradient, a low sun, two ridges, haze and a faint dot grid. */
+function paintBackdrop(w: number, h: number, s: number, th: Theme = THEMES.dusk!): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
   const g = c.getContext("2d")!;
   const sky = g.createLinearGradient(0, 0, 0, h);
-  sky.addColorStop(0, "#10142c");
-  sky.addColorStop(0.45, "#2a2552");
-  sky.addColorStop(0.78, "#7a3a62");
-  sky.addColorStop(1, "#d0674f");
+  sky.addColorStop(0, th.sky[0]);
+  sky.addColorStop(0.45, th.sky[1]);
+  sky.addColorStop(0.78, th.sky[2]);
+  sky.addColorStop(1, th.sky[3]);
   g.fillStyle = sky;
   g.fillRect(0, 0, w, h);
 
-  // sun
+  // sun (or a glow without one)
   const sx = w * 0.7;
   const sy = h * 0.8;
   const glow = g.createRadialGradient(sx, sy, 0, sx, sy, h * 0.55);
-  glow.addColorStop(0, "rgba(255,190,120,0.55)");
-  glow.addColorStop(0.25, "rgba(255,140,100,0.18)");
-  glow.addColorStop(1, "rgba(255,120,100,0)");
+  glow.addColorStop(0, `rgba(${th.glow},0.55)`);
+  glow.addColorStop(0.25, `rgba(${th.glow},0.18)`);
+  glow.addColorStop(1, `rgba(${th.glow},0)`);
   g.fillStyle = glow;
   g.fillRect(0, 0, w, h);
-  g.fillStyle = "#ffd29a";
-  g.beginPath();
-  g.arc(sx, sy, h * 0.07, 0, Math.PI * 2);
-  g.fill();
+  if (th.sun) {
+    g.fillStyle = th.sun;
+    g.beginPath();
+    g.arc(sx, sy, h * 0.07, 0, Math.PI * 2);
+    g.fill();
+  }
 
   // stars in the upper sky (fixed pattern)
   g.fillStyle = "rgba(255,255,255,0.5)";
-  for (let i = 0; i < 70; i++) {
+  for (let i = 0; th.stars && i < 70; i++) {
     const x = ((i * 7919) % 997) / 997;
     const y = ((i * 104729) % 991) / 991;
     const r = (0.6 + ((i * 31) % 10) / 10) * s;
@@ -1085,8 +1189,8 @@ function paintBackdrop(w: number, h: number, s: number): HTMLCanvasElement {
     g.closePath();
     g.fill();
   };
-  ridge(0.86, 0.2, "#3a2550", 1.3);
-  ridge(0.94, 0.16, "#21173a", 4.1);
+  ridge(0.86, 0.2, th.ridges[0], 1.3);
+  ridge(0.94, 0.16, th.ridges[1], 4.1);
   const haze = g.createLinearGradient(0, h * 0.75, 0, h);
   haze.addColorStop(0, "rgba(16,12,30,0)");
   haze.addColorStop(1, "rgba(16,12,30,0.75)");
