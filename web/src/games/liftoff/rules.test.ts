@@ -139,9 +139,12 @@ test("a match runs its runs, then ends on the match screen", () => {
   assert.equal(g.heights.length, 3);
   assert.equal(phases.filter((p) => p === "count").length, 2, "two more counts after the first run");
   assert.equal(g.matchBest, Math.max(...g.heights));
+  assert.ok(g.matchRecord, "the first match sets a crew best, whichever run it was");
+  assert.equal(g.record, g.matchBest);
   // the next match starts again from run 1
   g.startMatch(78);
   assert.equal(g.run, 1);
+  assert.equal(g.matchRecord, false);
   assert.deepEqual(g.heights, []);
 });
 

@@ -2,7 +2,8 @@
 //
 // Seats: players first, then computer pilots up to the "bots" setting (8 seats in all). A run's thrusters are fixed
 // when its 3-2-1 starts. Mid-run, a newcomer takes over a bot's thruster at once (or the right engine of a lone
-// pilot); a player who leaves hands their thruster to someone waiting, else to a new bot. Extra bots go at the result.
+// pilot); a player who leaves hands their thruster to someone waiting, else to a new bot. A dropped phone's thruster
+// goes to a stand-in bot until the player is back. Extra bots go at the result.
 import type { Host, HostPlayer } from "@thumbtide/sdk";
 import { shell } from "../../shell/host-state.ts";
 import { frameDrawn, setPerfExtras } from "../../shell/perf.ts";
@@ -69,7 +70,7 @@ const mount: HostMount = (ctx) => {
   const fillBots = () => {
     if (!running()) bots.setCount(wantedBots());
   };
-  const waiting = () => [...game.seats.values()].filter((s) => !s.bot && !game.flying(s.id));
+  const waiting = () => [...game.seats.values()].filter((s) => !s.bot && !game.flying(s.id) && !!host.players.get(s.id)?.connected);
 
   /** Seats a player. Mid-run they take over a bot's thruster, or a lone pilot's right engine, at once. */
   const seat = (p: HostPlayer<LiftoffGame>) => {
@@ -104,6 +105,25 @@ const mount: HostMount = (ctx) => {
       const id = w ? w.id : bots.addOne();
       if (!id || !game.handOver("", id, game.orphans()[0])) break;
     }
+  };
+
+  /** A dropped phone's thruster goes to a stand-in bot for the run, so the crew can still fly. */
+  const cover = () => {
+    if (!running()) return;
+    for (const p of host.players.values()) {
+      if (p.connected || !game.flying(p.id)) continue;
+      const bot = bots.addOne();
+      if (!bot) return;
+      game.handOver(p.id, bot);
+    }
+  };
+  /** A player back from a drop takes a bot's thruster again at once. */
+  const reclaim = (p: HostPlayer<LiftoffGame>) => {
+    if (!running() || game.flying(p.id) || !game.seats.has(p.id)) return;
+    const bot = bots.yield(true);
+    if (!bot) return;
+    game.handOver(bot, p.id);
+    game.removeSeat(bot);
   };
 
   for (const p of host.players.values()) seat(p);
@@ -155,7 +175,7 @@ const mount: HostMount = (ctx) => {
   const offs = [
     host.on("join", (p) => {
       // bots only so far (the TV opened straight into the game): start afresh with the newcomer
-      const fresh = game.phase !== "match" && !humans();
+      const fresh = !humans();
       seat(p);
       if (fresh) restart();
       else fillBots();
@@ -163,10 +183,15 @@ const mount: HostMount = (ctx) => {
     }),
     host.on("rejoin", (p) => {
       seat(p);
+      reclaim(p);
       sentOwn.delete(p.id);
       publish();
     }),
-    host.on("drop", (p) => game.setInput(p.id, false, false)),
+    host.on("drop", (p) => {
+      game.setInput(p.id, false, false);
+      cover();
+      publish();
+    }),
     host.on("leave", (p) => {
       game.removeSeat(p.id);
       sentOwn.delete(p.id);
@@ -198,6 +223,7 @@ const mount: HostMount = (ctx) => {
     switch (e.type) {
       case "phase":
         if (e.phase === "count") {
+          cover();
           view.clear();
           hud.clear();
           game.record = records[game.opts.difficulty] ?? 0;
@@ -215,7 +241,7 @@ const mount: HostMount = (ctx) => {
         view.crash(game, e, now);
         hud.result(game, e.height, e.best, e.lost);
         for (const p of flyingHumans()) host.send(p.id, { type: "crash" });
-        if (e.best) {
+        if (e.best && flyingHumans().length) {
           records[game.opts.difficulty] = e.height;
           saveRecords();
         }

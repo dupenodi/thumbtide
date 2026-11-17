@@ -33,8 +33,9 @@ export const DRAG_Y = 0.42;
 export const PAD_Y = 2.6;
 /** The drop line never trails the best height by more than this. */
 export const DROP = 13;
-/** The drop line starts climbing this long after lift-off is possible. */
-export const CREEP_DELAY = 3 * 60;
+/** The drop line starts climbing once the rocket is this high, or this long after lift-off is possible. */
+export const CREEP_FROM = 8;
+export const CREEP_DELAY = 8 * 60;
 
 /** Collision circles: x, y, r in the rocket's frame. */
 export const HULL: [number, number, number][] = [
@@ -125,6 +126,8 @@ export class Liftoff {
   /** The crew's best ever (kept by the host across matches, per difficulty). */
   record = 0;
   newRecord = false;
+  /** Some run of this match set a new crew best. */
+  matchRecord = false;
   opts: Options;
   private next: Options;
   private seed = 1;
@@ -230,6 +233,7 @@ export class Liftoff {
     this.run = 0;
     this.heights = [];
     this.newRecord = false;
+    this.matchRecord = false;
     for (const s of this.seats.values()) s.burn = 0;
     this.nextRun();
   }
@@ -355,7 +359,7 @@ export class Liftoff {
       this.lastMark = mark;
       this.events.push({ type: "mark", height: mark });
     }
-    if (this.flySteps > CREEP_DELAY) {
+    if (this.best > CREEP_FROM || this.flySteps > CREEP_DELAY) {
       const creep = diff.creep[0] + (diff.creep[1] - diff.creep[0]) * this.level;
       this.floor += creep * STEP;
     }
@@ -396,6 +400,7 @@ export class Liftoff {
     if (best) {
       this.record = height;
       this.newRecord = true;
+      this.matchRecord = true;
     }
     for (const th of this.thrusters) th.on = false;
     this.events.push({ type: "crash", x: r.x, y: r.y, a: r.a, vx: r.vx, vy: r.vy, w: r.w, height, best, lost });

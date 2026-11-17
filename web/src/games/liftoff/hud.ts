@@ -131,7 +131,7 @@ export function createHud(root: HTMLElement) {
         <div class="lft-rep-in">
           <span class="lft-mk">Mission report · ${DIFF_LABEL[game.opts.difficulty] ?? ""} course</span>
           <b class="lft-rep-h">${best}<i> m</i></b>
-          <em class="lft-tier">${tierOf(best)}${game.newRecord ? `<small>New crew best</small>` : ""}</em>
+          <em class="lft-tier">${tierOf(best)}${game.matchRecord ? `<small>New crew best</small>` : ""}</em>
           <ol class="lft-rep-runs">${game.heights
             .map(
               (x, i) =>

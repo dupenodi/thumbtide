@@ -26,21 +26,21 @@
   padding-bottom: calc(var(--u) * 18); border-bottom: calc(var(--u) * 6) solid var(--orange);
   align-self: flex-start;
 }
-.lft-diff { font: 600 calc(var(--u) * 26) / 1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--teal); }
+.lft-diff { font: 600 calc(var(--u) * 28) / 1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--teal); }
 .lft-alt > span, .lft-stats span, .lft-runs span, .lft-head span, .lft-mk, .lft-count span, .lft-card > span {
-  font: 600 calc(var(--u) * 24) / 1 var(--display); letter-spacing: 0.14em; white-space: nowrap; text-transform: uppercase; color: var(--dim);
+  font: 600 calc(var(--u) * 28) / 1 var(--display); letter-spacing: 0.14em; white-space: nowrap; text-transform: uppercase; color: var(--dim);
 }
 .lft-alt { display: flex; flex-direction: column; gap: calc(var(--u) * 6); }
 .lft-alt div { display: flex; align-items: baseline; gap: calc(var(--u) * 12); }
 .lft-alt b { font: 700 calc(var(--u) * 168) / 0.95 var(--display); font-variant-numeric: tabular-nums; color: var(--chalk); letter-spacing: -0.01em; }
 .lft-alt b.long { font-size: calc(var(--u) * 124); }
 .lft-alt i { font: 600 calc(var(--u) * 56) / 1 var(--display); font-style: normal; color: var(--orange); }
-.lft-stats { display: flex; gap: calc(var(--u) * 40); white-space: nowrap; padding-top: calc(var(--u) * 28); border-top: calc(var(--u) * 2) solid var(--slate); }
-.lft-stats div { display: flex; flex-direction: column; gap: calc(var(--u) * 10); }
-.lft-stats b { font: 700 calc(var(--u) * 52) / 1 var(--display); font-variant-numeric: tabular-nums; }
+.lft-stats { display: flex; flex-direction: column; gap: calc(var(--u) * 22); white-space: nowrap; padding-top: calc(var(--u) * 28); border-top: calc(var(--u) * 2) solid var(--slate); }
+.lft-stats div { display: flex; align-items: baseline; justify-content: space-between; gap: calc(var(--u) * 16); }
+.lft-stats b { font: 700 calc(var(--u) * 48) / 1 var(--display); font-variant-numeric: tabular-nums; }
 .lft-stats small { font-size: 0.62em; color: var(--dim); }
 .lft-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(var(--u) * 14); }
-.lft-runs li { display: grid; grid-template-columns: calc(var(--u) * 92) 1fr auto; align-items: center; gap: calc(var(--u) * 16); }
+.lft-runs li { display: grid; grid-template-columns: calc(var(--u) * 104) 1fr auto; align-items: center; gap: calc(var(--u) * 16); }
 .lft-runs i { display: block; height: calc(var(--u) * 10); background: var(--teal); border-radius: calc(var(--u) * 2); min-width: calc(var(--u) * 6); }
 .lft-runs b { font: 700 calc(var(--u) * 30) / 1 var(--display); font-variant-numeric: tabular-nums; }
 
@@ -57,7 +57,7 @@
 .lft-crew.tight li { height: calc(var(--u) * 62); }
 .lft-chip { flex: none; width: calc(var(--u) * 22); height: calc(var(--u) * 22); background: var(--k); border-radius: calc(var(--u) * 3); }
 .lft-crew span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 calc(var(--u) * 32) / 1 var(--sans); }
-.lft-crew em { flex: none; font: 600 calc(var(--u) * 22) / 1 var(--display); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+.lft-crew em { flex: none; font: 600 calc(var(--u) * 26) / 1 var(--display); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
 /* the burn lamp: a small flame shape, lit while the thruster fires */
 .lft-burn {
   flex: none; width: calc(var(--u) * 20); height: calc(var(--u) * 30); background: var(--slate);
