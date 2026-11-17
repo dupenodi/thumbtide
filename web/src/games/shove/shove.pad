@@ -1,0 +1,32 @@
+# Shove: a stick to move (heavy, it keeps sliding) and one Dash.
+# Syntax and every setting: web/src/games/kit/pad.ts
+
+controller
+  orientation  any
+  send-rate    40hz
+
+stick move
+  label        "Move"
+  mode         floating
+  follow       yes
+  travel       44px
+  full-at      82%
+  deadzone     8%
+  curve        0.9
+  directions   any
+  haptic       8ms
+  rim-haptic   0ms
+
+button dash
+  label        "Dash"
+  hint         "A short burst. Hit someone and they fly; miss near the rope and you go out. Hold still at the rope to dig in."
+  icon         dash
+  style        primary
+  shape        round
+  haptic       16ms
+  fires        press
+
+buzz
+  go           40
+  hit          50 30 70
+  out          90 50 160

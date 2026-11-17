@@ -4,6 +4,7 @@ import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
 import hammerPad from "./hammer/hammer.pad?raw";
 import sandboxPad from "./sandbox/sandbox.pad?raw";
+import shovePad from "./shove/shove.pad?raw";
 import trailsPad from "./trails/trails.pad?raw";
 import wetpaintPad from "./wetpaint/wetpaint.pad?raw";
 
@@ -251,6 +252,44 @@ export const GAMES: GameDef[] = [
     ],
     host: () => import("./trails/host.ts"),
     controller: () => import("./trails/controller.ts"),
+  },
+  {
+    id: "shove",
+    title: "Shove",
+    tagline: "Heavy wrestlers, one small ring. Last one inside wins.",
+    minPlayers: 1,
+    maxPlayers: 8,
+    colors: ["#d8432f", "#e8d6a8"],
+    glyph: "action",
+    controls: parsePad(shovePad, "shove.pad"),
+    settings: [
+      {
+        key: "wins",
+        label: "Round wins to take the match",
+        options: [3, 5, 7].map((n) => ({ value: n, label: String(n) })),
+        default: 3,
+        applies: "now",
+      },
+      {
+        key: "ring",
+        label: "Ring size",
+        options: [
+          { value: "small", label: "Small" },
+          { value: "normal", label: "Normal" },
+          { value: "large", label: "Large" },
+        ],
+        default: "normal",
+      },
+      {
+        key: "bots",
+        label: "Computer wrestlers",
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+        applies: "now",
+      },
+    ],
+    host: () => import("./shove/host.ts"),
+    controller: () => import("./shove/controller.ts"),
   },
   {
     id: "sandbox",
