@@ -104,6 +104,8 @@ const mount: HostMount = (ctx) => {
   const abHudFrozen = import.meta.env.VITE_PERF === "1" && startParam("hud") === "frozen";
   // pvebots=1: in Co-op vs CPU, the bots in even slots play on the players' side (so a TV run with bots only can fight)
   const abPveBots = import.meta.env.VITE_PERF === "1" && startParam("pvebots") === "1";
+  // fpsui=off: no on-screen frame-rate counter (what it costs)
+  const abFpsOff = import.meta.env.VITE_PERF === "1" && startParam("fpsui") === "off";
   const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
   // kos=burst (perf builds): every 6 s in a fight, wreck 3 machines at once (the worst moment for shards and coins)
   const abKoBurst = import.meta.env.VITE_PERF === "1" && startParam("kos") === "burst";
@@ -1028,7 +1030,7 @@ const mount: HostMount = (ctx) => {
     // the on-screen counter: frames drawn over the last half second (the text changes at most twice a second)
     fpsFrames++;
     if (now - fpsFrom >= 500) {
-      hud.setFps(Math.round((fpsFrames * 1000) / (now - fpsFrom)));
+      if (!abFpsOff) hud.setFps(Math.round((fpsFrames * 1000) / (now - fpsFrom)));
       fpsFrames = 0;
       fpsFrom = now;
     }
