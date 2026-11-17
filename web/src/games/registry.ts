@@ -4,6 +4,7 @@ import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
 import hammerPad from "./hammer/hammer.pad?raw";
 import sandboxPad from "./sandbox/sandbox.pad?raw";
+import spylinePad from "./spyline/spyline.pad?raw";
 import punchlinePad from "./punchline/punchline.pad?raw";
 import liftoffPad from "./liftoff/liftoff.pad?raw";
 import shovePad from "./shove/shove.pad?raw";
@@ -400,6 +401,59 @@ export const GAMES: GameDef[] = [
     ],
     host: () => import("./punchline/host.ts"),
     controller: () => import("./punchline/controller.ts"),
+  },
+  {
+    id: "spyline",
+    title: "Spyline",
+    tagline: "One word from your handler. Find your agents, never the burn card.",
+    minPlayers: 1,
+    maxPlayers: 12,
+    colors: ["#2b59c3", "#f2a516"],
+    glyph: "eye",
+    controls: parsePad(spylinePad, "spyline.pad"),
+    settings: [
+      {
+        key: "rounds",
+        label: "Rounds",
+        options: [
+          { value: 1, label: "1" },
+          { value: 3, label: "Best of 3" },
+          { value: 5, label: "Best of 5" },
+        ],
+        default: 3,
+        applies: "now",
+      },
+      {
+        key: "clueTime",
+        label: "Handler time limit",
+        options: [
+          { value: 0, label: "Off" },
+          { value: 90, label: "90 s" },
+          { value: 120, label: "120 s" },
+        ],
+        default: 0,
+        applies: "now",
+      },
+      {
+        key: "guessTime",
+        label: "Agent time limit",
+        options: [
+          { value: 0, label: "Off" },
+          { value: 60, label: "60 s" },
+          { value: 90, label: "90 s" },
+        ],
+        default: 0,
+        applies: "now",
+      },
+      {
+        key: "bots",
+        label: "Computer players",
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+      },
+    ],
+    host: () => import("./spyline/host.ts"),
+    controller: () => import("./spyline/controller.ts"),
   },
   {
     id: "sandbox",
