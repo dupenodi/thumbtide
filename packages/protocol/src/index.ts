@@ -150,7 +150,8 @@ export type ServerToController =
   | { t: "error"; code: ErrorCode; message: string };
 
 export type RemoveReason = "timeout" | "kicked" | "left";
-export type CloseReason = "host-closed" | "host-timeout" | "kicked" | "left";
+/** `away-timeout`: the phone stayed away (another app, locked) past `LIMITS.awayGraceMs` and its seat was freed. */
+export type CloseReason = "host-closed" | "host-timeout" | "kicked" | "left" | "away-timeout";
 
 export type ErrorCode =
   | "bad-request"

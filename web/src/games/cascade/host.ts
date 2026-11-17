@@ -104,7 +104,8 @@ const mount: HostMount = (ctx) => {
   const seatOf = (id: string) => seats.findIndex((s) => s.id === id && !s.bot);
   const connected = (i: number) => !seats[i]!.bot && host.players.get(seats[i]!.id)?.connected === true;
   /** Their phone is on another app or locked: they're coming back, so a computer never plays for them. */
-  const away = (i: number) => !seats[i]!.bot && host.players.get(seats[i]!.id)?.away === true;  const tell = (i: number, kind: string) => {
+  const away = (i: number) => !seats[i]!.bot && host.players.get(seats[i]!.id)?.away === true;
+  const tell =(i: number, kind: string) => {
     if (connected(i)) host.send(seats[i]!.id, { type: "buzz", kind });
   };
   const decider = () => (shell.vip ? host.players.get(shell.vip)?.name : undefined);

@@ -287,6 +287,10 @@ export class Room {
       if (reason === "kicked") {
         sendCtl(p.conn, { t: "closed", reason: "kicked" });
         p.conn.close(CLOSE_CODES.kicked, "kicked");
+      } else if (reason === "timeout") {
+        // only the away limit times out a seat whose socket is still open: say so, not "you left"
+        sendCtl(p.conn, { t: "closed", reason: "away-timeout" });
+        p.conn.close(CLOSE_CODES.left, "away too long");
       } else {
         p.conn.close(CLOSE_CODES.left, "left");
       }
