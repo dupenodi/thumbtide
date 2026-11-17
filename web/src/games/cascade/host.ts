@@ -104,9 +104,7 @@ const mount: HostMount = (ctx) => {
   const seatOf = (id: string) => seats.findIndex((s) => s.id === id && !s.bot);
   const connected = (i: number) => !seats[i]!.bot && host.players.get(seats[i]!.id)?.connected === true;
   /** Their phone is on another app or locked: they're coming back, so a computer never plays for them. */
-  const away = (i: number) => !seats[i]!.bot && host.players.get(seats[i]!.id)?.away === true;
-  const waitFor = (i: number) => hud.note(`Waiting for <b>${esc(seats[i]!.name)}</b>`, colorOf(i));
-  const tell = (i: number, kind: string) => {
+  const away = (i: number) => !seats[i]!.bot && host.players.get(seats[i]!.id)?.away === true;  const tell = (i: number, kind: string) => {
     if (connected(i)) host.send(seats[i]!.id, { type: "buzz", kind });
   };
   const decider = () => (shell.vip ? host.players.get(shell.vip)?.name : undefined);
@@ -178,9 +176,9 @@ const mount: HostMount = (ctx) => {
     showCursor();
     sfx?.turn();
     tell(s, "turn");
+    // away: nobody plays for them; the turn banner says "Waiting for…" and awayTurn() runs the clock
     if (seats[s]!.bot) planFor(T.think);
-    else if (away(s)) waitFor(s);
-    else if (!connected(s)) planFor(T.away);
+    else if (!away(s) && !connected(s)) planFor(T.away);
     publish();
   }
 
@@ -436,7 +434,6 @@ const mount: HostMount = (ctx) => {
         if (p.away) {
           plan = null; // a computer never moves for an away player
           awayLeft = turnMs ? Math.max(0, turnLeft) : T.skip;
-          waitFor(i);
         } else {
           turnLeft = turnMs; // back: a fresh turn
           lastTick = 0;

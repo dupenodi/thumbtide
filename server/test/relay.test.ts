@@ -177,6 +177,26 @@ describe("relay", () => {
     assert.equal(reason, "timeout");
   });
 
+  test("an away phone that keeps its socket still loses its seat at the away limit; back stops the clock", async () => {
+    const host = await newHost();
+    const stays = await newController(host, "Stays");
+    const returns = await newController(host, "Returns");
+    let n = 0;
+    const both = new Promise<void>((resolve) => host.on("away", () => ++n === 2 && resolve()));
+    stays.setAway(true);
+    returns.setAway(true);
+    await both;
+    await sleep(500);
+    const back = next(host, "away");
+    returns.setAway(false);
+    await back;
+    const [gone, reason] = await next(host, "leave", 3000); // awayGraceMs (1500), socket open all along
+    assert.equal(gone.id, stays.me!.id);
+    assert.equal(reason, "timeout");
+    await sleep(1300);
+    assert.deepEqual(host.list.map((p) => p.name), ["Returns"]);
+  });
+
   test("a phone that came back, then dropped, gets the normal grace (a real disconnect)", async () => {
     const host = await newHost();
     const ctl = await newController(host);

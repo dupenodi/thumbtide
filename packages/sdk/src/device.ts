@@ -75,10 +75,10 @@ const GESTURES = ["pointerup", "touchend", "click", "keydown"] as const;
  * Keep the phone screen on while the controller is open (lobby and every game). Two ways, as the phone allows:
  *  - the Wake Lock API: needs HTTPS. The browser lets go of it whenever the page is hidden, so it is taken
  *    again each time the page comes back, and on the next tap if the phone let go while we were showing.
- *  - a silent video (the NoSleep.js way): for plain http (no Wake Lock API), a refused lock, and iPhone
- *    home-screen apps (iOS before 18.4 grants the lock there but still sleeps). Browsers only start it from
- *    a tap, so every tap retries until it plays. It must not `loop` (WebKit lets the screen sleep during
- *    looping media): it jumps back before its end instead.
+ *  - a silent video, set up as NoSleep.js does it (not muted, a sound track, no `loop` on the 2 s clip but a
+ *    jump back before its end): for plain http (no Wake Lock API), a refused lock, and iPhone home-screen
+ *    apps (iOS before 18.4 grants the lock there but still sleeps). Browsers only start it from a tap, so
+ *    every tap retries until it plays. It pauses while the page is hidden.
  * Safe to call outside a tap; the next tap finishes the job. Returns a release function.
  */
 export function keepAwake(): () => void {
@@ -118,17 +118,21 @@ export function keepAwake(): () => void {
     if (video.paused) void video.play().catch(() => {});
   };
 
+  let asking = false;
   const requestLock = () => {
-    if (!hasApi || held() || refused) return;
+    if (!hasApi || held() || refused || asking) return;
+    asking = true;
     navigator.wakeLock.request("screen").then(
       (l) => {
-        if (stopped) return void l.release().catch(() => {});
+        asking = false;
+        if (stopped || held()) return void l.release().catch(() => {});
         lock = l;
         l.addEventListener("release", () => {
           if (lock === l) lock = null;
         });
       },
       () => {
+        asking = false;
         // not allowed (battery saver, a permissions policy…): the video takes over
         refused = true;
         playVideo();
@@ -142,7 +146,7 @@ export function keepAwake(): () => void {
     if (wantVideo()) playVideo();
   };
   const onVis = () => {
-    if (document.visibilityState !== "visible") return;
+    if (document.visibilityState !== "visible") return void video?.pause();
     refused = false; // a fresh try at the lock each time we come back
     acquire();
   };

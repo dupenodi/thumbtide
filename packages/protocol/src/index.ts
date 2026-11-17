@@ -26,7 +26,8 @@ export const LIMITS = {
   playerGraceMs: 60_000,
   /**
    * How long a controller that said it was away (its page went to the background: another app, the screen
-   * locked) keeps its slot after its socket drops (ms). The phone is still in someone's hand.
+   * locked) keeps its slot (ms), counted from when it went away, with or without its socket. The phone is
+   * still in someone's hand.
    */
   awayGraceMs: 10 * 60_000,
   /** How long a room survives without its host (ms) — covers a page refresh. */

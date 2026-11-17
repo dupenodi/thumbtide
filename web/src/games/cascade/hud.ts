@@ -94,13 +94,16 @@ export function createHud(root: HTMLElement) {
 
     /** Whose turn it is, up top (null hides it). */
     turn(seat: SeatView | null) {
-      const key = seat ? `${seat.id}|${seat.color}` : "";
+      const key = seat ? `${seat.id}|${seat.color}|${seat.away}` : "";
       if (key === turnKey) return;
       turnKey = key;
       turnEl.classList.toggle("show", !!seat);
       if (seat) {
         turnEl.setAttribute("style", colorVars(seat.color));
-        turnEl.innerHTML = `${piece(seat.color)}<span><b>${esc(seat.name)}</b>’s turn</span>`;
+        // away (phone on another app, or dropped): the game waits for them, and says so for as long as it waits
+        turnEl.innerHTML = seat.away
+          ? `${piece(seat.color)}<span>Waiting for <b>${esc(seat.name)}</b></span>`
+          : `${piece(seat.color)}<span><b>${esc(seat.name)}</b>’s turn</span>`;
         turnEl.classList.remove("pop");
         void turnEl.offsetWidth;
         turnEl.classList.add("pop");
