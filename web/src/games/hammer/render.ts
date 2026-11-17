@@ -592,11 +592,30 @@ export class Renderer {
   private partSprite(b: Body, part: NonNullable<Tag["spec"]>, kind: WeaponKind): { c: HTMLCanvasElement; x: number; y: number; w: number; h: number } {
     if (this.partScale !== this.scale || this.partAtlas !== atlasReady()) {
       this.parts = new WeakMap();
+      this.partShapes.clear();
       this.partScale = this.scale;
       this.partAtlas = atlasReady();
     }
     let sp = this.parts.get(b);
     if (sp) return sp;
+    // the same part of the same set on a new body (every round respawns the weapons) reuses its picture: painting ~20
+    // new canvases at each round start was a run of long frames on the TV (short Co-op vs monsters rounds most of all)
+    const shape = `${kind}|${part.key}|${part.gun ? (gunOf.get(part.gun) ?? "?") : ""}|${part.look}|${part.material}|${Array.from(b.lx).join()}|${Array.from(b.ly).join()}`;
+    sp = this.partShapes.get(shape);
+    if (sp) {
+      this.parts.set(b, sp);
+      return sp;
+    }
+    sp = this.paintPartSprite(b, part, kind);
+    if (this.partShapes.size > 160) this.partShapes.clear();
+    this.partShapes.set(shape, sp);
+    this.parts.set(b, sp);
+    return sp;
+  }
+  /** Part pictures by weapon kind, part and mesh (see partSprite); cleared with the scale and the atlas. */
+  private partShapes = new Map<string, { c: HTMLCanvasElement; x: number; y: number; w: number; h: number }>();
+
+  private paintPartSprite(b: Body, part: NonNullable<Tag["spec"]>, kind: WeaponKind): { c: HTMLCanvasElement; x: number; y: number; w: number; h: number } {
     // Hammerfight's own picture of the part, from the atlas: hotspot = body origin, 1 sprite px = 1 mesh px
     const e = atlasEntry(kind, part);
     if (e && ATLAS_IMG) {
@@ -609,9 +628,7 @@ export class Renderer {
       c.width = Math.max(1, Math.ceil(w * this.scale));
       c.height = Math.max(1, Math.ceil(h * this.scale));
       c.getContext("2d")!.drawImage(ATLAS_IMG, e.sx + k, e.sy, e.sw - k, e.sh, 0, 0, c.width, c.height);
-      sp = { c, x, y, w, h };
-      this.parts.set(b, sp);
-      return sp;
+      return { c, x, y, w, h };
     }
     const { minX, maxX, maxY } = bounds(b);
     // room for the spikes, the tip, the guard and the barrel round the mesh (all within 8 px) plus the stroke
@@ -634,9 +651,7 @@ export class Renderer {
     } finally {
       this.pen = null;
     }
-    sp = { c, x, y, w, h };
-    this.parts.set(b, sp);
-    return sp;
+    return { c, x, y, w, h };
   }
 
   /** Paints one weapon part in its own frame (the body's origin, +x along the part). */
