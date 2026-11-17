@@ -256,6 +256,7 @@ const mount: ControllerMount = (ctx) => {
   interface Said {
     text: string;
     how: "wait" | "right" | "close" | "wrong";
+    at: number;
   }
   let mine: Said[] = [];
   const drawSaid = () => {
@@ -270,7 +271,7 @@ const mount: ControllerMount = (ctx) => {
     const text = input.value.replace(/\s+/g, " ").trim().slice(0, 40);
     if (!text || ctl.shared?.phase !== "draw" || ctl.own?.role !== "guess" || ctl.own.got) return;
     input.value = "";
-    mine.push({ text, how: "wait" });
+    mine.push({ text, how: "wait", at: performance.now() });
     if (mine.length > 30) mine.shift();
     drawSaid();
     ctl.send({ type: "guess", text });
@@ -323,7 +324,7 @@ const mount: ControllerMount = (ctx) => {
       haptic: 14,
       onPress: () => {
         if (picked === null || go.disabled) return;
-        ctl.send({ type: "pick", i: picked });
+        if (!ctl.send({ type: "pick", i: picked })) return;
         pickSent = pickKey;
         refreshPick();
       },
@@ -458,6 +459,12 @@ const mount: ControllerMount = (ctx) => {
 
   // the seconds count down between the TV's updates
   function tick() {
+    // a guess the TV did not take (too fast, paused, offline) drops off the list
+    const stale = mine.filter((g) => g.how === "wait" && performance.now() - g.at > 4000);
+    if (stale.length) {
+      mine = mine.filter((g) => !stale.includes(g));
+      drawSaid();
+    }
     const s = ctl.shared;
     const live = s && (s.phase === "draw" || s.phase === "pick");
     const left = live ? Math.max(0, Math.ceil(lastLeft - (performance.now() - leftAt) / 1000)) : 0;
@@ -482,7 +489,7 @@ const mount: ControllerMount = (ctx) => {
       if (m.type === "said") {
         const g = mine.find((x) => x.how === "wait" && x.text === m.text) ?? mine.find((x) => x.how === "wait");
         if (g) g.how = m.how;
-        else mine.push({ text: m.text, how: m.how });
+        else mine.push({ text: m.text, how: m.how, at: performance.now() });
         drawSaid();
         if (m.how === "close") buzz("close");
         if (m.how === "right") buzz("got");

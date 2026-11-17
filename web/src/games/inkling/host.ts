@@ -115,7 +115,7 @@ const mount: HostMount = (ctx) => {
   const offs = [
     host.on("join", (p) => {
       // bots only so far (the TV opened straight into the game): start afresh with the newcomer
-      const fresh = !humans() && game.phase !== "match";
+      const fresh = !humans();
       seat(p);
       if (fresh) restart();
       else fillBots();

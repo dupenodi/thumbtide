@@ -273,7 +273,7 @@ export class Board {
       case "reveal": {
         const n = game.guessed.length;
         const of = [...game.seats.values()].filter((x) => x.id !== game.artist).length;
-        const why = game.endReason === "left" ? "The artist left" : n && n >= of ? "Everyone got it!" : n ? `${n} of ${of} got it` : "Nobody got it";
+        const why = game.endReason === "left" ? "The artist left" : game.endReason === "alone" ? "Nobody left to guess" : n && n >= of ? "Everyone got it!" : n ? `${n} of ${of} got it` : "Nobody got it";
         const up = game.seats.get(game.upNext() ?? "");
         k += `${game.turn}|${why}|${up?.id}`;
         html = `<div class="ink-reveal" style="--t:${tiltOf(why + game.turn)}deg"><b>${why}</b>${
@@ -285,7 +285,7 @@ export class Board {
         const st = game.standings();
         const win = st.filter((s) => game.winners.includes(s.id));
         k += st.map((s) => `${s.id}${s.score}`).join();
-        html = `<div class="ink-final">
+        html = `<div class="ink-final${st.length > 5 || win.length > 1 ? " many" : ""}">
           <small>Final page</small>
           <h2>${win.map((s) => `<span style="--c:${TIPS[s.slot]}">${esc(s.name)}</span>`).join(" &amp; ") || "Nobody"}</h2>
           <p>${win.length > 1 ? "share the win" : "wins"}</p>

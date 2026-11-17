@@ -68,7 +68,7 @@ export interface Stroke {
   done: boolean;
 }
 
-export type EndReason = "time" | "all" | "left";
+export type EndReason = "time" | "all" | "left" | "alone";
 
 export type InkEvent =
   | { type: "phase"; phase: Phase }
@@ -300,6 +300,7 @@ export class Inkling {
     if (!this.seats.delete(id)) return;
     this.guessed = this.guessed.filter((g) => g !== id);
     if (id === this.artist && (this.phase === "pick" || this.phase === "draw")) this.endTurn("left");
+    else if (this.phase === "draw" && ![...this.seats.keys()].some((s) => s !== this.artist)) this.endTurn("alone");
     else if (this.phase === "draw") this.checkAll();
   }
 
@@ -446,10 +447,11 @@ export class Inkling {
     return [...this.seats.values()].filter((s) => s.id !== this.artist && !s.away);
   }
 
+  /** Ends the turn when every guesser here has the word. A phone that drops never ends it on its own. */
   private checkAll() {
     if (this.phase !== "draw") return;
     const g = this.guessers();
-    if (!g.length || g.every((s) => s.got)) this.endTurn(g.length ? "all" : "left");
+    if (g.length && g.every((s) => s.got)) this.endTurn("all");
   }
 
   private endTurn(reason: EndReason) {

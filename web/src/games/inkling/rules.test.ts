@@ -255,6 +255,17 @@ test("a dropped phone does not hold up 'everyone has it'", () => {
   assert.equal(g.phase, "reveal");
 });
 
+test("a lone guesser's phone dropping does not end the turn; the last guesser leaving does", () => {
+  const g = drawing(["a", "b"]);
+  const x = others(g)[0]!;
+  g.setAway(x, true);
+  assert.equal(g.phase, "draw");
+  g.setAway(x, false);
+  g.removeSeat(x);
+  assert.equal(g.phase, "reveal");
+  assert.deepEqual(of(g.drainEvents(), "end").map((e) => e.reason), ["alone"]);
+});
+
 test("seats get distinct colours, and at most eight", () => {
   const g = new Inkling();
   for (let i = 0; i < 10; i++) g.addSeat(`p${i}`, `P${i}`, false, 0);
