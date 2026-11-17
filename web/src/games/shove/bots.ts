@@ -10,7 +10,7 @@ export const BOT_NAMES = ["Boulder", "Anvil", "Mochi", "Tide", "Granite", "Kettl
 export const isBot = (id: string) => id.startsWith("bot-");
 
 /** How far a dash carries on open sand, roughly (logical px). */
-const DASH_REACH = 300;
+const DASH_REACH = 260;
 
 interface Mind {
   skill: number;
@@ -130,7 +130,7 @@ export function createBots(game: Shove, rng: Rng = Math.random) {
     const lined = dx * ox + dy * oy;
 
     // 4. dash into it when it stands between the bot and the rope
-    if (s.cool === 0 && dist > BODY_R * 2.5 && dist < 270 && rng() < m.keen) {
+    if (s.cool === 0 && dist > BODY_R * 2.5 && dist < 210 && rng() < m.keen) {
       const lead = dist / DASH_V;
       const [ax0, ay0] = norm(o.x + o.vx * lead - s.x, o.y + o.vy * lead - s.y);
       const wob = (rng() - 0.5) * 0.5 * (1 - m.skill);

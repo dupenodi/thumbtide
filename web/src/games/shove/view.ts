@@ -384,11 +384,20 @@ export class RingView {
       ctx.drawImage(this.faces[s.slot]!, -h, -h, size * p.s, size * p.s);
       ctx.restore();
     }
-    // names above, on top of everyone
-    ctx.globalAlpha = 1;
+    // names above, on top of everyone; in a scrum (touching someone, once play is under way) a name steps back
+    const scrum = game.phase === "play" && game.t > 90;
     for (const s of list) {
       const p = pos.get(s.id);
       if (!p || !s.alive) continue;
+      let touching = false;
+      if (scrum) {
+        for (const o of list) {
+          if (o === s || !o.alive) continue;
+          const q = pos.get(o.id);
+          if (q && (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < (BODY_R * 2 + 8) ** 2) touching = true;
+        }
+      }
+      ctx.globalAlpha = touching ? 0.35 : 1;
       const c = this.label(s);
       const w = c.width / k;
       const h = c.height / k;

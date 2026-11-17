@@ -28,6 +28,8 @@ export const DASH_STEPS = 14;
 export const DASH_RAMP = 4;
 export const DASH_DRAG = 0.9;
 export const DASH_COOL = 90;
+/** Speed left when a dash that hit nothing runs out (it slides on, but can be caught before the rope). */
+export const DASH_AFTER = 480;
 /** A dash pressed this many steps before the cooldown ends still happens (phone and TV clocks differ a little). */
 export const DASH_EARLY = 8;
 export const MAX_SPEED = 950;
@@ -422,6 +424,14 @@ export class Shove {
         }
         s.dashT--;
         drag = DASH_DRAG;
+        if (s.dashT === 0) {
+          // the burst is spent: what's left is a hard slide, not a second dash
+          const v = Math.hypot(s.vx, s.vy);
+          if (v > DASH_AFTER) {
+            s.vx *= DASH_AFTER / v;
+            s.vy *= DASH_AFTER / v;
+          }
+        }
       } else {
         const grip = s.stun > 0 ? 0.1 : 1;
         s.vx += s.ix * ACCEL * grip * STEP;

@@ -79,8 +79,8 @@ export function createHud(stage: HTMLElement, box: HTMLElement, isBot: (id: stri
     roundResult(game: Shove, winner: Seat | null) {
       shown = `round${game.round}`;
       layer.innerHTML = winner
-        ? `<div class="shv-card" style="--k:${INKS[winner.slot]}"><span>Round ${game.round}</span><b>${esc(winner.name)}</b><em>stays in</em><i class="shv-stamp"></i></div>`
-        : `<div class="shv-card"><span>Round ${game.round}</span><b>No contest</b><em>a wrestler left</em></div>`;
+        ? `<div class="shv-card res" style="--k:${INKS[winner.slot]}"><span>Round ${game.round}</span><b>${esc(winner.name)}</b><em>stays in</em><i class="shv-stamp"></i></div>`
+        : `<div class="shv-card res"><span>Round ${game.round}</span><b>No contest</b><em>a wrestler left</em></div>`;
     },
 
     match(game: Shove) {

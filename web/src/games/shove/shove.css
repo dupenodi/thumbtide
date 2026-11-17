@@ -89,6 +89,8 @@
   border-radius: calc(var(--u) * 4); box-shadow: 0 0 0 calc(var(--u) * 4) var(--ink), calc(var(--u) * 10) calc(var(--u) * 12) 0 rgba(20, 26, 44, 0.35);
   animation: shv-card 320ms ease-out both;
 }
+/* the round result sits low in the box, so the one who stayed in stays in view */
+.shv-card.res { align-self: flex-end; margin-bottom: 7%; }
 @keyframes shv-card { from { opacity: 0; transform: translateY(calc(var(--u) * 16)); } }
 .shv-card span { color: var(--mute); color: #6b7591; }
 .shv-card b { font: 400 calc(var(--u) * 88) / 1 var(--display); color: var(--k, var(--indigo)); max-width: calc(var(--u) * 720); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
