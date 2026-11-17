@@ -201,13 +201,18 @@ function join(room: string, name: string) {
   function checkOrientation() {
     const want = currentGame()?.controls?.orientation ?? "any";
     const portrait = portraitQuery.matches;
-    const wrong = (want === "landscape" && portrait) || (want === "portrait" && !portrait);
+    // an open keyboard shrinks the viewport (a portrait phone can look landscape): never cover a field being typed in
+    const a = document.activeElement as HTMLElement | null;
+    const typing = !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
+    const wrong = !typing && ((want === "landscape" && portrait) || (want === "portrait" && !portrait));
     rotateEl.hidden = !wrong;
     rotateEl.classList.toggle("to-portrait", want === "portrait");
     (rotateEl.querySelector("p") as HTMLElement).textContent = want === "portrait" ? "Turn your phone upright" : "Turn your phone sideways";
     if (want !== "any" && isFullscreen()) void enterFullscreen(want);
   }
   portraitQuery.addEventListener("change", checkOrientation);
+  // the keyboard closes when the field loses focus: check again then
+  document.addEventListener("focusout", () => setTimeout(checkOrientation, 300));
 
   // ---------------------------------------------------------------- sheets
   sheet.querySelector(".sh-backdrop")!.addEventListener("pointerdown", () => closeSheet());
