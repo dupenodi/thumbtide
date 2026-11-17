@@ -1,5 +1,6 @@
 import { parsePad } from "./kit/pad.ts";
 import type { GameDef } from "./types.ts";
+import bridgePad from "./bridge/bridge.pad?raw";
 import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
 import hammerPad from "./hammer/hammer.pad?raw";
@@ -498,6 +499,39 @@ export const GAMES: GameDef[] = [
     ],
     host: () => import("./inkling/host.ts"),
     controller: () => import("./inkling/controller.ts"),
+  },
+  {
+    id: "bridge",
+    title: "Bridge Panic",
+    tagline: "Your orders are on your crew's panels. Shout them out.",
+    minPlayers: 1,
+    maxPlayers: 8,
+    colors: ["#4c5a3a", "#ffb000"],
+    glyph: "pulse",
+    controls: parsePad(bridgePad, "bridge.pad"),
+    settings: [
+      {
+        key: "difficulty",
+        label: "Difficulty",
+        options: [
+          { value: "calm", label: "Calm" },
+          { value: "normal", label: "Normal" },
+          { value: "frantic", label: "Frantic" },
+        ],
+        default: "normal",
+        applies: "now",
+      },
+      { key: "events", label: "Twist events", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: true, applies: "now" },
+      {
+        key: "bots",
+        label: "Computer crew",
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+        applies: "now",
+      },
+    ],
+    host: () => import("./bridge/host.ts"),
+    controller: () => import("./bridge/controller.ts"),
   },
   {
     id: "sandbox",
