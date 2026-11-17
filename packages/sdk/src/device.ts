@@ -75,7 +75,7 @@ const GESTURES = ["pointerup", "touchend", "click", "keydown"] as const;
  * Keep the phone screen on while the controller is open (lobby and every game). Two ways, as the phone allows:
  *  - the Wake Lock API: needs HTTPS. The browser lets go of it whenever the page is hidden, so it is taken
  *    again each time the page comes back, and on the next tap if the phone let go while we were showing.
- *  - a silent video, set up as NoSleep.js does it (not muted, a sound track, no `loop` on the 2 s clip but a
+ *  - a silent video, set up as NoSleep.js does it (not muted but at volume 0, a sound track, no `loop` on the 2 s clip but a
  *    jump back before its end): for plain http (no Wake Lock API), a refused lock, and iPhone home-screen
  *    apps (iOS before 18.4 grants the lock there but still sleeps). Browsers only start it from a tap, so
  *    every tap retries until it plays. It pauses while the page is hidden.
@@ -107,6 +107,9 @@ export function keepAwake(): () => void {
       v.setAttribute("playsinline", "");
       v.setAttribute("title", "");
       v.src = src;
+      // not `muted` (a muted video doesn't keep some phones awake), but at volume 0: the clip is silent anyway,
+      // and this way it can never be heard. The phone may still show media controls for it.
+      v.volume = 0;
       v.addEventListener("timeupdate", () => {
         if (v.currentTime > 1) v.currentTime = 0.1;
       });
