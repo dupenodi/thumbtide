@@ -1,6 +1,6 @@
 // Play test of every mode with computer players (run on request, not in `npm test`): free for all, teams, co-op vs
 // CPU and co-op vs monsters, in every arena. The "players" are the away-player autopilot (the pilot profile).
-//   node --import tsx --test src/games/hammer/modes.bench.ts     (ROUNDS=3 ARENAS=classic,eye MODES=ffa,pvm BOTS=4 MIX=1)
+//   node --import tsx --test src/games/hammer/playtest.bench.ts     (ROUNDS=3 ARENAS=classic,eye MODES=ffa,pvm BOTS=4 MIX=1)
 import { test } from "node:test";
 import { type Entrant, modeTeams, type RoundResult, runRound, withSeed } from "./botmatch.ts";
 import { ARENAS } from "./arenas.ts";
