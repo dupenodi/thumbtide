@@ -45,6 +45,7 @@ const CLOSE_TEXT: Record<ControllerCloseReason, string> = {
   "host-timeout": "Lost the screen. The room has closed.",
   left: "You left the room.",
   "away-timeout": "You were away too long, so your seat was given up. Join again to play.",
+  "away-timeout-locked": "You were away too long, so your seat was given up. The host locked the room for this game: join again in the lobby.",
   replaced: "You joined from another tab.",
 };
 
@@ -410,5 +411,7 @@ function join(room: string, name: string) {
     gameRoot.replaceChildren();
     form.hidden = false;
     errorEl.textContent = CLOSE_TEXT[reason] ?? "Disconnected.";
+    // seat given up while away: the code and name are filled in, so joining again is one tap
+    if (reason === "away-timeout" || reason === "away-timeout-locked") codeInput.value = room;
   });
 }

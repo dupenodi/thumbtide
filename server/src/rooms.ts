@@ -53,6 +53,10 @@ interface Player {
 const cleanName = (raw: string) => raw.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, LIMITS.maxNameLength);
 
 const token = () => randomBytes(18).toString("base64url");
+/** How long a room remembers the token of a seat the away limit freed while its phone was offline. */
+const LOST_SEAT_MEMORY_MS = 60 * 60_000;
+/** At most this many remembered tokens per room (oldest go first). */
+const LOST_SEAT_MAX = 64;
 const shortId = () => randomBytes(4).toString("hex");
 
 function sendHost(conn: Conn, msg: ServerToHost) {
@@ -69,6 +73,11 @@ export class Room {
   players = new Map<string, Player>();
   sharedState: unknown = null;
   private nextIndex = 0;
+  /**
+   * Tokens of seats the away limit freed while their phone was offline, with when they were freed: when that phone
+   * reconnects, it is told its seat was given up (instead of quietly getting a new seat, or "room locked").
+   */
+  private lostAway = new Map<string, number>();
   private hostGraceTimer: ReturnType<typeof setTimeout> | null = null;
   closed = false;
 
@@ -157,6 +166,14 @@ export class Room {
     if (playerToken) {
       for (const p of this.players.values()) {
         if (p.token === playerToken) return this.resume(p, conn);
+      }
+      // The away limit gave this phone's seat up while it was offline: say so. Not only once: a phone coming back
+      // often opens two sockets in a row (back online, and visible again) and the first answer can be lost with
+      // the socket it dropped. The SDK forgets the token when told, so joining again is a new tap without it.
+      const lostAt = this.lostAway.get(playerToken);
+      if (lostAt !== undefined && Date.now() - lostAt < LOST_SEAT_MEMORY_MS) {
+        sendCtl(conn, { t: "closed", reason: this.awayTimeoutReason() });
+        return CLOSE_CODES.left;
       }
       // Unknown/expired token: fall through and join as a new player.
     }
@@ -248,7 +265,7 @@ export class Room {
         if (p.info.away === away) break;
         p.info.away = away;
         if (p.awayTimer) clearTimeout(p.awayTimer);
-        p.awayTimer = away ? setTimeout(() => this.removePlayer(p, "timeout"), this.mgr.awayGraceMs) : null;
+        p.awayTimer = away ? setTimeout(() => this.awayExpired(p), this.mgr.awayGraceMs) : null;
         if (this.host) sendHost(this.host, { t: "away", id: p.info.id, away });
         break;
       }
@@ -289,7 +306,7 @@ export class Room {
         p.conn.close(CLOSE_CODES.kicked, "kicked");
       } else if (reason === "timeout") {
         // only the away limit times out a seat whose socket is still open: say so, not "you left"
-        sendCtl(p.conn, { t: "closed", reason: "away-timeout" });
+        sendCtl(p.conn, { t: "closed", reason: this.awayTimeoutReason() });
         p.conn.close(CLOSE_CODES.left, "away too long");
       } else {
         p.conn.close(CLOSE_CODES.left, "left");
@@ -297,6 +314,20 @@ export class Room {
       p.conn = null;
     }
     if (this.host) sendHost(this.host, { t: "remove", id: p.info.id, reason });
+  }
+
+  /** The away limit ran out. A phone that is offline hears about it when it reconnects (its token is remembered). */
+  private awayExpired(p: Player) {
+    if (!p.conn) {
+      const now = Date.now();
+      for (const [tok, at] of this.lostAway) if (now - at >= LOST_SEAT_MEMORY_MS || this.lostAway.size >= LOST_SEAT_MAX) this.lostAway.delete(tok);
+      this.lostAway.set(p.token, now);
+    }
+    this.removePlayer(p, "timeout");
+  }
+
+  private awayTimeoutReason() {
+    return this.config.locked ? ("away-timeout-locked" as const) : ("away-timeout" as const);
   }
 
   private resolve(to: Target): Player[] {

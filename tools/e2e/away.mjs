@@ -610,25 +610,40 @@ async function hammerScenario() {
 
 async function expiryScenario() {
   if (REAL) return log("expiry: skipped with --real-grace (10 min)");
-  const [ivy, ali] = phones;
-  log(`expiry: ${ali.name} away (socket open) and ${ivy.name} away + offline, both longer than awayGraceMs (${AWAY_GRACE / 1000} s)`);
+  const [ivy, ali, max] = phones;
+  log(`expiry: ${ali.name} away (socket open), ${ivy.name} and ${max.name} away + offline, all longer than awayGraceMs (${AWAY_GRACE / 1000} s)`);
   await hide(ali);
-  await hide(ivy, { freeze: true });
-  await until(async () => (await tvPlayer(ivy.id))?.away === true, 3000);
-  await goOffline(ivy);
+  for (const ph of [ivy, max]) {
+    await hide(ph, { freeze: true });
+    await until(async () => (await tvPlayer(ph.id))?.away === true, 3000);
+    await goOffline(ph);
+  }
   await until(async () => (await tvPlayer(ali.id))?.away === true, 3000);
   const oldIvy = ivy.id;
   await sleep(AWAY_GRACE + 2000);
   check("away limit: the seat goes after awayGraceMs even with the socket open", !(await seatOf(ali)));
-  check("away limit: the seat of an away + dropped phone goes after awayGraceMs", !(await seatOf(ivy)));
-  // the dropped phone comes back: its token is dead, so it joins again as a new seat (no message)
+  check("away limit: the seats of away + dropped phones go after awayGraceMs", !(await seatOf(ivy)) && !(await seatOf(max)));
+  const formText = (ph) => ph.page.evaluate(() => (document.getElementById("join-form")?.hidden === false ? document.getElementById("join-error")?.textContent : null));
+  // the dropped phone comes back: the relay remembers its token and tells it the seat was given up
   await goOnline(ivy);
   await show(ivy);
+  const ivyTxt = await until(() => formText(ivy), 10_000);
+  const sneaked = await tvEval((n) => shellMod().then((m) => m.shell.host.list.some((p) => p.name === n)), ivy.name);
+  log(`expiry: ${ivy.name} (offline while away) on coming back:`, JSON.stringify(ivyTxt));
+  check("away limit, offline phone back: told its seat was given up, and no new seat behind its back", /away too long/.test(ivyTxt ?? "") && !sneaked, JSON.stringify(ivyTxt));
+  // one tap on Join (code and name are filled in) gives a new seat
+  await ivy.page.tap("#join-form button[type=submit]");
   const newIvy = await until(() => tvEval((n) => shellMod().then((m) => m.shell.host.list.find((p) => p.name === n && p.connected)?.id), ivy.name), 10_000);
-  const ivyForm = await ivy.page.evaluate(() => document.getElementById("join-form")?.hidden === false && document.getElementById("join-error")?.textContent);
-  log(`expiry: ${ivy.name} (dropped while away) on coming back: ${newIvy ? `joined again as a new seat ${oldIvy} -> ${newIvy}` : `join form: ${JSON.stringify(ivyForm)}`}`);
-  check("away limit, dropped phone back: it gets into the room again (a new seat; it is not told its old seat went)", !!newIvy && newIvy !== oldIvy);
+  check("away limit, offline phone: one tap on Join gives a new seat", !!newIvy && newIvy !== oldIvy, `${oldIvy} -> ${newIvy}`);
   if (newIvy) ivy.id = newIvy;
+  // a locked room (shortcut: the TV's Host.lock, as the host sheet's switch does in a game)
+  await tvEval(() => shellMod().then((m) => m.shell.host.lock(true)));
+  await goOnline(max);
+  await show(max);
+  const maxTxt = await until(() => formText(max), 10_000);
+  log(`expiry: ${max.name} (offline while away, room locked) on coming back:`, JSON.stringify(maxTxt));
+  check("away limit, offline phone back to a locked room: told its seat went and that the room is locked", /away too long/.test(maxTxt ?? "") && /locked/.test(maxTxt ?? ""), JSON.stringify(maxTxt));
+  await tvEval(() => shellMod().then((m) => m.shell.host.lock(false)));
   await show(ali);
   await sleep(1500);
   const txt = await ali.page.evaluate(() => (document.getElementById("join-form")?.hidden === false ? document.getElementById("join-error")?.textContent : null));
