@@ -286,7 +286,7 @@ function join(room: string, name: string) {
             <ul class="sh-players">${
               others.length
                 ? others
-                    .map((p) => `<li class="${p.connected ? "" : "away"}"><span>${esc(p.name)}${p.connected ? "" : " <small>(away)</small>"}</span><button class="sh-kick" data-id="${esc(p.id)}">Remove</button></li>`)
+                    .map((p) => `<li class="${p.connected && !p.away ? "" : "away"}"><span>${esc(p.name)}${p.connected && !p.away ? "" : " <small>(away)</small>"}</span><button class="sh-kick" data-id="${esc(p.id)}">Remove</button></li>`)
                     .join("")
                 : `<li class="sh-empty">Nobody else here yet</li>`
             }</ul>

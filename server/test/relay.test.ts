@@ -8,7 +8,7 @@ let url = "";
 const cleanup: Array<{ close?: () => void; leave?: () => void }> = [];
 
 before(async () => {
-  server = startServer({ port: 0, playerGraceMs: 400, hostGraceMs: 400, ghostMinMs: 0 });
+  server = startServer({ port: 0, playerGraceMs: 400, awayGraceMs: 1500, hostGraceMs: 400, ghostMinMs: 0 });
   url = `ws://127.0.0.1:${await server.ready}`;
 });
 after(async () => {
@@ -136,6 +136,100 @@ describe("relay", () => {
     assert.equal(ctl.me!.id, id);
     assert.equal(host.players.size, 1);
     assert.equal(host.players.get(id)!.connected, true);
+  });
+
+  test("away and back reach the host, and away clears the player's input", async () => {
+    const host = await newHost();
+    const ctl = await newController(host);
+    const id = ctl.me!.id;
+    assert.equal(host.players.get(id)!.away, false);
+    const moved = next(host, "input");
+    ctl.input({ x: 1, y: 0 });
+    await moved;
+    const away = next(host, "away");
+    ctl.setAway(true);
+    const p = await away;
+    assert.equal(p.id, id);
+    assert.equal(p.away, true);
+    assert.equal(p.input, null);
+    assert.equal(p.connected, true);
+    const back = next(host, "away");
+    ctl.setAway(false);
+    assert.equal((await back).away, false);
+    assert.equal(server.rooms.get(host.code)!.players.get(id)!.info.away, false);
+  });
+
+  test("an away phone whose socket dies keeps its seat past the normal grace, up to the away limit", async () => {
+    const host = await newHost();
+    const ctl = await newController(host);
+    const id = ctl.me!.id;
+    const away = next(host, "away");
+    ctl.setAway(true);
+    await away;
+    const dropped = next(host, "drop");
+    closeTab(ctl);
+    const p = await dropped;
+    assert.equal(p.away, true);
+    await sleep(700); // past playerGraceMs (400)
+    assert.equal(host.players.has(id), true);
+    const [gone, reason] = await next(host, "leave", 3000); // awayGraceMs (1500)
+    assert.equal(gone.id, id);
+    assert.equal(reason, "timeout");
+  });
+
+  test("a phone that came back, then dropped, gets the normal grace (a real disconnect)", async () => {
+    const host = await newHost();
+    const ctl = await newController(host);
+    const away = next(host, "away");
+    ctl.setAway(true);
+    await away;
+    const back = next(host, "away");
+    ctl.setAway(false);
+    await back;
+    const t0 = Date.now();
+    const left = next(host, "leave", 1200);
+    closeTab(ctl);
+    const [gone] = await left;
+    assert.equal(gone.id, ctl.me!.id);
+    assert.ok(Date.now() - t0 < 1200);
+  });
+
+  test("a full room does not give an away phone's seat to a newcomer", async () => {
+    const host = await newHost({ maxPlayers: 2 });
+    await sleep(50);
+    const a = await newController(host, "A");
+    await newController(host, "B");
+    const away = next(host, "away");
+    a.setAway(true);
+    await away;
+    const dropped = next(host, "drop");
+    closeTab(a);
+    await dropped;
+    const late = new Controller({ server: url, room: host.code, name: "C", persist: false });
+    assert.equal(await next(late, "closed"), "room-full");
+    assert.deepEqual(host.list.map((p) => p.name), ["A", "B"]);
+  });
+
+  test("the away flag outlives a reconnect, and the phone says back again after the welcome", async () => {
+    const host = await newHost();
+    const ctl = await newController(host);
+    const id = ctl.me!.id;
+    const away = next(host, "away");
+    ctl.setAway(true);
+    await away;
+    // reconnect while still away: the relay keeps the flag
+    let rejoined = next(host, "rejoin");
+    blipPlayer(host, id);
+    assert.equal((await rejoined).away, true);
+    assert.equal(host.players.get(id)!.away, true);
+    // the phone came back, but its "back" went into a dead socket: the next welcome puts it right
+    (ctl as any).away = false;
+    rejoined = next(host, "rejoin");
+    const back = next(host, "away");
+    blipPlayer(host, id);
+    await rejoined;
+    assert.equal((await back).away, false);
+    assert.equal(host.players.get(id)!.away, false);
   });
 
   test("continuous input is coalesced and latest-wins", async () => {

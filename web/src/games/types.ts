@@ -45,7 +45,8 @@ export interface ShellState {
   locked: boolean;
   /** Lobby: the game the VIP is looking at (the TV shows its card). */
   selected: string | null;
-  players: { id: string; name: string; connected: boolean }[];
+  /** `away`: the phone is on another app or locked (the seat waits for them; see HostPlayer.away). */
+  players: { id: string; name: string; connected: boolean; away: boolean }[];
 }
 
 export type SysMessage =

@@ -112,14 +112,15 @@ const mount: HostMount = (ctx) => {
     for (const p of host.players.values()) {
       const d = dots.get(p.id)!;
       const color = colorFor(p.index);
+      const here = p.connected && !p.away;
       d.trail.forEach((t, i) => {
-        g.globalAlpha = (i / d.trail.length) * 0.35 * (p.connected ? 1 : 0.3);
+        g.globalAlpha = (i / d.trail.length) * 0.35 * (here ? 1 : 0.3);
         g.fillStyle = color;
         g.beginPath();
         g.arc(t.x * w, t.y * h, radius * (i / d.trail.length), 0, Math.PI * 2);
         g.fill();
       });
-      g.globalAlpha = p.connected ? 1 : 0.3;
+      g.globalAlpha = here ? 1 : 0.3;
       g.fillStyle = color;
       g.beginPath();
       g.arc(d.x * w, d.y * h, radius, 0, Math.PI * 2);
@@ -127,7 +128,7 @@ const mount: HostMount = (ctx) => {
       g.font = `600 ${Math.round(h * 0.024)}px Inter, system-ui`;
       g.textAlign = "center";
       g.fillStyle = "#f4f3ff";
-      g.fillText(p.connected ? p.name : `${p.name} (away)`, d.x * w, d.y * h - radius - 10);
+      g.fillText(here ? p.name : `${p.name} (away)`, d.x * w, d.y * h - radius - 10);
       g.globalAlpha = 1;
     }
 

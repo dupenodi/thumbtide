@@ -31,6 +31,8 @@ const DROPPABLE_BUFFER_LIMIT = 256 * 1024;
 export interface ManagerOptions {
   maxRooms?: number;
   playerGraceMs?: number;
+  /** Grace for a phone that said it was away before its socket dropped (default LIMITS.awayGraceMs). */
+  awayGraceMs?: number;
   hostGraceMs?: number;
   /** A dropped seat can go to a newcomer in a full room only after it has been empty this long (default 10 s). */
   ghostMinMs?: number;
@@ -175,17 +177,18 @@ export class Room {
     if (this.players.size >= this.config.maxPlayers) {
       // Full, but some seats may belong to phones that dropped and are still in their grace period.
       // A real person at the door beats a ghost: free the seat that has been empty longest, if it has been empty
-      // for ghostMinMs (a phone whose Wi-Fi blips for a second keeps its seat).
+      // for ghostMinMs (a phone whose Wi-Fi blips for a second keeps its seat). A phone that said it was away
+      // (another app, the screen locked) is still in its player's hand: its seat is not a ghost.
       let ghost: Player | null = null;
       for (const p of this.players.values()) {
-        if (!p.conn && Date.now() - p.droppedAt >= this.mgr.ghostMinMs && (!ghost || p.droppedAt < ghost.droppedAt)) ghost = p;
+        if (!p.conn && !p.info.away && Date.now() - p.droppedAt >= this.mgr.ghostMinMs && (!ghost || p.droppedAt < ghost.droppedAt)) ghost = p;
       }
       if (!ghost) return CLOSE_CODES.roomFull;
       this.removePlayer(ghost, "timeout");
     }
 
     const p: Player = {
-      info: { id: shortId(), name: this.uniqueName(name), index: this.nextIndex++, connected: true },
+      info: { id: shortId(), name: this.uniqueName(name), index: this.nextIndex++, connected: true, away: false },
       token: token(),
       conn,
       graceTimer: null,
@@ -217,7 +220,10 @@ export class Room {
     p.info.connected = false;
     if (!this.players.has(p.info.id)) return;
     if (this.host) sendHost(this.host, { t: "drop", id: p.info.id });
-    p.graceTimer = setTimeout(() => this.removePlayer(p, "timeout"), this.mgr.playerGraceMs);
+    // Away first (the page went to the background), then the socket died: the phone is still in use, so the
+    // seat waits much longer. A drop with no "away" before it is a real disconnect.
+    const grace = p.info.away ? this.mgr.awayGraceMs : this.mgr.playerGraceMs;
+    p.graceTimer = setTimeout(() => this.removePlayer(p, "timeout"), grace);
   }
 
   onControllerMessage(p: Player, msg: ControllerToServer) {
@@ -231,6 +237,14 @@ export class Room {
           sendHost(this.host, { t: "in", from: p.info.id, d: msg.d });
         }
         break;
+      case "away": {
+        // The phone owns this flag: the relay never clears it on a drop or a reconnect.
+        const away = msg.away === true;
+        if (p.info.away === away) break;
+        p.info.away = away;
+        if (this.host) sendHost(this.host, { t: "away", id: p.info.id, away });
+        break;
+      }
       case "leave":
         this.removePlayer(p, "left");
         break;
@@ -322,12 +336,14 @@ export class RoomManager {
   private byHostToken = new Map<string, Room>();
   readonly maxRooms: number;
   readonly playerGraceMs: number;
+  readonly awayGraceMs: number;
   readonly hostGraceMs: number;
   readonly ghostMinMs: number;
 
   constructor(opts: ManagerOptions = {}) {
     this.maxRooms = opts.maxRooms ?? 5000;
     this.playerGraceMs = opts.playerGraceMs ?? LIMITS.playerGraceMs;
+    this.awayGraceMs = opts.awayGraceMs ?? LIMITS.awayGraceMs;
     this.hostGraceMs = opts.hostGraceMs ?? LIMITS.hostGraceMs;
     this.ghostMinMs = opts.ghostMinMs ?? 10_000;
   }

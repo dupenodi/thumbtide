@@ -22,6 +22,11 @@ export interface ControllerOptions {
   persist?: boolean;
   /** Minimum gap between continuous input sends, in ms (default 25 = 40 updates a second). */
   inputIntervalMs?: number;
+  /**
+   * Tell the screen when this page goes to the background and comes back (default true in a browser), so the
+   * player is paused while the phone is on another app or locked, instead of dropped. See `setAway`.
+   */
+  trackAway?: boolean;
 }
 
 type ControllerEvents<G extends GameMessages> = {
@@ -67,6 +72,9 @@ export class Controller<G extends GameMessages = AnyGame> extends Emitter<Contro
   private link: Link;
   private closedReason: ControllerCloseReason | null = null;
   private serverReason: ControllerCloseReason | null = null;
+  /** This page is in the background (what we tell the relay). */
+  private away = false;
+  private stopAwayWatch: (() => void) | null = null;
 
   // Continuous input coalescing.
   private inputInterval: number;
@@ -87,6 +95,7 @@ export class Controller<G extends GameMessages = AnyGame> extends Emitter<Contro
         this.finish(this.serverReason ?? CLOSE_REASON[code] ?? "host-closed");
       },
     });
+    if (opts.trackAway !== false) this.watchAway();
   }
 
   get status(): LinkStatus {
@@ -117,6 +126,17 @@ export class Controller<G extends GameMessages = AnyGame> extends Emitter<Contro
   /** How many continuous-input updates go out per second (10–60). Games set this from their controls. */
   setInputRate(perSecond: number) {
     this.inputInterval = 1000 / Math.max(10, Math.min(60, perSecond));
+  }
+
+  /**
+   * Tell the screen this phone is away (its page is in the background) or back. The relay holds an away
+   * player's seat much longer when the socket then dies, and games pause the player instead of handing them
+   * to a computer. Done for you from page visibility unless `trackAway: false`; sent again after every welcome.
+   */
+  setAway(away: boolean) {
+    if (this.away === away) return;
+    this.away = away;
+    this.out({ t: "away", away });
   }
 
   /** Leave the room on purpose (frees the slot immediately). */
@@ -151,8 +171,10 @@ export class Controller<G extends GameMessages = AnyGame> extends Emitter<Contro
         if (prevGame !== m.config.game) this.emit("game", m.config.game);
         this.emit("host", m.hostConnected);
         this.emit("state", { shared: this.shared, own: this.own });
+        // The relay keeps our away flag from before; a "back" may have gone into a dead socket, so say it again.
+        if (m.you.away !== this.away) this.out({ t: "away", away: this.away });
         // Host cleared our input when we dropped; resend the last known value.
-        if (this.lastInput !== undefined) this.out({ t: "in", d: this.lastInput });
+        if (this.lastInput !== undefined && !this.away) this.out({ t: "in", d: this.lastInput });
         break;
       }
       case "msg":
@@ -188,9 +210,30 @@ export class Controller<G extends GameMessages = AnyGame> extends Emitter<Contro
     if (this.closedReason) return;
     this.closedReason = reason;
     if (this.inputTimer) clearTimeout(this.inputTimer);
+    this.stopAwayWatch?.();
     if (reason !== "replaced") this.save(null);
     this.link.close();
     this.emit("closed", reason);
+  }
+
+  /**
+   * Away while the page is hidden: another app, the screen locked, the tab switched. `pagehide` covers the
+   * page going into the back/forward cache (or closing) without a visibility change first. Each fires before
+   * the browser freezes the page, so the message goes out on the open socket.
+   */
+  private watchAway() {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const check = () => this.setAway(document.visibilityState === "hidden");
+    const hide = () => this.setAway(true);
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("pagehide", hide);
+    window.addEventListener("pageshow", check);
+    this.away = document.visibilityState === "hidden";
+    this.stopAwayWatch = () => {
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("pagehide", hide);
+      window.removeEventListener("pageshow", check);
+    };
   }
 
   private out(msg: ControllerToServer): boolean {
