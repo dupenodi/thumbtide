@@ -21,7 +21,8 @@ perf markers. Keep it that way: new test-only code in `web/src` goes behind `PER
 | This computer vs the TV, benchmark by benchmark | `pnpm perf probe --emulate` | ~1 min |
 | Re-fit the sandbox's graphics factor | `pnpm perf calibrate` | ~8 min |
 
-Scenarios: `lobby`, `wetpaint`, `cascade-culture`, `cascade-marbles`, `cascade-reactor`, `cult`. A game id runs all
+Scenarios: `lobby`, `wetpaint`, `cascade-culture`, `cascade-marbles`, `cascade-reactor`, `cult`, `hammer-melka`,
+`hammer-classic` (Rotor Brawl, 7 bots). A game id runs all
 its scenarios (`cascade`). Options: `--seconds=12 --warmup=4 --target=60 --verbose --json --headed --native
 --cpu=N --gpu=N --fps=30`. Any other `--key=value` goes to the game as a start option (`--look=reactor`,
 `--board=huge`, `--bots=7`, `--quality=low`). Exit code 1 means a scenario is below target.

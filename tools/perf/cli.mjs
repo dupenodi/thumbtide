@@ -69,6 +69,8 @@ const SCENARIOS = {
   "cascade-marbles": { game: "cascade", params: { look: "marbles", bots: 3 }, note: "4 players" },
   "cascade-reactor": { game: "cascade", params: { look: "reactor", bots: 3 }, note: "4 players" },
   cult: { game: "cult", params: {}, note: "5 computers play by themselves" },
+  "hammer-melka": { game: "hammer", params: { bots: 7, arena: "melka" }, note: "Rotor Brawl, 7 bots" },
+  "hammer-classic": { game: "hammer", params: { bots: 7, arena: "classic" }, note: "Rotor Brawl, 7 bots" },
 };
 function pickScenarios(names) {
   if (!names.length) return Object.keys(SCENARIOS);
