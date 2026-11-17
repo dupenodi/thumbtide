@@ -121,7 +121,9 @@ export function createHud(root: HTMLElement) {
       const best = game.matchBest;
       const top = Math.max(1, ...game.heights);
       const bestRun = game.heights.indexOf(best);
-      const crew = [...game.seats.values()].sort((a, b) => a.slot - b.slot);
+      // the crew that flew the last run, in thruster order
+      const seen = new Set<string>();
+      const crew = game.thrusters.filter((t) => !seen.has(t.name + t.slot) && !!seen.add(t.name + t.slot));
       root.querySelector(".lft-report")?.remove();
       const el = document.createElement("div");
       el.className = "lft-report";
