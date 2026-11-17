@@ -12,7 +12,7 @@ import { makeTour } from "./tour.ts";
 import { createGameAudio } from "./audio.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount } from "../types.ts";
-import { applyArenaKind, openSideRows, spawnPoint, wormSpawn, STICK_DEFAULTS, type StickTune, stickPush as stickPushFor } from "./arenas.ts";
+import { applyArenaKind, openSideRows, relaunchLost, spawnPoint, waveRoom, waveSeconds, wormSpawn, STICK_DEFAULTS, type StickTune, stickPush as stickPushFor } from "./arenas.ts";
 import { type Bot, driveBot, makeBot, newRound, PROFILES, type ProfileId, profileLoadout, ROSTER } from "./bots.ts";
 import "./hammer.css";
 import { loadGameFont } from "./font.ts";
@@ -36,9 +36,8 @@ const PVE_TEAMS = [
   { name: "Players", color: "#7cf29a" },
   { name: "CPU", color: "#c18cff" },
 ];
-/** Co-op vs monsters: the monsters' team, and how many may be alive at once (TV budget). */
+/** Co-op vs monsters: the monsters' team (how many may be alive at once: MAX_WORMS in arenas.ts). */
 const MONSTER_TEAM = 9;
-const MAX_MONSTERS = 4;
 const MONSTER_COLOR = "#c8995a";
 // The warm-up (weapon pick, no damage). Shorter after the play test: with ~15 s rounds, 4 s of result and 8 s of
 // pick were nearly half the session.
@@ -233,20 +232,51 @@ const mount: HostMount = (ctx) => {
     }
     monsters = [];
   };
-  /** Wave n: 1, 2, 2, 3, 4… worms (at most 4 alive); armoured worms from wave 3. They fly in from the sides. */
-  const spawnWave = () => {
-    // fit the wave in the body budget (each worm is 10 bodies), but always at least one worm. When heavy weapons
-    // leave no room for a full worm, the one worm is shorter (core + jaw + at least 3 segments) to fit what is left.
+  /**
+   * Wave n: 1, 2, 2, 3, 4… worms (at most MAX_WORMS alive, leftovers of the last wave included); armoured worms from
+   * wave 3. They fly in from the sides. Returns how many came.
+   */
+  const spawnWave = (wave: number): number => {
+    // fit the wave in the body budget (each worm is 10 bodies), but a fight always starts with at least one worm. When
+    // heavy weapons leave no room for a full worm, that worm is shorter (core + jaw + at least 3 segments).
     const free = (lite ? BODY_BUDGET_LITE : BODY_BUDGET) - arena.world.bodies.length;
-    const room = Math.floor(free / 10);
-    const n = Math.max(1, Math.min(MAX_MONSTERS, 1 + Math.floor(round / 2), room));
-    const segments = room < 1 ? free - 2 : undefined;
+    const alive = monsters.filter((w) => w.alive).length;
+    let n = waveRoom(wave, alive, free);
+    let segments: number | undefined;
+    if (n === 0 && alive === 0) {
+      n = 1;
+      segments = free - 2;
+    }
     // only at heights where the side is open to the fight (not into a sealed corner behind a slab)
     const rows = openSideRows(arena);
     for (let i = 0; i < n; i++) {
-      const kind = round >= 3 && i % 2 === 1 ? "armoredworm" : "worm";
-      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, ...wormSpawn(arena, i, rows), segments }));
+      const kind = wave >= 3 && i % 2 === 1 ? "armoredworm" : "worm";
+      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, ...wormSpawn(arena, alive + i, rows), segments }));
     }
+    return n;
+  };
+  // The wave timer (OURS, 2026-11-17): when it runs out the next wave comes even if worms are left (a worm that hid
+  // held a wave open for ever, and it is time pressure). waveSeconds: 15 + 5 per live worm.
+  let waveLeft = 0;
+  let waveTotal = 0;
+  let waveWhole = -1;
+  /** Waves fought in this fight (the timer adds waves); clearing them all counts each one toward the match. */
+  let wavesThisFight = 0;
+  const startWaveTimer = () => {
+    waveTotal = waveLeft = waveSeconds(Math.max(1, monsters.filter((w) => w.alive).length));
+    waveWhole = -1;
+    hudDirty = true;
+  };
+  const nextWave = () => {
+    // a leftover far from everyone (hidden, or stuck behind something) flies in again from a side
+    relaunchLost(arena, monsters, seated().flatMap((s) => (s.m?.alive ? [s.m] : [])));
+    round++;
+    wavesThisFight++;
+    const n = spawnWave(round);
+    hud.announce("round", `Wave ${round}`, n ? "More worms!" : "Clear them faster!", "#ff7a3d", 1400);
+    sound?.sting("round");
+    pushShared();
+    startWaveTimer();
   };
 
   const teamsAlive = () => {
@@ -502,7 +532,11 @@ const mount: HostMount = (ctx) => {
       s.auto = null;
     }
     arena.suddenDeath = false;
-    if (mode === "pvm") spawnWave();
+    if (mode === "pvm") {
+      wavesThisFight = 1;
+      spawnWave(round);
+      startWaveTimer();
+    } else waveTotal = 0;
     phaseFor = 0;
     tuning.damage = DEFAULT_TUNING.damage;
     tuning.slomo = ctx.settings().slomo === false ? 0 : 1;
@@ -530,7 +564,8 @@ const mount: HostMount = (ctx) => {
     timeUp = false;
     const winners = team === null || team === MONSTER_TEAM ? [] : seated().filter((s) => teamOf(s) === team);
     for (const w of winners) {
-      w.wins++;
+      // co-op vs monsters: every wave cleared counts (the timer may have brought more than one)
+      w.wins += mode === "pvm" ? Math.max(1, wavesThisFight) : 1;
       if (w.human) host.send(w.id, { type: "win" });
     }
     const solo = mode === "ffa" ? winners[0] : undefined;
@@ -578,6 +613,16 @@ const mount: HostMount = (ctx) => {
     if (phase === "fight") {
       // the round ends when one team (or one machine) is left flying
       if (teamsAlive().size <= 1 && callAt < 0) callAt = CALL_S;
+      if (mode === "pvm" && callAt < 0 && waveTotal > 0) {
+        waveLeft -= real;
+        const whole = Math.max(0, Math.ceil(waveLeft));
+        if (whole !== waveWhole) {
+          waveWhole = whole;
+          hudDirty = true;
+          if (whole >= 1 && whole <= 3) sound?.sting("count", whole);
+        }
+        if (waveLeft <= 0) nextWave();
+      }
       if (mode !== "pvm" && phaseFor >= TIME_LIMIT_S && callAt < 0) {
         timeUp = true;
         endRound();
@@ -866,6 +911,9 @@ const mount: HostMount = (ctx) => {
         waiting ? "Warm-up · waiting for a second player (or add computer players in Settings)" : "Warm-up · pick your weapon on your phone",
         waiting ? null : left / pickTotal,
       );
+    } else if (phase === "fight" && mode === "pvm" && waveTotal > 0 && callAt < 0) {
+      // the wave timer: text and bar change once a second; red for the last 5 s
+      hud.warmup(`Wave ${round} · next wave in ${waveWhole} s`, waveWhole / waveTotal, waveWhole <= 5);
     } else {
       hud.warmup(null, null);
     }

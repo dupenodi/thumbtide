@@ -171,15 +171,19 @@ export class Hud {
     this.feedEl.innerHTML = "";
   }
 
-  /** The bottom strip during warm-up: a line of text and how much of the countdown is left (0–1, or null for none). */
-  warmup(text: string | null, frac: number | null): void {
-    const key = `${text}|${frac === null ? "-" : Math.round(frac * 50)}`;
+  /**
+   * The bottom strip (the warm-up, and the wave timer in co-op vs monsters): a line of text and how much of the
+   * countdown is left (0–1, or null for none); `urgent` turns it red (the last seconds).
+   */
+  warmup(text: string | null, frac: number | null, urgent = false): void {
+    const key = `${text}|${frac === null ? "-" : Math.round(frac * 50)}|${urgent}`;
     if (key === this.warmKey) return;
     this.warmKey = key;
     this.warm.hidden = text === null;
     if (text === null) return;
     this.warmText.textContent = text;
     this.warm.classList.toggle("timed", frac !== null);
+    this.warm.classList.toggle("urgent", urgent);
     // transform, not width: the TV only recomposites the bar (width meant layout + paint all warm-up long)
     this.warmBar.style.transform = `scaleX(${Math.max(0, Math.min(1, frac ?? 0))})`;
   }

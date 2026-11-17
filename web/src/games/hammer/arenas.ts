@@ -273,6 +273,48 @@ export function openSideRows(arena: Arena): [number[], number[]] {
   return rows;
 }
 
+/** Co-op vs monsters: worms alive at once at most (the TV's body budget: each worm is 10 bodies). */
+export const MAX_WORMS = 4;
+/** Worms in wave n (1, 2, 2, 3, 3, 4…; the host also caps them at MAX_WORMS and the body budget). */
+export const waveWorms = (wave: number) => 1 + Math.floor(wave / 2);
+/**
+ * Seconds before the next wave comes anyway, with `worms` worms alive (OURS, 2026-11-17: a worm that hid behind an
+ * obstacle held a wave open for ever). 15 + 5 per worm: 20 s for 1, 35 s for 4. Bench (playtest wave clear times,
+ * 10 arenas x 8 rounds): 2 players + 2 bots clear 1-4 worms in 4.5 / 7.3 / 9.6 / 11.7 s (p90 7 / 10 / 12 / 15 s);
+ * 2 players alone in 7.8 / 13 / 19 / 22 s (p90 13 / 19 / 26 / 31 s). So the timer fires for a slow or stuck wave,
+ * not for a normal one.
+ */
+export const waveSeconds = (worms: number) => 15 + 5 * worms;
+/** On the wave timer, a leftover worm farther than this (px) from every machine flies in again from a side. */
+export const WORM_LOST_R = 450;
+
+/** Move a worm (all its bodies, joints intact) so its core is at (x, y), at rest: a lost worm re-enters the fight. */
+export function moveWorm(w: Machine, x: number, y: number): void {
+  const dx = x - w.hull.x;
+  const dy = y - w.hull.y;
+  for (const b of [w.hull, ...w.parts]) {
+    b.x += dx;
+    b.y += dy;
+    b.px = b.rx = b.x;
+    b.py = b.ry = b.y;
+  }
+}
+
+/** The wave timer ran out: every live worm far from all live machines (hidden, or stuck behind something) flies in again from a side. Returns how many. */
+export function relaunchLost(arena: Arena, worms: Machine[], fighters: Machine[], rows: [number[], number[]] = openSideRows(arena)): number {
+  let n = 0;
+  for (const w of worms) {
+    if (!w.alive) continue;
+    if (fighters.some((m) => m.alive && Math.hypot(m.hull.x - w.hull.x, m.hull.y - w.hull.y) < WORM_LOST_R)) continue;
+    const s = wormSpawn(arena, n++, rows);
+    moveWorm(w, s.x, s.y);
+  }
+  return n;
+}
+
+/** How many worms the next wave adds: its size, but leftovers count toward MAX_WORMS, and each worm needs 10 free bodies. */
+export const waveRoom = (wave: number, alive: number, freeBodies: number) => Math.max(0, Math.min(waveWorms(wave), MAX_WORMS - alive, Math.floor(freeBodies / 10)));
+
 /** Where wave worm `i` flies in (host.ts and the benches): alternate sides, a random open row. */
 export function wormSpawn(arena: Arena, i: number, rows: [number[], number[]] = openSideRows(arena)): { x: number; y: number; dir: number } {
   // the other side when this one is closed

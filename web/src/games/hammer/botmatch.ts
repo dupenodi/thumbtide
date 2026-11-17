@@ -1,7 +1,7 @@
 // Headless rounds between computer players (no DOM): the bot benches use this to measure strength and spectacle.
 // The round rules follow host.ts: damage from the start, sudden death at 60 s, time up at 90 s (most health wins).
 
-import { applyArenaKind, openSideRows, spawnPoint, wormSpawn } from "./arenas.ts";
+import { applyArenaKind, openSideRows, relaunchLost, spawnPoint, waveRoom, waveSeconds, wormSpawn } from "./arenas.ts";
 import { Arena, type Machine, STEP } from "./sim.ts";
 import { DEFAULT_TUNING, type Tuning } from "./tuning.ts";
 import type { GunKind, PlateKind, WeaponKind } from "./weapons.ts";
@@ -75,6 +75,9 @@ export interface RoundResult {
   breakables: number;
   /** Co-op vs monsters: the worms were the last side standing (or still alive at the time limit). */
   monstersWon: boolean;
+  /** Co-op vs monsters with the wave timer: times it ran out (the next wave came with worms left), and waves fought. */
+  waveTimerFired: number;
+  waves: number;
 }
 
 /** Hull to hull distance under which machines count as one pile (two hulls with weapons overlapping). */
@@ -91,6 +94,8 @@ export interface RoundOptions {
   monsters?: number;
   /** Every other worm armoured (default; host.ts: from wave 3). */
   armored?: boolean;
+  /** Co-op vs monsters: the wave timer (host.ts) from this wave number on (0 or unset: off). */
+  wave?: number;
 }
 
 /** Team numbers per mode, as host.ts teamOf gives them (seat i; `human` seats are the players' side in co-op). */
@@ -98,6 +103,8 @@ export function modeTeams(mode: "ffa" | "teams" | "pve" | "pvm", n: number, huma
   return Array.from({ length: n }, (_, i) => (mode === "teams" ? i % 2 : mode === "pve" ? (i < humans ? 0 : 1) : mode === "pvm" ? 0 : i));
 }
 const MONSTER_TEAM = 99;
+/** The TV body budget for worms (host.ts BODY_BUDGET_LITE). */
+const BENCH_BODY_BUDGET = 48;
 
 export function runRound(o: RoundOptions): RoundResult {
   const ar = new Arena({ ...DEFAULT_TUNING, passes: 15, gibs: 3, ...o.tuning });
@@ -112,6 +119,10 @@ export function runRound(o: RoundOptions): RoundResult {
   for (let i = 0; i < (o.monsters ?? 0); i++) {
     worms.push(ar.addMonster({ id: 1000 + i, team: MONSTER_TEAM, kind: (o.armored ?? true) && i % 2 === 1 ? "armoredworm" : "worm", ...wormSpawn(ar, i, rows!) }));
   }
+  let wave = o.monsters ? (o.wave ?? 0) : 0;
+  let waves = o.monsters ? 1 : 0;
+  let waveTimerFired = 0;
+  let waveLeft = wave > 0 ? waveSeconds(worms.length) : 0;
   const drivers = o.entrants.map((e, i) => e.driver(ar, ms[i]!));
   const st: EntrantStats[] = o.entrants.map((e) => ({ name: e.name, weapon: e.weapon, dealt: 0, hits: 0, bigHit: 0, kos: 0, slammed: 0, stunned: 0, minHp: 100, hpEnd: 0, alive: true, edge: 0, shotDealt: 0 }));
   const idx = new Map(ms.map((m, i) => [m, i]));
@@ -144,6 +155,20 @@ export function runRound(o: RoundOptions): RoundResult {
   while (t < limit) {
     for (let i = 0; i < ms.length; i++) if (ms[i]!.alive) drivers[i]!(ar, ms[i]!);
     ar.step();
+    if (wave > 0 && callAt < 0) {
+      waveLeft -= STEP;
+      if (waveLeft <= 0) {
+        // as host.ts nextWave: lost leftovers fly in again, the next wave joins them (leftovers count toward the cap)
+        waveTimerFired++;
+        relaunchLost(ar, worms, ms, rows!);
+        wave++;
+        waves++;
+        const alive = worms.filter((w) => w.alive).length;
+        const n = waveRoom(wave, alive, BENCH_BODY_BUDGET - ar.world.bodies.length);
+        for (let i = 0; i < n; i++) worms.push(ar.addMonster({ id: 1000 + worms.length, team: MONSTER_TEAM, kind: wave >= 3 && i % 2 === 1 ? "armoredworm" : "worm", ...wormSpawn(ar, alive + i, rows!) }));
+        waveLeft = waveSeconds(Math.max(1, alive + n));
+      }
+    }
     t += STEP;
     if (!ar.suddenDeath && t >= sdAt) ar.suddenDeath = true;
     for (const e of ar.events) {
@@ -258,6 +283,8 @@ export function runRound(o: RoundOptions): RoundResult {
     monsterKos,
     breaks,
     breakables,
+    waveTimerFired,
+    waves,
     monstersWon: worms.some((w) => w.alive) && (alive.length === 0 || timeUp),
   };
 }
