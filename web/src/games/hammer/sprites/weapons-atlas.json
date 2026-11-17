@@ -3,7 +3,7 @@
   "file": "weapons-atlas.png",
   "w": 320,
   "h": 440,
-  "frame": "part-local px: +x away from the machine, +y = screen-down when the part points right (sim ly > 0 = U side). Draw: translate(body) rotate(a + angle0) drawImage(atlas, sx, sy, sw, sh, -ox*scale, -oy*scale, sw*scale, sh*scale). flipY is baked into the pixels. shaft: the sprite already contains the handle/rod, so skip the drawn rod line.",
+  "frame": "part-local px: +x away from the machine, +y = screen-down when the part points right (sim edgeAt: ly < 0 = U side). Draw: translate(body) rotate(a + angle0) drawImage(atlas, sx, sy, sw, sh, -ox*scale, -oy*scale, sw*scale, sh*scale). flipY is baked into the pixels. shaft: the sprite already contains the handle/rod, so skip the drawn rod line.",
   "cutL": "cutL: atlas px to skip at the shaft end so it stops 12 px past the machine centre (under the hull picture). drawImage(atlas, sx + cutL, sy, sw - cutL, sh, (cutL - ox) * scale, -oy * scale, (sw - cutL) * scale, sh * scale)."
  },
  "mallet": {

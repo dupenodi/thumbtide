@@ -148,7 +148,7 @@ export class Renderer {
 
   constructor(
     readonly canvas: HTMLCanvasElement,
-    /** skip: perf A/B only (the host passes it in perf builds): layers not to draw (sky, trails, weapons, machines, sparks, floats). */
+    /** skip: perf A/B only (the host passes it in perf builds): layers not to draw (sky, trails, weapons, machines, sparks, floats). sky also hides the static obstacles (they are painted into the cached backdrop, which also does not shake). */
     private opts: { maxDpr?: number; maxWidth?: number; names?: boolean; skip?: Set<string> } = {},
   ) {
     this.ctx = canvas.getContext("2d", { alpha: false })!;

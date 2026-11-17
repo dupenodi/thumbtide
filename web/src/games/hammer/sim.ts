@@ -59,7 +59,7 @@ export function edgeAt(t: Pick<Tag, "bladeable" | "bladeableU" | "sharpness" | "
 }
 
 /** A gun that aims: a sidearm (part key "gun", not a dual set's back blade) with a round in the clip. */
-const aimable = (g: GunState) => g.ammo >= 1 && (g.body.data as Tag | null)?.spec?.key === "gun";
+export const aimable = (g: GunState) => g.ammo >= 1 && (g.body.data as Tag | null)?.spec?.key === "gun";
 /** Real seconds per step. Hammerfight runs physics once per frame at GFX_FRAMERATE = 50. */
 export const STEP = 0.02;
 
@@ -503,7 +503,7 @@ export class Arena {
       for (const b of m.parts) b.team = t;
       if (m.alive) {
         // aiming a loaded sidearm (trigger + a direction) slows the flying, so the gun can come round
-        if (m.trigger && m.guns.length && m.armed && Math.hypot(m.aimX, m.aimY) > 0.3 && m.guns.some(aimable)) {
+        if (m.trigger && m.guns.length && m.armed && m.stun <= 0 && tn.damage > 0 && Math.hypot(m.aimX, m.aimY) > 0.3 && m.guns.some(aimable)) {
           m.inx *= AIM_THRUST;
           m.iny *= AIM_THRUST;
         }
@@ -955,7 +955,7 @@ export class Arena {
   /** A weapon, shot or machine hits a crate: the game's damage formula (blunt rule included) takes its health. */
   private hitObstacle(o: Obstacle, by: Tag, byBody: Body, c: ContactReport): void {
     // no damage in the warm-up (damage 0): the crates are there for the fight
-    if (!breakable(o.kind) || o.hp <= 0 || !this.owned(by) || this.tuning.damage <= 0) return;
+    if (!breakable(o.kind) || o.hp <= 0 || by.aiming || !this.owned(by) || this.tuning.damage <= 0) return;
     const impact = c.impulse * 1e-5;
     if (!by.shot && c.approach < this.tuning.bluntMinV) return;
     const dmg = Math.floor(this.tuning.damage * Math.max(1, by.sharpness) * impact);

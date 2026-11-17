@@ -11,7 +11,7 @@
 
 import { STICK_DEFAULTS, type StickTune, stickPush } from "./arenas.ts";
 import type { Body } from "./engine.ts";
-import { type Arena, EDGE_M, EDGE_TOP, type Machine, STEP } from "./sim.ts";
+import { aimable, type Arena, EDGE_M, EDGE_TOP, type Machine, STEP } from "./sim.ts";
 import { type GunKind, type PlateKind, WEAPON_KINDS, type WeaponKind } from "./weapons.ts";
 
 export type BotMode = "idle" | "wander" | "fight";
@@ -374,11 +374,12 @@ function guns(arena: Arena, m: Machine, enemy: Machine): void {
     const tFly = d0 / Math.max(300, g.spec.speed);
     const dx = enemy.hull.x + enemy.hull.vx * tFly - b.x;
     const dy = enemy.hull.y + enemy.hull.vy * tFly - b.y;
-    // the same aim a phone has: hold fire and point at the lead point (sim.ts aim; it fires when lined up). Aiming
-    // slows the flying, so only once the gun is roughly that way already.
+    // A sidearm aims as a phone does: hold fire and point at the lead point (sim.ts aim; it fires when lined up).
+    // Aiming slows the flying, so only once the gun is roughly that way already. A gun that can't aim (the tribune's
+    // back blade) fires along its axis: hold fire only when it points at the target.
     const d = Math.hypot(dx, dy) || 1;
     const off = Math.abs(Math.atan2(Math.sin(Math.atan2(dy, dx) - b.a), Math.cos(Math.atan2(dy, dx) - b.a)));
-    if (off < 1.05) {
+    if (off < (aimable(g) ? 1.05 : Math.max(0.12, 30 / d))) {
       arena.fire(m);
       arena.aim(m, dx / d, dy / d);
       break;
