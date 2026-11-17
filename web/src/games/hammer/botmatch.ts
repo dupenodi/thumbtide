@@ -51,6 +51,8 @@ export interface RoundResult {
   /** Share of 3 s windows with no hit at all (boring stretches). */
   quiet: number;
   slams: number;
+  /** Sidearms broken off. */
+  gunBreaks: number;
   hitsPerMin: number;
 }
 
@@ -85,6 +87,7 @@ export function runRound(o: RoundOptions): RoundResult {
   let quietWindows = 0;
   let nextWindow = 3;
   let slams = 0;
+  let gunBreaks = 0;
   let hits = 0;
   let comebackRisk = new Set<number>();
   const teams = () => new Set(ms.filter((m) => m.alive).map((m) => m.team));
@@ -110,6 +113,8 @@ export function runRound(o: RoundOptions): RoundResult {
         const v = idx.get(e.m);
         if (v !== undefined) st[v]!.slammed++;
         slams++;
+      } else if (e.type === "gunbreak") {
+        gunBreaks++;
       }
     }
     ar.events.length = 0;
@@ -159,6 +164,7 @@ export function runRound(o: RoundOptions): RoundResult {
     comeback: winner >= 0 && comebackRisk.has(winner),
     quiet: windows ? quietWindows / windows : 0,
     slams,
+    gunBreaks,
     hitsPerMin: (hits * 60) / t,
   };
 }

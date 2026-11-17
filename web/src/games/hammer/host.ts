@@ -750,6 +750,23 @@ const mount: HostMount = (ctx) => {
       } else if (e.type === "shot") {
         sound?.shot(e.ball);
         if (e.ball) fx.shake = Math.min(12, fx.shake + 3);
+      } else if (e.type === "ping") {
+        // a shot spent on a weapon, plate or gun: a spark (and a clank for a heavy one); the bullets of a burst
+        // share the clash cooldown, so a stream of them stays cheap
+        if (clashCd > 0) continue;
+        clashCd = 0.06;
+        if (e.heavy) sound?.clash(30);
+        fx.burst(e.x, e.y, lite ? 3 : 6, 260, "#ffe9a8", 1.5);
+      } else if (e.type === "gunbreak") {
+        sound?.disarm();
+        fx.burst(e.x, e.y, lite ? 10 : 20, 340, "#ffb347", 2);
+        fx.text(e.x, e.y - 16, "GUN BROKEN", "#ffcf8a", 16);
+        fx.shake = Math.min(12, fx.shake + 4);
+        const v = byMachine.get(e.m);
+        const a = byMachine.get(e.by);
+        if (v?.human) host.send(v.id, { type: "hurt", dmg: 0 });
+        if (a?.human) host.send(a.id, { type: "hit", dmg: 0 });
+        hudDirty = true;
       } else if (e.type === "pickup") {
         sound?.pickup();
         const s = byMachine.get(e.m);

@@ -143,10 +143,20 @@ export interface GunSpec {
   /** Projectile radius px and density. */
   shotR: number;
   shotDensity: number;
-  /** Projectile sharpness (bullets: 7). */
+  /** Projectile sharpness (bullets: 7). Only crates read it now: hits on machines use `hit`. */
   shotSharpness: number;
-  /** Recoil impulse on the gun as a multiple of the shot's momentum (the exe: 1, mortar only). */
-  recoil: number;
+  /**
+   * What one projectile does to a live machine at muzzle speed (OURS, RE_GUNS.md §6): damage (at damage factor 0.1),
+   * push (the speed it gives a bare hull, px/s; the impulse is push × 66 000, the hull mass) and stun (s). It scales
+   * with the shot's speed when it lands (0.3–1.2 ×). The shot is then spent: it bounces only off walls and crates.
+   * Hammerfight's bullet is a 9 800-mass body at 2000 px/s, so its own collision gives this push.
+   */
+  hit: { dmg: number; push: number; stun: number };
+  /**
+   * Recoil (OURS sizes; the exe kicks only the mortar, by the balls' momentum on the gun body): each shot pushes the
+   * shooter back along the barrel by this speed, px/s on the bare hull (70 % on the hull, 30 % on the gun).
+   */
+  kick: number;
   /** "ball" shots are drawn as mortar balls, "bullet" as tracers, "rocket" as a rocket with a flame. */
   look: "bullet" | "ball" | "rocket";
   /** Rockets: no gravity, and a blast on the first contact or at the end of their life. */
@@ -184,8 +194,9 @@ export interface WeaponSpec {
 
 // ---------------------------------------------------------------- guns
 // Bullets are 7 px balls of sharpness 7 at 2000 px/s. Their density (200 in the exe) is OURS: with this port's
-// damage formula a 200-density bullet does about 100 damage, so we use 8 (about 5 a hit) and 10 for mortar balls.
-const BULLET = { interval: 0.1, pellets: 1, spread: 0.01, speed: 2000, shotR: 3.5, shotDensity: 8, shotSharpness: 4, recoil: 0, look: "bullet" } as const;
+// damage formula a 200-density bullet does about 100 damage, so the body is light (8) and the hit (damage, push,
+// stun) is set per gun in `hit` instead (RE_GUNS.md).
+const BULLET = { interval: 0.1, pellets: 1, spread: 0.01, speed: 2000, shotR: 3.5, shotDensity: 8, shotSharpness: 4, hit: { dmg: 3, push: 40, stun: 0 }, kick: 15, look: "bullet" } as const;
 
 export type GunKind = "arquebus" | "mortar" | "heavymortar" | "launcher";
 export const GUN_KINDS: GunKind[] = ["arquebus", "mortar", "heavymortar", "launcher"];
@@ -221,7 +232,8 @@ export const SIDEARMS: Record<GunKind, SidearmSpec> = {
     },
   },
   // mortar (id 240): box 22 × 10, density 25, rod 18, clip 3, m_recoil_time 5; 5 balls a shot with +-0.2 spread,
-  // recoil = the balls' momentum. The ball speed, the time between blasts and the 3x kick are OURS.
+  // recoil = the balls' momentum. The ball speed, the time between blasts, the kick, the hit and the weight are OURS.
+  // Density 68 (the exe: 25, a 5 500 mass) makes it about 15 000, so the gun weighs on the machine (RE_GUNS.md §4).
   mortar: {
     kind: "mortar",
     label: "Mortar",
@@ -229,16 +241,16 @@ export const SIDEARMS: Record<GunKind, SidearmSpec> = {
     rod: 18,
     part: {
       mesh: box(11, 5),
-      density: 25,
+      density: 68,
       sharpness: 1,
       bladeable: 0,
       look: "gun",
       material: "iron",
-      gun: { clip: 3, reload: 5, interval: 0.6, pellets: 5, spread: 0.2, speed: 1100, shotR: 5, shotDensity: 10, shotSharpness: 7, recoil: 3, look: "ball" },
+      gun: { clip: 3, reload: 5, interval: 0.6, pellets: 5, spread: 0.2, speed: 1100, shotR: 5, shotDensity: 10, shotSharpness: 7, hit: { dmg: 5, push: 60, stun: 0.07 }, kick: 150, look: "ball" },
     },
   },
   // mortar_heavy (id 244): box 22 × 14, density 25, rod 19, clip 1, m_recoil_time 5; one mortar_ball (6-gon 13 × 13,
-  // sharpness 2). Ball density (200 in the exe) and speed are OURS, as for bullets.
+  // sharpness 2). Ball density (200 in the exe) and speed are OURS, as for bullets; so are the hit, kick and weight.
   heavymortar: {
     kind: "heavymortar",
     label: "Heavy mortar",
@@ -246,12 +258,12 @@ export const SIDEARMS: Record<GunKind, SidearmSpec> = {
     rod: 19,
     part: {
       mesh: box(11, 7),
-      density: 25,
+      density: 72,
       sharpness: 1,
       bladeable: 0,
       look: "gun",
       material: "iron",
-      gun: { clip: 1, reload: 5, interval: 0.1, pellets: 1, spread: 0.02, speed: 1000, shotR: 6.5, shotDensity: 60, shotSharpness: 2, recoil: 3, look: "ball" },
+      gun: { clip: 1, reload: 5, interval: 0.1, pellets: 1, spread: 0.02, speed: 1000, shotR: 6.5, shotDensity: 60, shotSharpness: 2, hit: { dmg: 20, push: 320, stun: 0.6 }, kick: 250, look: "ball" },
     },
   },
   // launcher (id 243): box 44 × 13, density 25, rod 17, clip 3, m_recoil_time 5. The rocket (box 15 × 7, m_explosive
@@ -263,7 +275,7 @@ export const SIDEARMS: Record<GunKind, SidearmSpec> = {
     rod: 17,
     part: {
       mesh: box(22, 6.5),
-      density: 25,
+      density: 32,
       sharpness: 1,
       bladeable: 0,
       look: "gun",
@@ -278,7 +290,9 @@ export const SIDEARMS: Record<GunKind, SidearmSpec> = {
         shotR: 4,
         shotDensity: 8,
         shotSharpness: 1,
-        recoil: 0,
+        // the rocket's blast does its harm (a hit on a machine sets it off)
+        hit: { dmg: 0, push: 0, stun: 0 },
+        kick: 40,
         look: "rocket",
         blast: { radius: 80, damage: 22, push: 450 },
       },
