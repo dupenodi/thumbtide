@@ -12,7 +12,7 @@ Sections 1–7 are the original game. Section 8 is the earlier note on the mount
 Section 9 is what the port does and why. Section 10 lists the open points.
 
 Field offsets: +0x320 `m_meta`, +0x36c `m_layer`, +0x378 `m_collisions`, +0x394 `m_sharpness`, +0x3b0
-`m_explosive`, +0x3b4 `m_explosive_timer`, +0x3b8 **`m_explosive_type`** (GUNS_RE called +0x3b8 `m_arm`: wrong; `m_arm`
+`m_explosive`, +0x3b4 `m_explosive_timer`, +0x3b8 **`m_explosive_type`** (the bullet writes 0x6c here; `m_arm`
 is +0x458), +0x698 mass, +0x6a8 `m_fCoR`, +0x6b8 `m_type`.
 
 `m_meta` bits (a survey of 93 .seria files; the material names are INFERRED from sprite names): 1 = stone (walls),
@@ -378,10 +378,11 @@ its guns are indestructible, so most of this is OURS. Code: `sim.ts` (`shotHit`,
 | # | Rule | Original | Port | Why |
 |---|---|---|---|---|
 | 1 | Shot on a hull | Generic damage (about 155), full stun, the shot dies | `hit` per gun: damage, push (a speed on a 66 000 hull), stun, × 0.3–1.2 by the landing speed; the shot is spent | The exe's numbers end a round in 2 shots; the push gives the "impact" the light shot body can't (a 280-mass body moved a hull by 8 px/s) |
-| 2 | Shot on a weapon, gun or plate | Ricochets at half speed, sharpness 1 | **Spent**: the push goes into that part (at most 600 px/s), a spark (`ping`); a sidearm wears down, a plate can come off (`m_overkill` · 100) | "Pellets must not just bounce off" |
+| 2 | Shot on a weapon, gun or plate | Ricochets at half speed, sharpness 1 | **Spent**: the push goes into that part (at most twice the hull speed and 600 px/s, so light worm parts aren't flung), a spark (`ping`); a sidearm wears down, a plate can come off (`m_overkill` · 100) | "Pellets must not just bounce off" |
 | 3 | Shot on a wall or crate | Stone: ricochet at half speed; wood: dies | CoR 0.3 bounce, then gone after 2 (bullet) or 3 (ball; the exe 5) contacts | Fewer live bodies on the TV |
 | 4 | Shot on a wreck, loose weapon, debris | Same as 2 | A plain bounce (counts a contact) | |
-| 5 | Shot on a teammate (friendly fire off) | (no teams) | Flies through: speed restored, not solid for 0.04 s | With collision on, team bodies still touch shots |
+| 5 | Shot on a teammate (friendly fire off) | (no teams) | Flies through: the engine's bounce is taken back from both bodies, then the shot is not solid for 0.04 s | With collision on, team bodies still touch shots (a heavy ball moved an ally 118 px/s before the take-back) |
+| 5b | Rocket | Goes off on a hull or a stone wall (damage ≥ 5), **not** on a held weapon or gun; a 30 s fuse | Goes off on its first contact of any kind, or at the end of its 1.5 s life (unchanged) | Kept: a rocket that clanks off a weapon would read as a dud |
 | 6 | Values | Bullet 155 / stun 1 | Bullet 3 dmg, push 40; mortar ball 5, 60, stun 0.07 (5 balls: 25, 300, 0.35); heavy ball 20, 320, 0.6; rocket 0 (its blast does the harm) | Keeps the bot balance (below) |
 | 7 | Recoil | Mortars: the full momentum on the gun body; arquebus and launcher none | 0.5 × pellets × `hit.push` on the bare hull speed: arquebus 20 px/s a shot, mortar 150, heavy 160, launcher 0; 70 % on the hull, 30 % on the gun | The request (arquebus too); the launcher stays recoilless as in the exe |
 | 8 | Weight | Physics only | Physics only, with heavier mortars and launcher: density 68 / 72 / 32 (masses about 15 000 / 22 200 / 18 300; arquebus 22 379 as the exe) | Measured below |
@@ -391,6 +392,12 @@ its guns are indestructible, so most of this is OURS. Code: `sim.ts` (`shotHit`,
 Weight measured (hammer, no input: terminal sink speed; full stick from rest: time to 300 px/s): none 91 px/s,
 0.18 s; arquebus 123, 0.30 s; mortar 100 → **113**, 0.22 → **0.26** s; heavy mortar 103 → **123**, 0.22 → **0.28** s;
 launcher 112 → **118**, 0.24 → **0.26** s (old → new density).
+
+Balance (bots.bench.ts, ROUNDS=4, 1 248 duels; win rate before → after): lance (arquebus) 82 % → 71 %, flak
+(launcher) 69 % → 66 %, jackal (mortar) 67 % → 66 %; the top melee profile krank 70 % → 74 %. Guns broken: 0.11 per
+duel. modes.bench.ts (ROUNDS=32, 96 rounds a row; with guns / GUNS=0): 2 v 2 lance+jackal v thump+krank 54 % / 16 %;
+flak+jackal v lance+razor(mortar) 60 % / 32 %; bulwark(heavy mortar)+thump v krank+dervish **72 % / 43 %** (the heavy
+mortar may be too strong in teams); worms (3 bots v 3 worms) won by the bots in every round either way, 9.1 s / 12.4 s.
 
 ## 10. Open points
 - The exact player trigger path for use-type-3 guns (8, 3).

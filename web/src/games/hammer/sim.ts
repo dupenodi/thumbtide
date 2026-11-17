@@ -99,7 +99,8 @@ const MONSTER_SHOT_BONUS = 3;
 const PUSH_MASS = 66000;
 /**
  * Recoil per shot = this share of the shot's push (OURS): arquebus 20 px/s on the bare hull, mortar 150, heavy mortar
- * 160, launcher 0. The machine is more than the hull (weapon and gun), and a full share made the mortar a jet.
+ * 160, launcher 0 (its rockets push themselves, as in the exe). A share, not all: the machine is more than the bare
+ * hull (weapon and gun), and the exe puts the kick on the gun body only. Not tuned further (OURS).
  */
 const RECOIL_SHARE = 0.5;
 /** Seconds a shot flies through a teammate it touched (a bullet covers 80 px, a mortar ball 44). */
@@ -1116,10 +1117,14 @@ export class Arena {
     const v = ot.m;
     if (sh.contacts >= sh.maxContacts) return;
     // a teammate with friendly fire off: the shot flies on through (with team collision off they never touch; with
-    // it on, the engine has bounced it: give it back its speed and let it pass for SHOT_GHOST s; the ally's nudge from
-    // a 300 mass is nothing)
+    // it on, the engine has bounced it: take the bounce back from both, and let the shot pass for SHOT_GHOST s)
     if (v.alive && !this.enemies(st.m, v)) {
-      sBody.setVelocity(sh.vx, sh.vy, sBody.w, STEP * this.timewarp);
+      const dt = STEP * this.timewarp;
+      if (oBody.invMass > 0) {
+        const k = sBody.mass / oBody.mass;
+        oBody.setVelocity(oBody.vx + (sBody.vx - sh.vx) * k, oBody.vy + (sBody.vy - sh.vy) * k, oBody.w, dt);
+      }
+      sBody.setVelocity(sh.vx, sh.vy, sBody.w, dt);
       sBody.solid = false;
       sh.ghostUntil = this.t + SHOT_GHOST;
       return;
@@ -1138,9 +1143,10 @@ export class Arena {
     const k = clamp(sp / sh.speed, 0.3, 1.2);
     const ux = sh.vx / sp;
     const uy = sh.vy / sp;
-    // the push (an impulse along the flight; on a light part no more than PUSH_MAX_DV)
+    // the push (an impulse along the flight; a light part, such as a worm's head or tail, gets at most twice the
+    // hull's speed and never more than PUSH_MAX_DV)
     const J = sh.hit.push * k * PUSH_MASS;
-    const dv = Math.min(J / oBody.mass, PUSH_MAX_DV);
+    const dv = Math.min(J / oBody.mass, 2 * sh.hit.push * k, PUSH_MAX_DV);
     if (oBody.invMass > 0) oBody.setVelocity(oBody.vx + ux * dv, oBody.vy + uy * dv, oBody.w, STEP * this.timewarp);
     const impact = J * 1e-5;
     const by = st.m;

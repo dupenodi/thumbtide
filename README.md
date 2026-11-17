@@ -457,7 +457,7 @@ spreads the plates and halves thrust. The tribune's back blade is a gun of its o
 the arquebus (our addition: Hammerfight's guns don't aim): it swings toward the stick, fires once it points within
 11°. A gun's body never hurts anyone, but it is heavy and fragile: a few hard blows break it off (our addition).
 A shot that lands knocks the target back and is spent (a mortar's balls also stun); shots bounce only off walls and
-crates; every shot kicks the shooter back along the barrel (see `RE_GUNS.md`). Blades cut on the side Hammerfight draws as the edge; the back of a one-sided axe
+crates; a gun kicks the shooter back along the barrel (not the launcher: its rockets push themselves; see `web/src/games/hammer/RE_GUNS.md`). Blades cut on the side Hammerfight draws as the edge; the back of a one-sided axe
 only bludgeons. Weapons, guns and plates are drawn with Hammerfight's own sprites.
 
 The stick tune lives in `hammer.pad` (`stick 420`, `steer 5.6`; 30% softer than before after a play test).
