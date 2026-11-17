@@ -4,6 +4,7 @@ import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
 import hammerPad from "./hammer/hammer.pad?raw";
 import sandboxPad from "./sandbox/sandbox.pad?raw";
+import punchlinePad from "./punchline/punchline.pad?raw";
 import liftoffPad from "./liftoff/liftoff.pad?raw";
 import shovePad from "./shove/shove.pad?raw";
 import stackPad from "./stack/stack.pad?raw";
@@ -368,6 +369,37 @@ export const GAMES: GameDef[] = [
     ],
     host: () => import("./liftoff/host.ts"),
     controller: () => import("./liftoff/controller.ts"),
+  },
+  {
+    id: "punchline",
+    title: "Punchline",
+    tagline: "Write the funnier answer. Steal the room's votes.",
+    minPlayers: 1,
+    maxPlayers: 8,
+    colors: ["#5a0f1f", "#ffe7a3"],
+    glyph: "special",
+    controls: parsePad(punchlinePad, "punchline.pad"),
+    settings: [
+      {
+        key: "time",
+        label: "Answer time",
+        options: [
+          { value: 60, label: "60 s" },
+          { value: 90, label: "90 s" },
+          { value: 120, label: "120 s" },
+        ],
+        default: 90,
+      },
+      { key: "family", label: "Family-friendly prompts only", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: false },
+      {
+        key: "bots",
+        label: "Computer players",
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+      },
+    ],
+    host: () => import("./punchline/host.ts"),
+    controller: () => import("./punchline/controller.ts"),
   },
   {
     id: "sandbox",

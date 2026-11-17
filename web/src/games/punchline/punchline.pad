@@ -1,0 +1,21 @@
+# Punchline: the phone shows your prompt and a text box (type, then Send), then the answers to vote on.
+# Syntax and every setting: web/src/games/kit/pad.ts
+
+controller
+  orientation  portrait
+
+button send
+  label        "Send"
+  hint         "Type your answer to the prompt, then send it. Two prompts a round; the last round has one."
+  style        primary
+  haptic       16ms
+
+choices vote
+  label        "Vote"
+  hint         "Tap the funnier answer. You can change it until the vote closes. No voting for your own."
+  haptic       14ms
+
+buzz
+  write        40 60 40      # time to write
+  vote         25            # a vote opens
+  win          40 40 40 40 120
