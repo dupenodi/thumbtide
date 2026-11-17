@@ -683,6 +683,8 @@ const mount: HostMount = (ctx) => {
     if (inp.g === 1) arena.shield(m);
     if (inp.k === 1) {
       s.k = 1;
+      // with fire held, the stick also aims the guns (sim.ts aim)
+      if (inp.f === 1) arena.aim(m, inp.x, inp.y);
       stickPush(m, inp.x, inp.y);
       return;
     }

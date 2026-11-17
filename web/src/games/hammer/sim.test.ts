@@ -610,14 +610,39 @@ test("guns: the arquebus fires every 0.1 s while held, bullets hurt, the clip re
   assert.ok(shots >= 4 && shots <= 6, `shots in 0.5 s: ${shots}`);
   assert.ok(hits.length > 0, "a bullet hit the target");
   assert.ok(Math.max(...hits) <= 15, `bullet damage ${hits.join(",")}`);
-  run(200, true); // empties the clip and reloads (2 s) at least once
+  run(400, true); // empties the clip and reloads (5 s) at least once
   assert.ok(shots > 20, `shots after the reload: ${shots}`);
   // the clip refills only once it is empty (as in the exe): empty it, then wait out the reload
   while (gun.ammo > 0) run(1, true);
-  run(150, false);
+  run(300, false);
   assert.equal(gun.ammo, gun.spec.clip);
   assert.equal(a.shots.length, 0);
   assert.equal(a.world.bodies.length, bodies);
+});
+
+test("guns: with the trigger held, an aim turns the gun that way and it fires only when lined up", () => {
+  for (const weapon of ["hammer", "flail"] as const) {
+    const a = arena();
+    const m = a.add({ id: 1, name: "A", color: "#f00", weapon, sidearm: "arquebus", x: 480, y: 270 });
+    const gun = m.guns[0]!;
+    const off = () => Math.abs(Math.atan2(Math.sin(gun.body.a), Math.cos(gun.body.a)));
+    let shots = 0;
+    let offAtShot = 0;
+    for (let i = 0; i < 75; i++) {
+      a.fire(m);
+      a.aim(m, 1, 0); // to the right; the gun starts pointing up
+      a.step();
+      for (const e of a.events) {
+        if (e.type !== "shot") continue;
+        shots++;
+        offAtShot = Math.max(offAtShot, off());
+      }
+      a.events.length = 0;
+    }
+    assert.ok(off() < 0.3, `${weapon}: gun angle after 1.5 s ${off().toFixed(2)} rad`);
+    assert.ok(shots > 3, `${weapon}: shots ${shots}`);
+    assert.ok(offAtShot < 0.4, `${weapon}: fired ${offAtShot.toFixed(2)} rad off the aim`);
+  }
 });
 
 test("guns: the mortar fires 5 balls and kicks the machine back; the tribune's back blade shoots", () => {

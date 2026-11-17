@@ -32,6 +32,12 @@ export const EDGE_M = 60;
 export const EDGE_TOP = 110;
 /** px below the frame after which a falling wreck or weapon leaves play (the soft limit no longer holds it). */
 const OUT_OF_PLAY = 300;
+/** Gun aim (OURS, aim()): spring 1/s² and damping 1/s on the gun toward its aim point (Hammerfight's turret pull is 1500), and how far off it may still fire (11°). */
+const GUN_AIM_K = 1500;
+const GUN_AIM_D = 55;
+const GUN_AIM_TOL = (11 * Math.PI) / 180;
+/** The thrust left while a gun aims: full stick speeds the hull up faster than the pull turns the gun. */
+const AIM_THRUST = 0.3;
 /** Real seconds per step. Hammerfight runs physics once per frame at GFX_FRAMERATE = 50. */
 export const STEP = 0.02;
 
@@ -140,6 +146,9 @@ export interface Machine {
   guns: GunState[];
   /** The trigger is held this frame. */
   trigger: boolean;
+  /** This frame's gun aim direction (0, 0 = none: the guns shoot along their axis). */
+  aimX: number;
+  aimY: number;
   /** Shield plates still on the machine, and the kind taken. */
   plateKind: PlateKind | null;
   plates: { body: Body; joint: Joint }[];
@@ -283,6 +292,8 @@ export class Arena {
       shielding: false,
       guns: [],
       trigger: false,
+      aimX: 0,
+      aimY: 0,
       grips: [],
       parts: [],
       part: new Map(),
@@ -351,6 +362,8 @@ export class Arena {
       sidearm: null,
       guns: [],
       trigger: false,
+      aimX: 0,
+      aimY: 0,
       plateKind: null,
       plates: [],
       shielding: false,
@@ -419,6 +432,17 @@ export class Arena {
     m.trigger = true;
   }
 
+  /**
+   * Aim the guns this frame (OURS, the phone's closest match to Hammerfight's mouse): a direction, e.g. the stick.
+   * While the trigger is held with an aim, each gun is pulled round the hull to point that way and fires only when it
+   * does (within GUN_AIM_TOL). Hammerfight's own guns shoot along their axis with no aim; only its NPC turrets turn
+   * toward a target (command 0x400, 0x41d800), and that is the method used here.
+   */
+  aim(m: Machine, x: number, y: number): void {
+    m.aimX = x;
+    m.aimY = y;
+  }
+
   /** Hold the shield this frame. */
   shield(m: Machine): void {
     m.shielding = true;
@@ -454,6 +478,11 @@ export class Arena {
       m.hull.team = t;
       for (const b of m.parts) b.team = t;
       if (m.alive) {
+        // aiming a gun (trigger + a direction) slows the flying, so the gun can come round
+        if (m.trigger && m.guns.length && m.armed && Math.hypot(m.aimX, m.aimY) > 0.3) {
+          m.inx *= AIM_THRUST;
+          m.iny *= AIM_THRUST;
+        }
         if (m.monster) this.creatureDrive(m, dt);
         else this.drive(m, dt, K);
         // Shock wears off (base tick 0x411af0): stun −= (R + 1) · dt · 0.5.
@@ -463,6 +492,7 @@ export class Arena {
       if (m.guns.length) this.guns(m, dt);
       if (m.plates.length > 1 && m.shielding && m.alive && m.stun <= 0) this.spreadPlates(m);
       m.trigger = false;
+      m.aimX = m.aimY = 0;
       m.shielding = false;
       m.inx = m.iny = 0;
       this.limit(m);
@@ -559,9 +589,11 @@ export class Arena {
     m.plates = [];
   }
 
-  /** Reload timers, and a shot from every ready gun while the trigger is held (0x4184xx). */
+  /** Reload timers, the aim pull, and a shot from every ready gun while the trigger is held (0x4184xx). */
   private guns(m: Machine, dt: number): void {
     const canFire = m.trigger && m.alive && m.armed && m.stun <= 0 && this.tuning.damage > 0;
+    const al = Math.hypot(m.aimX, m.aimY);
+    const aiming = canFire && al > 0.3;
     for (const g of m.guns) {
       if (g.timer > 0) {
         g.timer -= dt;
@@ -570,7 +602,22 @@ export class Arena {
           if (g.ammo <= 0) g.ammo = g.spec.clip;
         }
       }
-      if (!canFire || g.timer > 0 || g.ammo < 1) continue;
+      const b = g.body;
+      // the tie that holds a gun across from its weapon gives way while it aims
+      for (const j of m.joints) if (j.type === 0 && (j.a === b || j.b === b)) j.strength = aiming ? 0 : 1;
+      let aligned = true;
+      if (aiming) {
+        const ux = m.aimX / al;
+        const uy = m.aimY / al;
+        // the turret pull: a damped spring toward the point on the gun's rod circle that faces the aim
+        const rod = m.grips.find((j) => j.b === b)?.radius ?? 20;
+        const h = m.hull;
+        const ex = h.x + ux * rod - b.x;
+        const ey = h.y + uy * rod - b.y;
+        b.applyForce(b.mass * (GUN_AIM_K * ex - GUN_AIM_D * (b.vx - h.vx)), b.mass * (GUN_AIM_K * ey - GUN_AIM_D * (b.vy - h.vy)));
+        aligned = Math.cos(b.a) * ux + Math.sin(b.a) * uy > Math.cos(GUN_AIM_TOL);
+      }
+      if (!canFire || !aligned || g.timer > 0 || g.ammo < 1) continue;
       g.ammo--;
       g.timer = g.ammo > 0 ? g.spec.interval : g.spec.reload;
       this.shoot(m, g, dt);
@@ -965,13 +1012,16 @@ export class Arena {
 
     // Two-sided weapons (0x512ff0…): which side touched decides the sharpness and the blade (an axe's back is blunt,
     // the katar's back edge cuts at 0.6). Then blades cut harder the faster they slide across.
+    // The full (_d) values belong to the part's +y face: Hammerfight's sprites draw every one-sided blade's edge there
+    // (and the axes' spikes, which carry _u values, on −y). The exe's side test reads the contact normal; its sign was
+    // not traced, so the side here follows the art (it was the other way round: the spines cut).
     let bladeable = by.bladeable;
     let sharpness = by.sharpness;
     if (by.bladeableU !== by.bladeable || by.sharpnessU !== by.sharpness) {
       const s = Math.sin(byBody.a);
       const co = Math.cos(byBody.a);
       const ly = -(c.x - byBody.x) * s + (c.y - byBody.y) * co;
-      if (ly > 0) {
+      if (ly < 0) {
         bladeable = by.bladeableU;
         sharpness = by.sharpnessU;
       }

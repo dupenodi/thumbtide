@@ -372,10 +372,13 @@ function guns(arena: Arena, m: Machine, enemy: Machine): void {
     const tFly = d0 / Math.max(300, g.spec.speed);
     const dx = enemy.hull.x + enemy.hull.vx * tFly - b.x;
     const dy = enemy.hull.y + enemy.hull.vy * tFly - b.y;
-    const d = Math.hypot(dx, dy);
+    // the same aim a phone has: hold fire and point at the lead point (sim.ts aim; it fires when lined up). Aiming
+    // slows the flying, so only once the gun is roughly that way already.
+    const d = Math.hypot(dx, dy) || 1;
     const off = Math.abs(Math.atan2(Math.sin(Math.atan2(dy, dx) - b.a), Math.cos(Math.atan2(dy, dx) - b.a)));
-    if (off < Math.max(0.12, 30 / d)) {
+    if (off < 1.05) {
       arena.fire(m);
+      arena.aim(m, dx / d, dy / d);
       break;
     }
   }

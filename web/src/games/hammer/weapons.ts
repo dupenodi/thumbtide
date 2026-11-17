@@ -200,7 +200,7 @@ export interface SidearmSpec {
 }
 
 export const SIDEARMS: Record<GunKind, SidearmSpec> = {
-  // gun_blade.seria: density 40.8, sharpness 5 (it has a bayonet), m_recoil_time 2; the item code sets a clip of 20.
+  // gun_blade.seria: density 40.8, sharpness 5 (it has a bayonet); the item code sets a clip of 20 and a 5 s reload.
   arquebus: {
     kind: "arquebus",
     label: "Arquebus",
@@ -210,10 +210,14 @@ export const SIDEARMS: Record<GunKind, SidearmSpec> = {
       mesh: [-16.347, -9.848, -16.494, 4.143, 16.494, 12.124, 9.118, -12.124],
       density: 40.8006,
       sharpness: 5,
-      bladeable: 0,
+      // the bayonet cuts on one side (blade d 1 / u 0; sharpness_u 0.3, here 1.5)
+      bladeable: 1,
+      bladeableU: 0,
+      sharpnessU: 1.5,
       look: "gun",
       material: "iron",
-      gun: { ...BULLET, clip: 20, reload: 2 },
+      // m_recoil_time: the exe sets 5 s for the arquebus (the file says 2)
+      gun: { ...BULLET, clip: 20, reload: 5 },
     },
   },
   // mortar (id 240): box 22 × 10, density 25, rod 18, clip 3, m_recoil_time 5; 5 balls a shot with +-0.2 spread,
@@ -340,7 +344,9 @@ export function armedSpec(kind: WeaponKind, gun: GunKind | null): WeaponSpec {
         ...w.joints,
         { a: "hull", b: "gun", type: 2, radius: g.rod, necess: 5 },
         // a rod weapon holds the gun straight across (like the dual sets); a chain can't, so the gun swings free
-        ...(rigid ? [{ a: first.b, b: "gun", type: 0, radius: first.radius + g.rod, necess: 1 }] : []),
+        // longer than the two rods (×1.17, as the Demo pishal tie): it always pushes the gun round to the far side;
+        // a tie of exactly their sum did almost nothing near 180°, so the gun flailed
+        ...(rigid ? [{ a: first.b, b: "gun", type: 0, radius: (first.radius + g.rod) * 1.17, necess: 1 }] : []),
       ],
     };
     combined.set(key, c);
@@ -466,7 +472,7 @@ const list: WeaponSpec[] = [
   // hammer_iron.seria: rod 60, 17 × 29, density 60, sharpness 2
   rodWeapon("hammer", "hammer", {
     tier: 2,
-    label: "Spiked hammer",
+    label: "Iron hammer",
     blurb: "Heavy rod. Big stuns.",
     rod: 60,
     part: { mesh: HAMMER_HEAD, density: 60, sharpness: 2, bladeable: 0, look: "hammer", material: "iron" },
@@ -957,12 +963,13 @@ const list: WeaponSpec[] = [
     striker: "ball",
     parts: [
       ...chain(8, 10, 9, true).parts,
-      { key: "ball", mesh: ngon(6, 39, 20), density: 50, sharpness: 2, bladeable: 0.9, bladeableU: 0, hang: 96, look: "axe", material: "iron" },
+      { key: "ball", mesh: ngon(6, 39, 20), density: 50, sharpness: 2, bladeable: 0.9, bladeableU: 0, hang: 96, angle: 0, look: "axe", material: "iron" },
     ],
     joints: [
       { a: "hull", b: "link0", type: 3, radius: 10, necess: 999 },
       ...chain(8, 10, 9, true).joints,
-      { a: "link7", b: "ball", type: 5, radius: 7, sbx: -16, necess: 999 },
+      // shiftB_y −16 (0x48bdfd): the head hangs by its ring, the crescent down
+      { a: "link7", b: "ball", type: 5, radius: 7, sby: -16, necess: 999 },
     ],
   },
   // mace_orb (207): 10 chain_small links, mace_orb_hand, an 8-gon ball 25 × 25, density 70, sharpness 2
