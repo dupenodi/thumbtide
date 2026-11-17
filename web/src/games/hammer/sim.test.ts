@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Body, joint, World } from "./engine.ts";
-import { Arena, VIEW_H, VIEW_W } from "./sim.ts";
+import { stickPush } from "./arenas.ts";
+import { Arena, edgeAt, edgeOut, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
 import { MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
@@ -629,8 +630,10 @@ test("guns: with the trigger held, an aim turns the gun that way and it fires on
     let shots = 0;
     let offAtShot = 0;
     for (let i = 0; i < 75; i++) {
+      // a phone: fire held and the stick to the right (it flies and aims); the gun starts pointing up
       a.fire(m);
-      a.aim(m, 1, 0); // to the right; the gun starts pointing up
+      a.aim(m, 1, 0);
+      stickPush(a, m, 1, 0);
       a.step();
       for (const e of a.events) {
         if (e.type !== "shot") continue;
@@ -699,4 +702,37 @@ test("level arenas: seats start clear of obstacles, cages hang on their ropes, b
     }
     assert.equal(ms.filter((m) => m.alive).length, 8, `${kind}: a machine died with no fight`);
   }
+});
+
+test("edges: a one-sided axe cuts with its +y face (the edge the sprite draws) and is blunt on its back", () => {
+  const axe = WEAPONS.axe.parts.find((p) => p.key === WEAPONS.axe.striker)!;
+  const t = { bladeable: axe.bladeable, bladeableU: axe.bladeableU ?? axe.bladeable, sharpness: axe.sharpness, sharpnessU: axe.sharpnessU ?? axe.sharpness };
+  for (const a of [0, 1.2, -2.5]) {
+    const b = new Body(axe.mesh, axe.density).place(100, 50, a);
+    // a contact 8 px out on the part's +y, then on its −y
+    edgeAt(t, b, 100 - 8 * Math.sin(a), 50 + 8 * Math.cos(a));
+    assert.deepEqual({ ...edgeOut }, { bladeable: axe.bladeable, sharpness: axe.sharpness }, `+y at a=${a}`);
+    edgeAt(t, b, 100 + 8 * Math.sin(a), 50 - 8 * Math.cos(a));
+    assert.deepEqual({ ...edgeOut }, { bladeable: t.bladeableU, sharpness: t.sharpnessU }, `−y at a=${a}`);
+  }
+});
+
+test("guns: only a loaded sidearm aims; the tribune's back blade and a reloading gun don't slow the flying", () => {
+  const fly = (weapon: "tribune" | "hammer", sidearm: "arquebus" | null, empty: boolean, fire: boolean) => {
+    const a = arena();
+    const m = a.add({ id: 1, name: "A", color: "#f00", weapon, sidearm, x: 300, y: 270 });
+    if (empty) for (const g of m.guns) (g.ammo = 0), (g.timer = 5);
+    for (let i = 0; i < 40; i++) {
+      if (fire) {
+        a.fire(m);
+        a.aim(m, 1, 0);
+      }
+      stickPush(a, m, 1, 0);
+      a.step();
+    }
+    return m.hull.x;
+  };
+  assert.ok(Math.abs(fly("tribune", null, false, true) - fly("tribune", null, false, false)) < 30, "tribune slowed by aiming");
+  assert.ok(Math.abs(fly("hammer", "arquebus", true, true) - fly("hammer", "arquebus", true, false)) < 30, "reloading gun slowed the flying");
+  assert.ok(fly("hammer", "arquebus", false, true) < fly("hammer", "arquebus", false, false) - 30, "a loaded gun's aim slows the flying");
 });

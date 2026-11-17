@@ -365,6 +365,8 @@ function seek(arena: Arena, m: Machine, x: number, y: number, speed: number, t: 
 
 function guns(arena: Arena, m: Machine, enemy: Machine): void {
   for (const g of m.guns) {
+    // a reloading gun: don't hold fire (aiming would only slow the flying)
+    if (g.ammo < 1) continue;
     const b = g.body;
     const d0 = Math.hypot(enemy.hull.x - b.x, enemy.hull.y - b.y);
     if (d0 > (g.spec.pellets > 1 ? 280 : 650)) continue;

@@ -38,6 +38,28 @@ const GUN_AIM_D = 55;
 const GUN_AIM_TOL = (11 * Math.PI) / 180;
 /** The thrust left while a gun aims: full stick speeds the hull up faster than the pull turns the gun. */
 const AIM_THRUST = 0.3;
+/** Output of edgeAt (read it before the next call). */
+export const edgeOut = { bladeable: 0, sharpness: 0 };
+/**
+ * Two-sided weapons (0x512ff0…): which side of the part a contact at (x, y) is on decides its sharpness and blade (an
+ * axe's back is blunt, the katar's back edge cuts at 0.6). The full (_d) values belong to the part's +y face:
+ * Hammerfight's sprites draw every one-sided blade's edge there (and the axes' spikes, which carry _u values, on −y).
+ * The exe's side test reads the contact normal; its sign was not traced, so the side here follows the art (before
+ * 2026-11-17 it was the other way round: the spines cut).
+ */
+export function edgeAt(t: Pick<Tag, "bladeable" | "bladeableU" | "sharpness" | "sharpnessU">, b: Body, x: number, y: number): void {
+  edgeOut.bladeable = t.bladeable;
+  edgeOut.sharpness = t.sharpness;
+  if (t.bladeableU === t.bladeable && t.sharpnessU === t.sharpness) return;
+  const ly = -(x - b.x) * Math.sin(b.a) + (y - b.y) * Math.cos(b.a);
+  if (ly < 0) {
+    edgeOut.bladeable = t.bladeableU;
+    edgeOut.sharpness = t.sharpnessU;
+  }
+}
+
+/** A gun that aims: a sidearm (part key "gun", not a dual set's back blade) with a round in the clip. */
+const aimable = (g: GunState) => g.ammo >= 1 && (g.body.data as Tag | null)?.spec?.key === "gun";
 /** Real seconds per step. Hammerfight runs physics once per frame at GFX_FRAMERATE = 50. */
 export const STEP = 0.02;
 
@@ -478,8 +500,8 @@ export class Arena {
       m.hull.team = t;
       for (const b of m.parts) b.team = t;
       if (m.alive) {
-        // aiming a gun (trigger + a direction) slows the flying, so the gun can come round
-        if (m.trigger && m.guns.length && m.armed && Math.hypot(m.aimX, m.aimY) > 0.3) {
+        // aiming a loaded sidearm (trigger + a direction) slows the flying, so the gun can come round
+        if (m.trigger && m.guns.length && m.armed && Math.hypot(m.aimX, m.aimY) > 0.3 && m.guns.some(aimable)) {
           m.inx *= AIM_THRUST;
           m.iny *= AIM_THRUST;
         }
@@ -603,10 +625,12 @@ export class Arena {
         }
       }
       const b = g.body;
+      // only a loaded sidearm aims (a reloading gun or the tribune's back blade keeps its place)
+      const aimThis = aiming && aimable(g);
       // the tie that holds a gun across from its weapon gives way while it aims
-      for (const j of m.joints) if (j.type === 0 && (j.a === b || j.b === b)) j.strength = aiming ? 0 : 1;
+      for (const j of m.joints) if (j.type === 0 && (j.a === b || j.b === b)) j.strength = aimThis ? 0 : 1;
       let aligned = true;
-      if (aiming) {
+      if (aimThis) {
         const ux = m.aimX / al;
         const uy = m.aimY / al;
         // the turret pull: a damped spring toward the point on the gun's rod circle that faces the aim
@@ -1010,22 +1034,9 @@ export class Arena {
     // Unowned blunt things (a wreck, a loose chain) count for 10 % against a machine.
     const effect = !owned && by.sharpness <= 1 ? COLLISION_EFFECT : 1;
 
-    // Two-sided weapons (0x512ff0…): which side touched decides the sharpness and the blade (an axe's back is blunt,
-    // the katar's back edge cuts at 0.6). Then blades cut harder the faster they slide across.
-    // The full (_d) values belong to the part's +y face: Hammerfight's sprites draw every one-sided blade's edge there
-    // (and the axes' spikes, which carry _u values, on −y). The exe's side test reads the contact normal; its sign was
-    // not traced, so the side here follows the art (it was the other way round: the spines cut).
-    let bladeable = by.bladeable;
-    let sharpness = by.sharpness;
-    if (by.bladeableU !== by.bladeable || by.sharpnessU !== by.sharpness) {
-      const s = Math.sin(byBody.a);
-      const co = Math.cos(byBody.a);
-      const ly = -(c.x - byBody.x) * s + (c.y - byBody.y) * co;
-      if (ly < 0) {
-        bladeable = by.bladeableU;
-        sharpness = by.sharpnessU;
-      }
-    }
+    // which edge touched (edgeAt); then blades cut harder the faster they slide across
+    edgeAt(by, byBody, c.x, c.y);
+    let { bladeable, sharpness } = edgeOut;
     // armoured monsters: blades get no cut bonus (the game's tips: swords are weak against heavy armour)
     let cut = victim.monster?.layout.armored ? 1 : cutFactor(byBody, bladeable, c.nx, c.ny);
 
