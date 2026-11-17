@@ -426,6 +426,15 @@
   transition: transform 0.2s linear;
 }
 
+/* the wave timer's last seconds (co-op vs monsters): red text and bar */
+.hm-warm.urgent b {
+  color: #ff5d4d;
+}
+
+.hm-warm.urgent s {
+  background: #ff3d2d;
+}
+
 /* ---- lite (the TV): no filters, no gradient text, no endless animations */
 .hm-lite .hm-ann b {
   color: var(--c);

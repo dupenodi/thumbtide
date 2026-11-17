@@ -753,6 +753,25 @@ test("walls: a reeling machine slams into one; hard hits break it", () => {
   assert.ok(ar.obstacles[0]!.hp < 60 && ar.obstacles[0]!.hp > 0, `wall hp ${ar.obstacles[0]!.hp}`);
 });
 
+test("wave timer: leftovers count toward the worm cap; a lost worm flies in again whole", async () => {
+  const { MAX_WORMS, relaunchLost, waveRoom, waveSeconds, waveWorms } = await import("./arenas.ts");
+  assert.equal(waveRoom(4, 0, 100), waveWorms(4));
+  assert.equal(waveRoom(8, MAX_WORMS - 1, 100), 1, "leftovers count");
+  assert.equal(waveRoom(8, 0, 25), 2, "body budget");
+  assert.ok(waveSeconds(1) < waveSeconds(4));
+  const ar = arena();
+  const m = ar.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", x: 200, y: 270 });
+  const w = ar.addMonster({ id: 50, team: 9, kind: "worm", x: 900, y: 450, dir: 0 });
+  for (let i = 0; i < 5; i++) ar.step();
+  const gaps = () => w.parts.map((b, i) => Math.hypot(b.x - (i ? w.parts[i - 1]! : w.hull).x, b.y - (i ? w.parts[i - 1]! : w.hull).y));
+  const before = gaps();
+  assert.equal(relaunchLost(ar, [w], [m]), 1);
+  assert.ok(w.hull.x < 0 || w.hull.x > ar.w, "back at a side");
+  gaps().forEach((g, i) => assert.ok(Math.abs(g - before[i]!) < 0.01, "the worm kept its shape"));
+  // near a machine: stays
+  assert.equal(relaunchLost(ar, [w], [ar.add({ id: 2, name: "B", color: "#0f0", weapon: "hammer", x: w.hull.x + 10, y: w.hull.y })]), 0);
+});
+
 test("worms fly in only where the side is open to the fight", async () => {
   const { ARENAS, applyArenaKind, openSideRows } = await import("./arenas.ts");
   for (const kind of Object.keys(ARENAS)) {
