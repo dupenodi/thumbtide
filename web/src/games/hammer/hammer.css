@@ -381,6 +381,15 @@
 }
 
 /* ---- warm-up strip */
+/* the frame-rate counter: tiny, dim, in the free bottom-right corner (no effects, so it stays cheap on the TV) */
+.hm-fps {
+  position: absolute;
+  right: 0.6vw;
+  bottom: 0.4vh;
+  font: 1.1vh/1 ui-monospace, monospace;
+  color: rgba(255, 255, 255, 0.4);
+}
+
 .hm-warm {
   position: absolute;
   bottom: 4vh;
