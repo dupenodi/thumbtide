@@ -78,9 +78,12 @@ const WALL_SLAM_V = 150;
 const PICKUP_RANGE = 34;
 /** Not in Hammerfight: seconds after losing a weapon before a machine can take one. */
 const PICKUP_DELAY = 1;
-/** Bullets go after this many contacts (the exe: 2), mortar balls after 5; and after SHOT_LIFE seconds. */
+/**
+ * Bullets go after this many contacts with walls and crates (the exe: 2), mortar balls after 3 (the exe: 5; fewer
+ * bodies on the TV); and after SHOT_LIFE seconds. A hit on a machine, its weapon or a plate spends a shot at once.
+ */
 const SHOT_CONTACTS = 2;
-const BALL_CONTACTS = 5;
+const BALL_CONTACTS = 3;
 const SHOT_LIFE = 1.5;
 /** At most this many shots in the air (each is a body: they count in the TV's body budget). The oldest goes first. */
 export const MAX_SHOTS = 24;
@@ -92,6 +95,31 @@ export const SLOMO_V = 10;
 export const SLOMO_CUT = 3;
 /** A bullet does 3x damage against monster flesh (the exe tags it 0x6c). */
 const MONSTER_SHOT_BONUS = 3;
+/** A shot's `hit.push` is a speed on this mass (the bare hull, MACHINE.density × its mesh). */
+const PUSH_MASS = 66000;
+/**
+ * Recoil per shot = this share of the shot's push (OURS): arquebus 20 px/s on the bare hull, mortar 150, heavy mortar
+ * 160, launcher 0 (its rockets push themselves, as in the exe). A share, not all: the machine is more than the bare
+ * hull (weapon and gun), and the exe puts the kick on the gun body only. Not tuned further (OURS).
+ */
+const RECOIL_SHARE = 0.5;
+/** Seconds a shot flies through a teammate it touched (a bullet covers 80 px, a mortar ball 44). */
+const SHOT_GHOST = 0.04;
+/** A shot's push can't make a light part (a claw, a link) jump faster than this, px/s. */
+const PUSH_MAX_DV = 600;
+/**
+ * Fragile guns (OURS; the exe's guns never break, RE_GUNS.md §6, §9): a sidearm takes the impact (impulse · 1e-5) of each enemy blow from
+ * GUN_HIT_MIN up, at most GUN_HIT_MAX a blow (one huge blow is not enough), and of every shot × GUN_SHOT_SHARE (a
+ * bullet 13, a mortar ball 20), one blow or shot per GUN_HIT_GAP, and breaks
+ * off at GUN_HP: four hard blows. Measured in 2 v 2 bot rounds, blows on guns: impact p50 35, p90 107. With 120 and
+ * no cap the guns broke after a median 1.1 s, in the opening clash.
+ */
+export const GUN_HP = 200;
+const GUN_HIT_MIN = 20;
+const GUN_HIT_MAX = 60;
+const GUN_SHOT_SHARE = 0.5;
+/** Seconds between two blows that count on one gun (a grinding contact reports every step). */
+const GUN_HIT_GAP = 0.3;
 
 export interface Tag {
   /** The machine this body belongs to now (a picked-up weapon changes owner). */
@@ -105,8 +133,11 @@ export interface Tag {
   bladeableU: number;
   /** m_sharpness_u side (equal to sharpness when the weapon is the same on both sides). */
   sharpnessU: number;
-  /** A gun pulled round by its aim this step (OURS): it pushes but does no damage, so the pull can't make a club of it. */
-  aiming?: boolean;
+  /**
+   * A sidearm's body (OURS): it collides but never hurts (no damage, no stun, no plate or crate breaking), so the aim
+   * pull and its weight can't make a club of it; and it takes damage itself (fragile, GUN_HP).
+   */
+  sidearm?: GunState;
   /** m_jaws: a bite adds 0.3–3 × jaws damage (monster jaws). */
   jaws?: number;
   /** A bullet or mortar ball (its owner is `m`). */
@@ -142,6 +173,9 @@ export interface GunState {
   ammo: number;
   /** Seconds until it can fire again (between shots, or the reload). */
   timer: number;
+  /** Sidearms: what it can still take before it breaks off (GUN_HP), and when the last blow counted. */
+  hp: number;
+  hitAt: number;
 }
 
 export interface Shot {
@@ -151,6 +185,14 @@ export interface Shot {
   born: number;
   contacts: number;
   maxContacts: number;
+  /** What it does to a machine it hits, and its muzzle speed (the hit scales with the speed it lands at). */
+  hit: GunSpec["hit"];
+  speed: number;
+  /** Its velocity at the end of the last step (the contact has already bounced it when onContact runs). */
+  vx: number;
+  vy: number;
+  /** Passing through a teammate: not solid until this arena time (0 = solid). */
+  ghostUntil?: number;
   /** Rockets: the blast when it goes. */
   blast?: GunSpec["blast"];
 }
@@ -211,11 +253,15 @@ export interface Machine {
 }
 
 export type SimEvent =
-  | { type: "hit"; attacker: Machine; victim: Machine; dmg: number; impact: number; cut: number; x: number; y: number }
+  | { type: "hit"; attacker: Machine; victim: Machine; dmg: number; impact: number; cut: number; x: number; y: number; shot?: boolean }
   | { type: "clash"; a: Machine; b: Machine; impact: number; x: number; y: number }
   | { type: "disarm"; victim: Machine; by: Machine; x: number; y: number }
   | { type: "pickup"; m: Machine; weapon: WeaponKind }
   | { type: "shot"; m: Machine; ball: boolean; x: number; y: number }
+  /** A shot spent on a weapon, plate or gun (no damage to the machine): a spark. */
+  | { type: "ping"; m: Machine; heavy: boolean; x: number; y: number }
+  /** A sidearm took too much and broke off. */
+  | { type: "gunbreak"; m: Machine; by: Machine; x: number; y: number }
   | { type: "blast"; m: Machine; radius: number; x: number; y: number }
   | { type: "plateoff"; m: Machine; by: Machine; x: number; y: number }
   | { type: "slam"; m: Machine; impact: number; x: number; y: number }
@@ -631,7 +677,6 @@ export class Arena {
       const aimThis = aiming && aimable(g);
       // the tie that holds a gun across from its weapon gives way while it aims
       for (const j of m.joints) if (j.type === 0 && (j.a === b || j.b === b)) j.strength = aimThis ? 0 : 1;
-      (b.data as Tag).aiming = aimThis;
       let aligned = true;
       if (aimThis) {
         const ux = m.aimX / al;
@@ -654,8 +699,6 @@ export class Arena {
   private shoot(m: Machine, g: GunState, dt: number): void {
     const gs = g.spec;
     const b = g.body;
-    let px = 0;
-    let py = 0;
     for (let i = 0; i < gs.pellets; i++) {
       const a = b.a + (Math.random() * 2 - 1) * gs.spread;
       const dx = Math.cos(a);
@@ -666,9 +709,12 @@ export class Arena {
       const y = b.y + dy * d;
       const shot = new Body(octagon(gs.shotR), gs.shotDensity).place(x, y, a);
       // the muzzle speed plus the gun's own motion
-      shot.setVelocity(b.vx + dx * gs.speed, b.vy + dy * gs.speed, 0, dt);
+      const vx = b.vx + dx * gs.speed;
+      const vy = b.vy + dy * gs.speed;
+      shot.setVelocity(vx, vy, 0, dt);
       shot.group = m.id;
-      shot.team = this.tuning.teamCollision >= 1 ? -1 : m.team;
+      // shots fly through teammates unless friendly fire is on (with no damage they would only shove an ally about)
+      shot.team = this.tuning.teamDamage >= 1 ? -1 : m.team;
       shot.spinDamp = 0;
       // a rocket flies straight under its own thrust and goes off on the first touch
       if (gs.blast) shot.gravity = false;
@@ -680,15 +726,27 @@ export class Arena {
         contacts: 0,
         maxContacts: gs.blast ? 1 : gs.look === "ball" ? BALL_CONTACTS : SHOT_CONTACTS,
         blast: gs.blast,
+        hit: gs.hit,
+        speed: gs.speed,
+        vx,
+        vy,
       };
       shot.data = { m, hull: false, striker: false, sharpness: gs.shotSharpness, bladeable: 0, bladeableU: 0, sharpnessU: gs.shotSharpness, spec: null, shot: sh } satisfies Tag;
       this.world.add(shot);
       this.shots.push(sh);
-      px += shot.mass * dx * gs.speed;
-      py += shot.mass * dy * gs.speed;
     }
-    // the mortar kicks back (the exe: an impulse equal to the balls' momentum)
-    if (gs.recoil > 0) b.setVelocity(b.vx - (px * gs.recoil) / b.mass, b.vy - (py * gs.recoil) / b.mass, b.w, dt);
+    // Recoil: the shooter is kicked back along the barrel by RECOIL_SHARE of the shot's momentum (its pellets' pushes;
+    // the exe: the mortars' full momentum on the gun body, none for the arquebus; a rocket pushes itself, so none).
+    // Most of it goes on the hull, so the whole machine feels it; the rest jerks the gun on its rod.
+    const kick = RECOIL_SHARE * gs.pellets * gs.hit.push;
+    if (kick > 0) {
+      const ux = Math.cos(b.a);
+      const uy = Math.sin(b.a);
+      const P = kick * PUSH_MASS;
+      const h = m.hull;
+      h.setVelocity(h.vx - (ux * P * 0.7) / h.mass, h.vy - (uy * P * 0.7) / h.mass, h.w, dt);
+      b.setVelocity(b.vx - (ux * P * 0.3) / b.mass, b.vy - (uy * P * 0.3) / b.mass, b.w, dt);
+    }
     if (this.shots.length > MAX_SHOTS) for (let i = 0; i < this.shots.length - MAX_SHOTS; i++) this.shots[i]!.body.dead = true;
     this.events.push({ type: "shot", m, ball: gs.look === "ball", x: b.x, y: b.y });
   }
@@ -702,6 +760,13 @@ export class Arena {
       if (b.dead) {
         any = true;
         if (sh.blast) this.blast(sh);
+      } else {
+        sh.vx = b.vx;
+        sh.vy = b.vy;
+        if (sh.ghostUntil && this.t >= sh.ghostUntil) {
+          sh.ghostUntil = 0;
+          b.solid = true;
+        }
       }
     }
     if (any) this.sweepShots();
@@ -732,7 +797,7 @@ export class Arena {
         if (d > bl.radius) continue;
         const k = 1 - d / bl.radius;
         m.stun = Math.min(1, m.stun + 0.5 * k);
-        this.damage(m, Math.round(bl.damage * k * (this.tuning.damage / 0.1)), owner, true, bl.push * k, 1, m.hull.x, m.hull.y);
+        this.damage(m, Math.round(bl.damage * k * (this.tuning.damage / 0.1)), owner, true, bl.push * k, 1, m.hull.x, m.hull.y, true);
       }
     }
     this.events.push({ type: "blast", m: owner, radius: bl.radius, x, y });
@@ -955,7 +1020,7 @@ export class Arena {
   /** A weapon, shot or machine hits a crate: the game's damage formula (blunt rule included) takes its health. */
   private hitObstacle(o: Obstacle, by: Tag, byBody: Body, c: ContactReport): void {
     // no damage in the warm-up (damage 0): the crates are there for the fight
-    if (!breakable(o.kind) || o.hp <= 0 || by.aiming || !this.owned(by) || this.tuning.damage <= 0) return;
+    if (!breakable(o.kind) || o.hp <= 0 || by.sidearm || !this.owned(by) || this.tuning.damage <= 0) return;
     const impact = c.impulse * 1e-5;
     if (!by.shot && c.approach < this.tuning.bluntMinV) return;
     const dmg = Math.floor(this.tuning.damage * Math.max(1, by.sharpness) * impact);
@@ -981,16 +1046,27 @@ export class Arena {
       if (!t) return;
       // a reeling machine smashed into a crate or a pillar
       if (t.hull) this.slam(t.m, c.impulse * 1e-5, c.x, c.y);
+      // a shot ricochets off walls and crates (losing speed: CoR 0.3) a few times
+      if (t.shot) t.shot.contacts++;
       this.hitObstacle((oa ?? ob)!, t, oa ? c.b : c.a, c);
       return;
     }
     const ta = c.a.data as Tag | null;
     const tb = c.b.data as Tag | null;
     if (!ta || !tb || ta.m === tb.m) return;
-    if (ta.shot) ta.shot.contacts++;
-    if (tb.shot) tb.shot.contacts++;
+    if (ta.shot || tb.shot) {
+      if (ta.shot && tb.shot) {
+        ta.shot.contacts++;
+        tb.shot.contacts++;
+      } else if (ta.shot) this.shotHit(c.a, ta, c.b, tb, c);
+      else this.shotHit(c.b, tb, c.a, ta, c);
+      return;
+    }
     const impact = c.impulse * 1e-5;
     if (impact <= 0) return;
+    // a blow on an enemy's sidearm wears it down (it breaks off at GUN_HP)
+    if (ta.sidearm && this.owned(tb) && this.enemies(tb.m, ta.m)) this.gunHurt(ta.m, ta.sidearm, impact, tb.credit ?? tb.m, c.x, c.y);
+    if (tb.sidearm && this.owned(ta) && this.enemies(ta.m, tb.m)) this.gunHurt(tb.m, tb.sidearm, impact, ta.credit ?? ta.m, c.x, c.y);
 
     // A slam: a machine still reeling from a stunning hit runs into another machine or into debris (not into a
     // weapon: that is a hit of its own). OURS.
@@ -1025,11 +1101,125 @@ export class Arena {
     return !!t.shot || (t.m.alive && (t.hull || (t.plate ? !t.loose : t.m.armed)));
   }
 
+  /** Can a's hits hurt b (other machine, and not a teammate with friendly fire off)? */
+  private enemies(a: Machine, b: Machine): boolean {
+    return a !== b && (a.team !== b.team || this.tuning.teamDamage >= 1);
+  }
+
+  /**
+   * A shot meets another machine's body (OURS; the exe: RE_GUNS.md §2; the port: §9). On a live machine it is spent at once: its hit's
+   * push goes into the body it struck along its flight; a hull takes its damage and stun; a sidearm wears down; a
+   * plate may come off (its m_overkill); on a weapon it only pushes and sparks. Wrecks, loose weapons and debris just
+   * deflect it (a contact like a wall's).
+   */
+  private shotHit(sBody: Body, st: Tag, oBody: Body, ot: Tag, c: ContactReport): void {
+    const sh = st.shot!;
+    const v = ot.m;
+    if (sh.contacts >= sh.maxContacts) return;
+    // a teammate with friendly fire off: the shot flies on through (with team collision off they never touch; with
+    // it on, the engine has bounced it: take the bounce back from both, and let the shot pass for SHOT_GHOST s)
+    if (v.alive && !this.enemies(st.m, v)) {
+      const dt = STEP * this.timewarp;
+      if (oBody.invMass > 0) {
+        const k = sBody.mass / oBody.mass;
+        oBody.setVelocity(oBody.vx + (sBody.vx - sh.vx) * k, oBody.vy + (sBody.vy - sh.vy) * k, oBody.w, dt);
+      }
+      sBody.setVelocity(sh.vx, sh.vy, sBody.w, dt);
+      sBody.solid = false;
+      sh.ghostUntil = this.t + SHOT_GHOST;
+      return;
+    }
+    if (!v.alive || ot.loose || ot.gibUntil !== undefined || !(ot.hull || ot.plate || v.armed)) {
+      sh.contacts++;
+      return;
+    }
+    // spent: no more contacts this step, and ageShots takes it out (a rocket goes off there)
+    sh.contacts = sh.maxContacts;
+    sBody.solid = false;
+    if (sh.blast) return;
+    const tn = this.tuning;
+    const sp = Math.hypot(sh.vx, sh.vy);
+    if (sp < 1) return;
+    const k = clamp(sp / sh.speed, 0.3, 1.2);
+    const ux = sh.vx / sp;
+    const uy = sh.vy / sp;
+    // the push (an impulse along the flight; a light part, such as a worm's head or tail, gets at most twice the
+    // hull's speed and never more than PUSH_MAX_DV)
+    const J = sh.hit.push * k * PUSH_MASS;
+    const dv = Math.min(J / oBody.mass, 2 * sh.hit.push * k, PUSH_MAX_DV);
+    if (oBody.invMass > 0) oBody.setVelocity(oBody.vx + ux * dv, oBody.vy + uy * dv, oBody.w, STEP * this.timewarp);
+    const impact = J * 1e-5;
+    const by = st.m;
+    // the warm-up (damage 0): the push only
+    const foe = tn.damage > 0;
+    if (ot.hull) {
+      if (!foe) return;
+      if (sh.hit.stun > 0) {
+        v.stun = Math.min(tn.stunMax, v.stun + sh.hit.stun * k);
+        v.slamUntil = this.t + SLAM_S;
+      }
+      const bonus = v.monster && sh.look === "bullet" ? MONSTER_SHOT_BONUS : 1;
+      const dmg = Math.max(1, Math.round(sh.hit.dmg * k * bonus * (tn.damage / 0.1)));
+      if (sh.hit.dmg > 0) this.damage(v, dmg, by, true, impact, 1, c.x, c.y, true);
+      return;
+    }
+    this.events.push({ type: "ping", m: v, heavy: impact > 40, x: c.x, y: c.y });
+    if (!foe) return;
+    if (ot.sidearm) this.gunHurt(v, ot.sidearm, impact * GUN_SHOT_SHARE, by, c.x, c.y, 0);
+    else if (ot.plate && v.plates.some((p) => p.body === oBody)) {
+      const need = PLATES[ot.plate].overkill * 100 * (v.hp <= MACHINE.healthLow ? 0.25 : 1);
+      if (impact > need) {
+        this.knockPlate(v, oBody);
+        this.events.push({ type: "plateoff", m: v, by, x: c.x, y: c.y });
+      }
+    }
+  }
+
+  /** A sidearm takes a blow (from `min` up: GUN_HIT_MIN for blows, every shot counts); at 0 it breaks off. */
+  private gunHurt(m: Machine, g: GunState, impact: number, by: Machine, x: number, y: number, min = GUN_HIT_MIN): void {
+    if (!m.alive || !m.armed || impact < min || impact <= 0 || this.tuning.damage <= 0 || !m.guns.includes(g)) return;
+    // a grind reports a contact every step: one blow per GUN_HIT_GAP
+    if (this.t < g.hitAt + GUN_HIT_GAP) return;
+    g.hitAt = this.t;
+    g.hp -= Math.min(impact, GUN_HIT_MAX);
+    if (g.hp <= 0) this.breakGun(m, g, by, x, y);
+  }
+
+  /**
+   * The sidearm breaks off (OURS): its joints go, it falls as scorched debris (drawn like a wreck's shard), two
+   * splinters fly, and the machine fights on with its melee weapon alone (and without the gun's weight).
+   */
+  private breakGun(m: Machine, g: GunState, by: Machine, x: number, y: number): void {
+    const b = g.body;
+    for (const j of m.joints) if (j.a === b || j.b === b) this.world.removeJoint(j);
+    m.joints = m.joints.filter((j) => j.a !== b && j.b !== b);
+    m.grips = m.grips.filter((j) => j.b !== b);
+    m.grip = m.grips[0] ?? null;
+    m.guns = m.guns.filter((x) => x !== g);
+    m.parts = m.parts.filter((x) => x !== b);
+    m.part.delete("gun");
+    m.spec = armedSpec(m.weapon, null);
+    m.sidearm = null;
+    const t = b.data as Tag;
+    t.sidearm = undefined;
+    t.loose = true;
+    // harmless at once (gibUntil now): it falls through everything and goes with the debris
+    t.gibUntil = this.t;
+    b.solid = false;
+    b.group = -1;
+    b.gravity = true;
+    const dt = STEP * this.timewarp;
+    b.setVelocity(b.vx, b.vy - 150, (Math.random() - 0.5) * 20, dt);
+    this.debris.push({ body: b, at: this.t });
+    this.shards(m, b.x, b.y, 4, 2, b.vx * 0.5, b.vy * 0.5, false, by);
+    this.events.push({ type: "gunbreak", m, by, x, y });
+  }
+
   /** Damage (0x410340) and shock. */
   private hurt(victim: Machine, vBody: Body, by: Tag, byBody: Body, impact: number, c: ContactReport): void {
     if (!victim.alive) return;
-    // Damage off (the warm-up): no damage and no stun either. An aiming gun only pushes.
-    if (this.tuning.damage <= 0 || by.aiming) return;
+    // Damage off (the warm-up): no damage and no stun either. A sidearm's body only pushes.
+    if (this.tuning.damage <= 0 || by.sidearm) return;
     // Friendly fire off: teammates' hits only push.
     if (by.m !== victim && by.m.team === victim.team && this.tuning.teamDamage < 1) return;
     const tn = this.tuning;
@@ -1079,7 +1269,7 @@ export class Arena {
   }
 
   /** Take `dmg` off a machine (the health_low rule), report it, and wreck it at 0. */
-  private damage(victim: Machine, dmg: number, attacker: Machine, owned: boolean, impact: number, cut: number, x: number, y: number): void {
+  private damage(victim: Machine, dmg: number, attacker: Machine, owned: boolean, impact: number, cut: number, x: number, y: number, shot = false): void {
     if (!victim.alive || dmg <= 0) return;
     // health_low rule: below 12 only a lethal hit counts; the first lethal hit leaves 12, the next one kills.
     // In sudden death (ours, to end long rounds) every hit simply subtracts.
@@ -1097,14 +1287,14 @@ export class Arena {
     }
     if (owned) victim.lastHitBy = attacker;
     victim.flash = 0.12;
-    this.events.push({ type: "hit", attacker, victim, dmg: before - victim.hp, impact, cut, x, y });
+    this.events.push({ type: "hit", attacker, victim, dmg: before - victim.hp, impact, cut, x, y, shot });
     if (victim.hp <= 0) this.wreck(victim);
   }
 
   /** A weapon much faster than the plate, hitting hard enough, knocks it off (m_overkill). */
   private plateHit(pBody: Body, pt: Tag, wBody: Body, wt: Tag, impact: number, c: ContactReport): void {
     const m = pt.m;
-    if (!m.alive || this.tuning.damage <= 0 || !m.plates.some((p) => p.body === pBody)) return;
+    if (!m.alive || this.tuning.damage <= 0 || wt.sidearm || !m.plates.some((p) => p.body === pBody)) return;
     if (wt.m.team === m.team && this.tuning.teamDamage < 1) return;
     const sp = Math.hypot(pBody.vx, pBody.vy);
     const sw = Math.hypot(wBody.vx, wBody.vy);
@@ -1298,7 +1488,12 @@ export class Arena {
       this.world.add(b);
       m.part.set(p.key, b);
       m.parts.push(b);
-      if (p.gun) m.guns.push({ spec: p.gun, body: b, ammo: p.gun.clip, timer: 0 });
+      if (p.gun) {
+        const g: GunState = { spec: p.gun, body: b, ammo: p.gun.clip, timer: 0, hp: GUN_HP, hitAt: -1 };
+        m.guns.push(g);
+        // a sidearm (not the tribune's back blade, which is a blade first) is harmless and fragile
+        if (p.key === "gun") (b.data as Tag).sidearm = g;
+      }
     }
     m.striker = m.part.get(spec.striker)!;
     m.joints = [];

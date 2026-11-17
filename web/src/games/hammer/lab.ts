@@ -222,6 +222,11 @@ function handleEvents(): void {
       fx.text(e.x, e.y - 20, "DISARMED", "#cfe3ff", 20);
     } else if (e.type === "pickup" || e.type === "shot" || e.type === "blast" || e.type === "plateoff" || e.type === "crack" || e.type === "break") {
       // nothing to show beyond the weapon snapping on, or the shot itself
+    } else if (e.type === "ping") {
+      fx.burst(e.x, e.y, 6, 260, "#ffe9a8", 1.5);
+    } else if (e.type === "gunbreak") {
+      fx.burst(e.x, e.y, 20, 340, "#ffb347", 2);
+      fx.text(e.x, e.y - 16, "GUN BROKEN", "#ffcf8a", 16);
     } else if (e.type === "clash") {
       fx.burst(e.x, e.y, 4 + Math.min(10, Math.round(e.impact / 10)), 220, "#cfe3ff", 1.5);
     } else if (e.type === "slam") {

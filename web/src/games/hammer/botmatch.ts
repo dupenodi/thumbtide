@@ -35,6 +35,8 @@ export interface EntrantStats {
   alive: boolean;
   /** Seconds this machine was in the frame's outer band (60 px from a side): cornered or camping. */
   edge: number;
+  /** Of `dealt`, the damage done by shots and rocket blasts. */
+  shotDealt: number;
 }
 
 export interface RoundResult {
@@ -51,7 +53,11 @@ export interface RoundResult {
   /** Share of 3 s windows with no hit at all (boring stretches). */
   quiet: number;
   slams: number;
+  /** Sidearms broken off. */
+  gunBreaks: number;
   hitsPerMin: number;
+  /** Co-op vs monsters: the worms were the last side standing (or still alive at the time limit). */
+  monstersWon: boolean;
 }
 
 export interface RoundOptions {
@@ -61,7 +67,11 @@ export interface RoundOptions {
   /** Fight length cap in s (90, as on the TV). */
   limit?: number;
   suddenDeathAt?: number;
+  /** Co-op vs monsters (host.ts "pvm"): this many worms fly in from the sides as one more side (every other one armoured). */
+  monsters?: number;
 }
+
+const MONSTER_TEAM = 99;
 
 export function runRound(o: RoundOptions): RoundResult {
   const ar = new Arena({ ...DEFAULT_TUNING, passes: 15, gibs: 3, ...o.tuning });
@@ -71,8 +81,14 @@ export function runRound(o: RoundOptions): RoundResult {
     const [x, y] = spawnPoint(ar, i);
     return ar.add({ id: i + 1, team: e.team ?? i, name: e.name, color: "#fff", weapon: e.weapon, sidearm: e.sidearm ?? null, plate: e.plate ?? null, x, y });
   });
+  const worms: Machine[] = [];
+  for (let i = 0; i < (o.monsters ?? 0); i++) {
+    const left = i % 2 === 0;
+    const y = 120 + Math.random() * (ar.h - 240);
+    worms.push(ar.addMonster({ id: 1000 + i, team: MONSTER_TEAM, kind: i % 2 === 1 ? "armoredworm" : "worm", x: left ? -40 : ar.w + 40, y, dir: left ? 0 : Math.PI }));
+  }
   const drivers = o.entrants.map((e, i) => e.driver(ar, ms[i]!));
-  const st: EntrantStats[] = o.entrants.map((e) => ({ name: e.name, weapon: e.weapon, dealt: 0, hits: 0, bigHit: 0, kos: 0, slammed: 0, stunned: 0, minHp: 100, hpEnd: 0, alive: true, edge: 0 }));
+  const st: EntrantStats[] = o.entrants.map((e) => ({ name: e.name, weapon: e.weapon, dealt: 0, hits: 0, bigHit: 0, kos: 0, slammed: 0, stunned: 0, minHp: 100, hpEnd: 0, alive: true, edge: 0, shotDealt: 0 }));
   const idx = new Map(ms.map((m, i) => [m, i]));
   const limit = o.limit ?? 90;
   const sdAt = o.suddenDeathAt ?? 60;
@@ -85,9 +101,10 @@ export function runRound(o: RoundOptions): RoundResult {
   let quietWindows = 0;
   let nextWindow = 3;
   let slams = 0;
+  let gunBreaks = 0;
   let hits = 0;
   let comebackRisk = new Set<number>();
-  const teams = () => new Set(ms.filter((m) => m.alive).map((m) => m.team));
+  const teams = () => new Set([...ms, ...worms].filter((m) => m.alive).map((m) => m.team));
   while (t < limit) {
     for (let i = 0; i < ms.length; i++) if (ms[i]!.alive) drivers[i]!(ar, ms[i]!);
     ar.step();
@@ -98,6 +115,7 @@ export function runRound(o: RoundOptions): RoundResult {
         const a = idx.get(e.attacker);
         if (a !== undefined) {
           st[a]!.dealt += e.dmg;
+          if (e.shot) st[a]!.shotDealt += e.dmg;
           st[a]!.hits++;
           st[a]!.bigHit = Math.max(st[a]!.bigHit, e.dmg);
         }
@@ -110,6 +128,8 @@ export function runRound(o: RoundOptions): RoundResult {
         const v = idx.get(e.m);
         if (v !== undefined) st[v]!.slammed++;
         slams++;
+      } else if (e.type === "gunbreak") {
+        gunBreaks++;
       }
     }
     ar.events.length = 0;
@@ -159,7 +179,9 @@ export function runRound(o: RoundOptions): RoundResult {
     comeback: winner >= 0 && comebackRisk.has(winner),
     quiet: windows ? quietWindows / windows : 0,
     slams,
+    gunBreaks,
     hitsPerMin: (hits * 60) / t,
+    monstersWon: worms.some((w) => w.alive) && (alive.length === 0 || timeUp),
   };
 }
 

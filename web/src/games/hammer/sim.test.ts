@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Body, joint, World } from "./engine.ts";
 import { stickPush } from "./arenas.ts";
-import { Arena, edgeAt, edgeOut, VIEW_H, VIEW_W } from "./sim.ts";
+import { Arena, edgeAt, edgeOut, GUN_HP, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
-import { MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
+import { GUN_KINDS, MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
 const arena = () => new Arena({ ...DEFAULT_TUNING });
 
@@ -735,4 +735,189 @@ test("guns: only a loaded sidearm aims; the tribune's back blade and a reloading
   assert.ok(Math.abs(fly("tribune", null, false, true) - fly("tribune", null, false, false)) < 30, "tribune slowed by aiming");
   assert.ok(Math.abs(fly("hammer", "arquebus", true, true) - fly("hammer", "arquebus", true, false)) < 30, "reloading gun slowed the flying");
   assert.ok(fly("hammer", "arquebus", false, true) < fly("hammer", "arquebus", false, false) - 30, "a loaded gun's aim slows the flying");
+});
+
+type Hidden = { destroy(m: unknown): void; gunHurt(m: unknown, g: unknown, impact: number, by: unknown, x: number, y: number): void };
+
+test("guns: mortar balls land with a push, damage and stun on a machine, then they are spent (no bounce)", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "axe", sidearm: "mortar", x: 400, y: 330 });
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 400, y: 100 });
+  (a as unknown as Hidden).destroy(foe);
+  for (let i = 0; i < 10; i++) a.step();
+  // the foe 90 px out along the barrel
+  const g = m.guns[0]!.body;
+  const ux = Math.cos(g.a);
+  const uy = Math.sin(g.a);
+  foe.hull.place(g.x + ux * 90, g.y + uy * 90);
+  let dmg = 0;
+  let hits = 0;
+  let pushed = 0;
+  let stun = 0;
+  a.fire(m);
+  for (let i = 0; i < 12; i++) {
+    a.step();
+    pushed = Math.max(pushed, foe.hull.vx * ux + foe.hull.vy * uy);
+    stun = Math.max(stun, foe.stun);
+    for (const e of a.events) if (e.type === "hit" && e.victim === foe) (dmg += e.dmg), hits++;
+    a.events.length = 0;
+  }
+  assert.ok(hits >= 2, `balls that hit: ${hits}`);
+  assert.ok(dmg >= 8, `damage ${dmg}`);
+  // the foe is knocked away along the barrel
+  assert.ok(pushed > 100, `push ${pushed.toFixed(0)} px/s`);
+  assert.ok(stun > 0.1, `a close blast stuns: ${stun.toFixed(2)}`);
+  // the balls that hit are gone (they don't bounce around the foe)
+  assert.ok(a.shots.length <= 5 - hits, `shots left ${a.shots.length}`);
+});
+
+test("guns: a shot on a weapon pushes it and is spent; it does no damage to the machine", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "axe", sidearm: "heavymortar", x: 400, y: 330 });
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 700, y: 100 });
+  for (let i = 0; i < 10; i++) a.step();
+  // the foe's hammer head in the line of fire, its hull off to the side
+  const g = m.guns[0]!.body;
+  const ux = Math.cos(g.a);
+  const uy = Math.sin(g.a);
+  const head = foe.part.get("head")!;
+  const hx = g.x + ux * 100;
+  const hy = g.y + uy * 100;
+  foe.hull.place(hx - uy * 60, hy + ux * 60);
+  head.place(hx, hy, head.a);
+  let hits = 0;
+  let pings = 0;
+  let dv = 0;
+  a.fire(m);
+  for (let i = 0; i < 10; i++) {
+    const v0 = head.vx * ux + head.vy * uy;
+    a.step();
+    dv = Math.max(dv, head.vx * ux + head.vy * uy - v0);
+    for (const e of a.events) {
+      if (e.type === "hit" && e.victim === foe) hits++;
+      if (e.type === "ping") pings++;
+    }
+    a.events.length = 0;
+  }
+  assert.equal(pings, 1);
+  assert.equal(hits, 0);
+  assert.ok(dv > 100, `the head was knocked: ${dv.toFixed(0)} px/s`);
+  assert.equal(a.shots.length, 0);
+});
+
+test("guns: firing kicks the shooter back along the barrel (arquebus too)", () => {
+  for (const gun of ["arquebus", "mortar", "heavymortar"] as const) {
+    const a = arena();
+    const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", sidearm: gun, x: 400, y: 300 });
+    for (let i = 0; i < 10; i++) a.step();
+    const vy = m.hull.vy;
+    a.fire(m);
+    a.step();
+    // the gun points up: the kick pushes the hull down
+    assert.ok(m.hull.vy - vy > (gun === "arquebus" ? 5 : 50), `${gun}: kick ${(m.hull.vy - vy).toFixed(0)}`);
+  }
+});
+
+test("guns: a sidearm's body does no contact damage, takes blows, and breaks off after a few", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", sidearm: "arquebus", x: 300, y: 300 });
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 300, y: 215 });
+  (a as unknown as Hidden).destroy(foe);
+  for (let i = 0; i < 5; i++) a.step();
+  const g = m.guns[0]!;
+  // swing the gun hard into the foe's hull
+  g.body.setVelocity(0, -900, 0, 0.02);
+  let hits = 0;
+  for (let i = 0; i < 10; i++) {
+    a.step();
+    for (const e of a.events) if (e.type === "hit" && e.victim === foe) hits++;
+    a.events.length = 0;
+  }
+  assert.equal(hits, 0, "the gun body hurt the foe");
+  assert.equal(foe.hp, 100);
+  // one huge blow doesn't break it, a few hard ones do: the machine keeps its hammer and loses the gun's body and joints
+  const bodies = m.parts.length;
+  let breaks = 0;
+  const blow = (impact: number) => {
+    // blows in one step: only the first counts (a grind), so each one here is a new clash
+    g.hitAt = -1;
+    (a as unknown as Hidden).gunHurt(m, g, impact, foe, g.body.x, g.body.y);
+    for (const e of a.events) if (e.type === "gunbreak") breaks++;
+    a.events.length = 0;
+  };
+  blow(500);
+  assert.equal(breaks, 0);
+  assert.equal(m.guns.length, 1);
+  // a grind: many contacts in one step count once
+  for (let i = 0; i < 6; i++) (a as unknown as Hidden).gunHurt(m, g, 60, foe, g.body.x, g.body.y);
+  assert.equal(m.guns.length, 1);
+  for (let i = 0; i < 3; i++) blow(60);
+  assert.equal(breaks, 1);
+  assert.equal(m.guns.length, 0);
+  assert.ok(m.armed);
+  assert.equal(m.sidearm, null);
+  assert.equal(m.parts.length, bodies - 1);
+  assert.ok(!m.joints.some((j) => j.a === g.body || j.b === g.body));
+  // it falls through everything as debris
+  assert.equal(g.body.solid, false);
+  // the hammer still hits
+  assert.ok(m.part.get("head"));
+  // the next round brings it back
+  a.respawn(m, 300, 300, "hammer", "arquebus");
+  assert.equal(m.guns.length, 1);
+  assert.equal(m.guns[0]!.hp, GUN_HP);
+});
+
+test("guns: in teams (collision on, friendly fire off) a shot flies through an ally and lands on the foe", () => {
+  const a = new Arena({ ...DEFAULT_TUNING, teamCollision: 1, teamDamage: 0 });
+  const m = a.add({ id: 1, team: 0, name: "A", color: "#f00", weapon: "axe", sidearm: "arquebus", x: 400, y: 400 });
+  const ally = a.add({ id: 2, team: 0, name: "B", color: "#f00", weapon: "hammer", x: 700, y: 100 });
+  const foe = a.add({ id: 3, team: 1, name: "C", color: "#00f", weapon: "hammer", x: 100, y: 100 });
+  const hidden = a as unknown as Hidden;
+  hidden.destroy(ally);
+  hidden.destroy(foe);
+  for (let i = 0; i < 10; i++) a.step();
+  const g = m.guns[0]!.body;
+  const ux = Math.cos(g.a);
+  const uy = Math.sin(g.a);
+  ally.hull.place(g.x + ux * 70, g.y + uy * 70);
+  foe.hull.place(g.x + ux * 200, g.y + uy * 200);
+  let foeHits = 0;
+  let allyHits = 0;
+  a.fire(m);
+  for (let i = 0; i < 10; i++) {
+    a.step();
+    for (const e of a.events) {
+      if (e.type === "hit" && e.victim === foe) foeHits++;
+      if ((e.type === "hit" && e.victim === ally) || (e.type === "ping" && e.m === ally)) allyHits++;
+    }
+    a.events.length = 0;
+  }
+  assert.equal(allyHits, 0);
+  assert.equal(foeHits, 1);
+});
+
+test("guns: every sidearm aims round with its weight (the mortars are heavier now) and fires near the aim", () => {
+  for (const gun of GUN_KINDS) {
+    const a = arena();
+    const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", sidearm: gun, x: 480, y: 270 });
+    const g = m.guns[0]!;
+    const off = () => Math.abs(Math.atan2(Math.sin(g.body.a), Math.cos(g.body.a)));
+    let shots = 0;
+    let offAtShot = 0;
+    for (let i = 0; i < 75; i++) {
+      a.fire(m);
+      a.aim(m, 1, 0);
+      stickPush(a, m, 1, 0);
+      a.step();
+      for (const e of a.events) {
+        if (e.type !== "shot") continue;
+        shots++;
+        offAtShot = Math.max(offAtShot, off());
+      }
+      a.events.length = 0;
+    }
+    assert.ok(shots >= 1, `${gun}: shots ${shots}`);
+    assert.ok(offAtShot < 0.4, `${gun}: fired ${offAtShot.toFixed(2)} rad off the aim`);
+  }
 });

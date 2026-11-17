@@ -455,7 +455,9 @@ With a weapon you can take a gun (arquebus, mortar, heavy mortar, rocket launche
 shield: two plates on short rods, from light wood to armour. A fast, hard hit knocks a plate off; holding Shield
 spreads the plates and halves thrust. The tribune's back blade is a gun of its own. Hold Fire and push the stick to aim
 the arquebus (our addition: Hammerfight's guns don't aim): it swings toward the stick, fires once it points within
-11°, and only pushes while it aims. Blades cut on the side Hammerfight draws as the edge; the back of a one-sided axe
+11°. A gun's body never hurts anyone, but it is heavy and fragile: a few hard blows break it off (our addition).
+A shot that lands knocks the target back and is spent (a mortar's balls also stun); shots bounce only off walls and
+crates; a gun kicks the shooter back along the barrel (not the launcher: its rockets push themselves; see `web/src/games/hammer/RE_GUNS.md`). Blades cut on the side Hammerfight draws as the edge; the back of a one-sided axe
 only bludgeons. Weapons, guns and plates are drawn with Hammerfight's own sprites.
 
 The stick tune lives in `hammer.pad` (`stick 420`, `steer 5.6`; 30% softer than before after a play test).
