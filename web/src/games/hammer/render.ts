@@ -70,11 +70,13 @@ interface Float {
 }
 
 const HULL_R = 16.5;
-/** The rotor strip: frames, and the box one frame covers in the hull's frame (blade ±24 plus its round cap). */
+/** The rotor: spin frames, and the box it covers in the hull's frame (blade ±24 plus its round cap, top at ROTOR_Y). */
 const ROTOR_FRAMES = 8;
 const ROTOR_W = 54;
 const ROTOR_Y = -HULL_R - 12;
-const ROTOR_H = 13;
+/** Picture boxes in the hull's frame (x, y, w, h): the hull alone, and the hull with its rotor. */
+const HULL_BOX = [-HULL_SW / 2, -HULL_SH / 2, HULL_SW, HULL_SH] as const;
+const MACHINE_BOX = [-ROTOR_W / 2, ROTOR_Y, ROTOR_W, HULL_SH / 2 - ROTOR_Y] as const;
 /** Sparks fade in this many steps (each step of each colour is one stroke). */
 const SPARK_LEVELS = 3;
 /** The stun star's picture box (world units): the 4.5 radius star with a margin for its smoothed edge. */
@@ -1025,16 +1027,16 @@ export class Renderer {
     if (!m.alive) ctx.globalAlpha = Math.max(0, 1 - (arena.t - m.diedAt) / 2.5);
 
     if (m.alive) {
-      // the rotor: one frame of a cached strip (blade width follows the spin)
+      // hull and rotor in one picture: the rotor frame follows the spin (blade width), made once per colour, facing
+      // and frame (a drawImage per machine less than a rotor strip and a hull)
       const spin = Math.abs(Math.sin(arena.t * 38 + m.id));
-      const atlas = this.rotorAtlas();
       const f = Math.min(ROTOR_FRAMES - 1, Math.floor(spin * ROTOR_FRAMES));
-      const cw = atlas.width / ROTOR_FRAMES;
-      ctx.drawImage(atlas, f * cw, 0, cw, atlas.height, -ROTOR_W / 2, ROTOR_Y, ROTOR_W, ROTOR_H);
+      const [x0, y0, bw, bh] = MACHINE_BOX;
+      ctx.drawImage(this.hullSprite(m.flash > 0 ? "#ffffff" : m.color, m.hull.vx >= 0, f), x0, y0, bw, bh);
+    } else {
+      // the wreck: the hull alone, greyed (body, shade, window), made once per facing
+      ctx.drawImage(this.hullSprite("#3b3b44", m.hull.vx >= 0), -HULL_SW / 2, -HULL_SH / 2, HULL_SW, HULL_SH);
     }
-
-    // the hull is one picture (body, shade, window), made once per colour and facing
-    ctx.drawImage(this.hullSprite(m.flash > 0 ? "#ffffff" : m.alive ? m.color : "#3b3b44", m.hull.vx >= 0), -HULL_SW / 2, -HULL_SH / 2, HULL_SW, HULL_SH);
     this.leave();
     ctx.globalAlpha = 1;
   }
@@ -1109,21 +1111,31 @@ export class Renderer {
     return c;
   }
 
-  private rotors: HTMLCanvasElement | null = null;
-  private rotorScale = 0;
-  /** The rotor in ROTOR_FRAMES spin widths side by side (disc, blade and mast), at the canvas's pixel scale. */
-  private rotorAtlas(): HTMLCanvasElement {
-    if (this.rotors && this.rotorScale === this.scale) return this.rotors;
-    const cw = Math.ceil(ROTOR_W * this.scale);
-    const ch = Math.ceil(ROTOR_H * this.scale);
-    const c = document.createElement("canvas");
-    c.width = cw * ROTOR_FRAMES;
-    c.height = ch;
+  private hulls = new Map<string, HTMLCanvasElement>();
+  private hullScale = 0;
+  /**
+   * The hull (body, shade and window) for one colour and facing, at the canvas's pixel scale; with `rotor` (a frame of
+   * the rotor strip) the rotor is painted in above it, in the MACHINE_BOX, so a live machine is one drawImage.
+   */
+  private hullSprite(fill: string, right: boolean, rotor = -1): HTMLCanvasElement {
+    if (this.hullScale !== this.scale) {
+      this.hulls.clear();
+      this.names.clear();
+      this.hullScale = this.scale;
+    }
+    const key = `${fill}|${right ? 1 : 0}|${rotor}`;
+    let c = this.hulls.get(key);
+    if (c) return c;
+    const s = this.scale;
+    const [x0, y0, bw, bh] = rotor >= 0 ? MACHINE_BOX : HULL_BOX;
+    c = document.createElement("canvas");
+    c.width = Math.ceil(bw * s);
+    c.height = Math.ceil(bh * s);
     const g = c.getContext("2d")!;
-    for (let f = 0; f < ROTOR_FRAMES; f++) {
-      // frame f stands for spins in [f, f+1) / ROTOR_FRAMES: draw its middle
-      const spin = (f + 0.5) / ROTOR_FRAMES;
-      g.setTransform(cw / ROTOR_W, 0, 0, ch / ROTOR_H, f * cw + cw / 2, (-ROTOR_Y * ch) / ROTOR_H);
+    g.setTransform(c.width / bw, 0, 0, c.height / bh, (-x0 * c.width) / bw, (-y0 * c.height) / bh);
+    if (rotor >= 0) {
+      // the disc, the blade at the middle of this frame's spins ([f, f+1) / ROTOR_FRAMES) and the mast
+      const spin = (rotor + 0.5) / ROTOR_FRAMES;
       g.fillStyle = "rgba(220,225,240,0.10)";
       g.beginPath();
       g.ellipse(0, -HULL_R - 7, 24, 3, 0, 0, Math.PI * 2);
@@ -1138,29 +1150,6 @@ export class Renderer {
       g.fillStyle = "#3a3f4b";
       g.fillRect(-1.5, -HULL_R - 7, 3, 7);
     }
-    this.rotors = c;
-    this.rotorScale = this.scale;
-    return c;
-  }
-
-  private hulls = new Map<string, HTMLCanvasElement>();
-  private hullScale = 0;
-  /** The hull (body, shade and window) for one colour and facing, at the canvas's pixel scale. */
-  private hullSprite(fill: string, right: boolean): HTMLCanvasElement {
-    if (this.hullScale !== this.scale) {
-      this.hulls.clear();
-      this.names.clear();
-      this.hullScale = this.scale;
-    }
-    const key = `${fill}|${right ? 1 : 0}`;
-    let c = this.hulls.get(key);
-    if (c) return c;
-    const s = this.scale;
-    c = document.createElement("canvas");
-    c.width = Math.ceil(HULL_SW * s);
-    c.height = Math.ceil(HULL_SH * s);
-    const g = c.getContext("2d")!;
-    g.setTransform((c.width / HULL_SW), 0, 0, c.height / HULL_SH, (c.width / HULL_SW) * (HULL_SW / 2), (c.height / HULL_SH) * (HULL_SH / 2));
     g.fillStyle = fill;
     g.strokeStyle = "rgba(0,0,0,0.45)";
     g.lineWidth = 2.5;
@@ -1174,7 +1163,7 @@ export class Renderer {
     g.beginPath();
     g.ellipse(right ? 4 : -4, -6, 5.5, 4, 0, 0, Math.PI * 2);
     g.fill();
-    if (this.hulls.size > 64) this.hulls.clear(); // colours come and go with players
+    if (this.hulls.size > 300) this.hulls.clear(); // colours come and go with players (18 pictures per colour)
     this.hulls.set(key, c);
     return c;
   }
