@@ -190,9 +190,11 @@ describe("relay", () => {
     const back = next(host, "away");
     returns.setAway(false);
     await back;
+    const told = next<string>(stays, "closed", 3000);
     const [gone, reason] = await next(host, "leave", 3000); // awayGraceMs (1500), socket open all along
     assert.equal(gone.id, stays.me!.id);
     assert.equal(reason, "timeout");
+    assert.equal(await told, "away-timeout"); // the phone hears why, not "left"
     await sleep(1300);
     assert.deepEqual(host.list.map((p) => p.name), ["Returns"]);
   });

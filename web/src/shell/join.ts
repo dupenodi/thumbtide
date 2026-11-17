@@ -44,6 +44,7 @@ const CLOSE_TEXT: Record<ControllerCloseReason, string> = {
   "host-closed": "The screen ended the session.",
   "host-timeout": "Lost the screen. The room has closed.",
   left: "You left the room.",
+  "away-timeout": "You were away too long, so your seat was given up. Join again to play.",
   replaced: "You joined from another tab.",
 };
 
