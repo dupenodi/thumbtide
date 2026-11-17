@@ -124,7 +124,8 @@ export interface PartSpec {
   extraShock?: number;
   /**
    * What each region of the part does when it touches a machine (WEAPON_SHAPES.md), in the order they are tested.
-   * Left out: two faces from the side values (local y ≥ 0: sharpness / bladeable; y < 0: sharpnessU / bladeableU).
+   * Left out: two faces from the side values, by the side the contact normal points to (local y ≥ 0: sharpness /
+   * bladeable; below: sharpnessU / bladeableU).
    */
   faces?: Face[];
 }
@@ -146,6 +147,11 @@ export interface Face {
   x1?: number;
   y0?: number;
   y1?: number;
+  /**
+   * Only on this side: 1 when the contact normal (from the part out) has local y ≥ 0, −1 when it is below. The exe's
+   * side test reads the normal (0x512ff0), so the two default faces use it: a curved edge stays one side all along.
+   */
+  side?: 1 | -1;
   /** m_sharpness of this face (× the side value). */
   sharp: number;
   /** m_bladeable of this edge (blade; also a spike's edge when it hits side-on). */
@@ -164,7 +170,7 @@ export function facesOf(p: PartSpec): readonly Face[] {
     const bd = p.bladeable;
     const bu = p.bladeableU ?? bd;
     f = p.faces ?? [
-      { kind: bd > 0 ? "blade" : "blunt", y0: 0, sharp: p.sharpness, blade: bd },
+      { kind: bd > 0 ? "blade" : "blunt", side: 1, sharp: p.sharpness, blade: bd },
       { kind: bu > 0 ? "blade" : "blunt", sharp: p.sharpnessU ?? p.sharpness, blade: bu },
     ];
     facesCache.set(p, f);
@@ -488,7 +494,7 @@ const AXIS = [-13, -2.5, 0.5, -12, 16, -3.5, 15, 3.5, 13, 8, 8.5, 12, 4.5, 14, -
 /** axe_mamba: the C-shaped blade (its hollow is filled: a collider must be convex). */
 const MAMBA = [-16, -10.5, -6.5, -17, 2.5, -18, 14, -11.5, 18, -3.5, 17, 6.5, 15, 10.5, 9.5, 16, -3.5, 21, -16, 12.5];
 /** axe_eclips: the ring blade. */
-const ECLIPSE = [-12, -15, -4.5, -18, 3.5, -18, 10, -14.5, 14, -10.5, 17, -3.5, 16, 5.5, 14, 9.5, 8.5, 15, 4.5, 17, -6.5, 17, -12, 13.5, -14, 1.5];
+const ECLIPSE = [-12, -15, -4.5, -18, 3.5, -18, 12, -12.5, 17, -3.5, 15.5, 7, 8.5, 15, -6.5, 17, -12, 13.5, -14, 1.5];
 /** axe_gold: the horn spike on top (−y), the broad crescent below (+y). */
 const GOLDAXE = [-13, -2.5, -6.5, -17, -1.5, -15, 8, -3.5, 13, 16.5, 7.5, 19, -8.5, 19, -13, 16.5];
 /** axe_posolski (tribune head, y-mirrored as the Demo file): the long spike on top, the fan blade below. */

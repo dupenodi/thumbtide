@@ -94,8 +94,9 @@ export function faceAt(faces: readonly Face[], b: Body, nx: number, ny: number):
   fy /= k;
   featureOut.x = fx;
   featureOut.y = fy;
+  const side = lny >= 0 ? 1 : -1;
   for (const f of faces) {
-    if ((f.x0 === undefined || fx >= f.x0) && (f.x1 === undefined || fx <= f.x1) && (f.y0 === undefined || fy >= f.y0) && (f.y1 === undefined || fy <= f.y1)) return f;
+    if ((f.side === undefined || f.side === side) && (f.x0 === undefined || fx >= f.x0) && (f.x1 === undefined || fx <= f.x1) && (f.y0 === undefined || fy >= f.y0) && (f.y1 === undefined || fy <= f.y1)) return f;
   }
   return faces[faces.length - 1]!;
 }
@@ -124,6 +125,8 @@ interface Hook {
   on: boolean;
   part: Body | null;
   tag: Tag | null;
+  /** The spike's machine when it hooked in. */
+  by: Machine | null;
   victim: Machine | null;
   vBody: Body | null;
   j1: Joint | null;
@@ -446,7 +449,7 @@ export class Arena {
   /** Knocked-off plates, removed a few seconds later. */
   private debris: { body: Body; at: number }[] = [];
   /** Spike hooks (a fixed pool: no allocation per step); `hooking` counts the ones holding or letting go. */
-  private readonly hooks: Hook[] = Array.from({ length: MAX_HOOKS }, () => ({ on: false, part: null, tag: null, victim: null, vBody: null, j1: null, j2: null, until: 0, from: 0, ghostUntil: 0, spike: 0, sharp: 0 }));
+  private readonly hooks: Hook[] = Array.from({ length: MAX_HOOKS }, () => ({ on: false, part: null, tag: null, by: null, victim: null, vBody: null, j1: null, j2: null, until: 0, from: 0, ghostUntil: 0, spike: 0, sharp: 0 }));
   private hooking = 0;
 
   constructor(public tuning: Tuning) {}
@@ -1504,7 +1507,8 @@ export class Arena {
   private hook(victim: Machine, vBody: Body, by: Tag, part: Body, face: Face, c: ContactReport): void {
     const tn = this.tuning;
     const spike = face.spike ?? 0;
-    if (tn.hold <= 0 || !victim.alive || !by.m.alive || !by.m.armed || !by.spec || vBody.mass <= HOOK_MASS) return;
+    // machines only (OURS: a worm's parts are many light bodies; the exe's test is the wood bit and the mass)
+    if (tn.hold <= 0 || victim.monster || !victim.alive || !by.m.alive || !by.m.armed || !by.spec || vBody.mass <= HOOK_MASS) return;
     if (spike * (c.rel + 1) <= HOOK_POWER || this.t < (by.hookAt ?? 0)) return;
     let slot: Hook | null = null;
     for (const h of this.hooks) {
@@ -1552,6 +1556,7 @@ export class Arena {
     slot.on = true;
     slot.part = part;
     slot.tag = by;
+    slot.by = by.m;
     slot.victim = victim;
     slot.vBody = vBody;
     slot.spike = spike;
@@ -1576,7 +1581,8 @@ export class Arena {
         const t = h.tag!;
         const j = h.j1!;
         const vm = h.victim!;
-        const live = t.m.alive && t.m.armed && t.m.parts.includes(p) && vm.alive && vm.hull === v && this.world.joints.includes(j) && this.world.joints.includes(h.j2!);
+        // (the same owner: a dropped weapon picked up by another machine lets go)
+        const live = t.m === h.by && t.m.alive && t.m.armed && t.m.parts.includes(p) && vm.alive && vm.hull === v && this.world.joints.includes(j) && this.world.joints.includes(h.j2!);
         if (!live) {
           this.unhook(h, false);
           continue;
@@ -1622,8 +1628,9 @@ export class Arena {
       this.damage(v, Math.round(this.tuning.tear * h.spike * h.sharp * (this.tuning.damage / 0.1)), t.credit ?? t.m, true, 0, 1, p.x, p.y);
       dmg = before - v.hp;
     }
-    this.events.push({ type: "tear", attacker: t.m, victim: v, dmg, pulled, x: p.x, y: p.y });
+    this.events.push({ type: "tear", attacker: h.by!, victim: v, dmg, pulled, x: p.x, y: p.y });
     h.victim = null;
+    h.by = null;
     h.vBody = null;
   }
 

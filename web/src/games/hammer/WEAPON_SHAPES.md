@@ -15,8 +15,12 @@ heads, spikes and blades. Data: `weapons.ts` (`PartSpec.faces`, `facesOf`); logi
 and finds the part's feature that sticks out furthest that way: a mesh vertex (a spike's point, a blade's tip), or the
 middle of a mesh edge that faces that way (a hammer's face). The first face in `faces` whose box (`x0 x1 y0 y1`,
 open where left out) holds that feature wins. The contact point is not used: on a flat contact it is only one corner
-of the overlap. A part with no `faces` gets two from its side values: y ≥ 0 → `sharpness` / `bladeable`, y < 0 →
-`sharpnessU` / `bladeableU` (the same rule as before, `edgeAt`).
+of the overlap. A face can also ask for a `side`: the sign of the normal's local y. A part with no `faces` gets two
+faces from its side values by that sign: normal toward +y → `sharpness` / `bladeable`, toward −y → `sharpnessU` /
+`bladeableU`. This is the exe's own side test (0x512ff0 reads the contact normal, RE_WEAPONS.md §3.2) with the sign
+the art shows. Before, the side came from the contact point's local y (`edgeAt`, still exported): on a curved sabre
+the outer part of the edge (near the tip, where the edge bends past y = 0) counted as the back; now the whole
+convex edge is the edge.
 
 **What each kind does** (in `hurt`, after the old gates: damage on, not a teammate, not a sidearm):
 
@@ -52,7 +56,9 @@ non-solid while it holds; the two bodies are pulled together at once by mass sha
   `tear` event (`pulled` true when a pull did it); a hook that ends because its weapon or victim went does none;
 - after it lets go the spike stays non-solid for 0.15 s (it is still inside the hull) and can't hook again for 0.6 s;
 - at most 2 hooks at once (`MAX_HOOKS`: 4 extra joints, no extra bodies, no allocation per step), one per victim
-  and one per spike. Events: `hook`, `tear` (the host plays a clank and sparks).
+  and one per spike. Events: `hook`, `tear` (the host plays a clank and sparks);
+- machines only: worms are never hooked (their bodies are light anyway); a hook lets go without damage when its
+  weapon is dropped or changes hands, or when either machine is wrecked, parked or respawned.
 
 ## 3. Audit
 
@@ -125,7 +131,8 @@ exe's final values (sharp / blade / spike, `u/d` where the sides differ). **Bold
 Sidearms (the guns) are unchanged: their bodies never hurt (OURS, RE_GUNS.md). Plates are unchanged.
 
 Every redrawn mesh keeps its part's mass (`sameMass`: the density scales by old area / new area), so handling and
-swing weight are the same as before; only the outline and what each face does changed.
+swing weight are the same as before; only the outline and what each face does changed. Every mesh is convex, holds
+its origin and has at most 10 vertices (the collision buffers take 16); `sim.test.ts` checks the first two.
 
 ## 4. Weapons that changed
 
@@ -147,6 +154,8 @@ swing weight are the same as before; only the outline and what each face does ch
 - **bladeflail**: crescent mesh; the horns cut too; the flat top is blunt.
 - **krankhammer**, **eclipse**, **mamba**, **liberia**: meshes follow the art (same behaviour).
 - **every blunt face** (all hammers, balls, flails' heads, the blunt parts above): knockback on a blow over 30.
+- **every one-sided blade** (the sabres, the axes' edges, the twin set): the side is now read from the contact
+  normal, so the whole drawn edge cuts, up to the tip.
 
 ## 5. Open questions
 

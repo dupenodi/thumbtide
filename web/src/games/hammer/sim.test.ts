@@ -1108,6 +1108,16 @@ test("faces: meshes redrawn to the art keep each part's mass; every face list en
   assert.ok(Math.abs(mass("krankhammer", "head") - 17 * 34 * 64) < 1);
   for (const k of WEAPON_KINDS) {
     for (const p of WEAPONS[k].parts) {
+      // a collider must be convex (the SAT), hold the origin (the mass fan), and fit the collision buffers (16)
+      const b = new Body(p.mesh, p.density);
+      assert.ok(b.count <= 16, `${k}.${p.key}: ${b.count} vertices`);
+      for (let i = 0; i < b.count; i++) {
+        const j = (i + 1) % b.count;
+        const l = (i + 2) % b.count;
+        const turn = (b.lx[j]! - b.lx[i]!) * (b.ly[l]! - b.ly[j]!) - (b.ly[j]! - b.ly[i]!) * (b.lx[l]! - b.lx[j]!);
+        assert.ok(turn > 0, `${k}.${p.key}: not convex at vertex ${j}`);
+        assert.ok(b.lx[i]! * b.ly[j]! - b.lx[j]! * b.ly[i]! > 0, `${k}.${p.key}: the origin is outside edge ${i}`);
+      }
       const f = facesOf(p);
       const last = f[f.length - 1]!;
       assert.ok(last.x0 === undefined && last.x1 === undefined && last.y0 === undefined && last.y1 === undefined, `${k}.${p.key}: no catch-all face`);
