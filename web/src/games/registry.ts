@@ -4,6 +4,7 @@ import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
 import hammerPad from "./hammer/hammer.pad?raw";
 import sandboxPad from "./sandbox/sandbox.pad?raw";
+import stackPad from "./stack/stack.pad?raw";
 import trailsPad from "./trails/trails.pad?raw";
 import wetpaintPad from "./wetpaint/wetpaint.pad?raw";
 
@@ -251,6 +252,44 @@ export const GAMES: GameDef[] = [
     ],
     host: () => import("./trails/host.ts"),
     controller: () => import("./trails/controller.ts"),
+  },
+  {
+    id: "stack",
+    title: "Stack Attack",
+    tagline: "Clear rows, paper your friends, be the last well standing.",
+    minPlayers: 1,
+    maxPlayers: 8,
+    colors: ["#ff48b0", "#0078bf"],
+    glyph: "action",
+    controls: parsePad(stackPad, "stack.pad"),
+    settings: [
+      {
+        key: "wins",
+        label: "Wins to take the match",
+        options: [2, 3, 5].map((n) => ({ value: n, label: String(n) })),
+        default: 3,
+        applies: "now",
+      },
+      {
+        key: "speed",
+        label: "Starting speed",
+        options: [
+          { value: "slow", label: "Slow" },
+          { value: "normal", label: "Normal" },
+          { value: "fast", label: "Fast" },
+        ],
+        default: "normal",
+      },
+      {
+        key: "bots",
+        label: "Computer players",
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+        applies: "now",
+      },
+    ],
+    host: () => import("./stack/host.ts"),
+    controller: () => import("./stack/controller.ts"),
   },
   {
     id: "sandbox",
