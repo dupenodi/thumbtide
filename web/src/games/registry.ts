@@ -178,9 +178,9 @@ export const GAMES: GameDef[] = [
         label: "Arena",
         options: [
           { value: "classic", label: "Classic" },
-          { value: "crates", label: "Crates" },
-          { value: "big", label: "Big, with crates" },
-          { value: "huge", label: "Huge, with crates" },
+          { value: "crates", label: "Walls and crates" },
+          { value: "big", label: "Big, with saws" },
+          { value: "huge", label: "Huge, with saws" },
           { value: "stands", label: "The Stands" },
           { value: "towers", label: "Sunrise Towers" },
           { value: "eye", label: "The Eye" },

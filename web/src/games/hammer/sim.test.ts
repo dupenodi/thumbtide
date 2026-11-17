@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Body, joint, World } from "./engine.ts";
 import { stickPush } from "./arenas.ts";
-import { Arena, edgeAt, edgeOut, GUN_HP, VIEW_H, VIEW_W } from "./sim.ts";
+import { Arena, edgeAt, edgeOut, GUN_HP, STEP, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
 import { GUN_KINDS, MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
@@ -702,6 +702,69 @@ test("level arenas: seats start clear of obstacles, cages hang on their ropes, b
     }
     assert.equal(ms.filter((m) => m.alive).length, 8, `${kind}: a machine died with no fight`);
   }
+});
+
+test("saws cut a machine that flies into them (credited to its last attacker), kick it away, and rest between cuts", () => {
+  const ar = arena();
+  ar.setArena(960, 540, [{ kind: "saw", x: 0, y: 300, hw: 34, hh: 34 }]);
+  const a = ar.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", x: 200, y: 300 });
+  const b = ar.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 700, y: 300 });
+  a.lastHitBy = b;
+  let cuts = 0;
+  let credit: unknown = null;
+  for (let i = 0; i < 60; i++) {
+    stickPush(ar, a, -1, 0);
+    ar.step();
+    for (const e of ar.events) {
+      if (e.type === "hazard" && e.victim === a) cuts++;
+      if (e.type === "hit" && e.victim === a) credit = e.attacker;
+    }
+    ar.events.length = 0;
+  }
+  assert.ok(cuts >= 1 && cuts <= 3, `cuts ${cuts}`);
+  assert.ok(a.hp < 100, "no damage");
+  assert.equal(credit, b, "the cut goes to the last attacker");
+  // warm-up: no cuts
+  const w = arena();
+  w.tuning.damage = 0;
+  w.setArena(960, 540, [{ kind: "saw", x: 0, y: 300, hw: 34, hh: 34 }]);
+  const c = w.add({ id: 1, name: "C", color: "#f00", weapon: "hammer", x: 120, y: 300 });
+  for (let i = 0; i < 60; i++) {
+    stickPush(w, c, -1, 0);
+    w.step();
+  }
+  assert.equal(c.hp, 100);
+});
+
+test("walls: a reeling machine slams into one; hard hits break it", () => {
+  const ar = arena();
+  ar.setArena(960, 540, [{ kind: "wall", x: 400, y: 300, hw: 12, hh: 70, hp: 60 }]);
+  const a = ar.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", x: 330, y: 300 });
+  a.stun = 1;
+  a.slamUntil = ar.t + 0.8;
+  a.hull.setVelocity(500, 0, 0, STEP);
+  let slam = false;
+  for (let i = 0; i < 20; i++) {
+    ar.step();
+    if (ar.events.some((e) => e.type === "slam" && e.m === a)) slam = true;
+    ar.events.length = 0;
+  }
+  assert.ok(slam, "no slam");
+  assert.ok(ar.obstacles[0]!.hp < 60 && ar.obstacles[0]!.hp > 0, `wall hp ${ar.obstacles[0]!.hp}`);
+});
+
+test("worms fly in only where the side is open to the fight", async () => {
+  const { ARENAS, applyArenaKind, openSideRows } = await import("./arenas.ts");
+  for (const kind of Object.keys(ARENAS)) {
+    const ar = arena();
+    applyArenaKind(ar, kind);
+    const [l, r] = openSideRows(ar);
+    assert.ok(l.length >= 3 && r.length >= 3, `${kind}: rows ${l.length}/${r.length}`);
+  }
+  // the eye's mouths: only between the slabs (y 43-64 % of the height)
+  const ar = arena();
+  applyArenaKind(ar, "eye");
+  for (const y of openSideRows(ar)[0]) assert.ok(y > ar.h * 0.43 && y < ar.h * 0.64, `eye row at ${y}`);
 });
 
 test("edges: a one-sided axe cuts with its +y face (the edge the sprite draws) and is blunt on its back", () => {

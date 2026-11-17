@@ -462,10 +462,12 @@ only bludgeons. Weapons, guns and plates are drawn with Hammerfight's own sprite
 
 The stick tune lives in `hammer.pad` (`stick 420`, `steer 5.6`; 30% softer than before after a play test).
 
-Arenas (setting **Arena**): Classic, Crates, Big and Huge with crates, and six after Hammerfight's levels (see
+Arenas (setting **Arena**): Classic, Walls and crates, Big and Huge with a saw on each side wall (it cuts and stuns a
+machine shoved into it), and six after Hammerfight's levels (see
 `arenas.ts` and `RE_ARENAS.md`): **The Stands**, **Sunrise Towers**, **The Eye**, **Melka Arena** (cages swing on
-ropes), **Block Hall** (loose blocks to knock around) and **The Pit** (a hanging chain). Machines can't leave the
-screen at any edge.
+ropes), **Block Hall** (loose blocks to knock around) and **The Pit** (a hanging chain). The middle of every arena is
+open; plank walls toward the sides are slam surfaces (a reeling machine knocked into one gets more stun) and break
+after a beating. Machines can't leave the screen at any edge.
 
 Each round starts with a warm-up: fly and swing with no damage, and pick a weapon, a gun and a shield on the phone.
 

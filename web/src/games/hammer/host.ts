@@ -12,7 +12,7 @@ import { makeTour } from "./tour.ts";
 import { createGameAudio } from "./audio.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount } from "../types.ts";
-import { applyArenaKind, spawnPoint, STICK_DEFAULTS, type StickTune, stickPush as stickPushFor } from "./arenas.ts";
+import { applyArenaKind, openSideRows, spawnPoint, wormSpawn, STICK_DEFAULTS, type StickTune, stickPush as stickPushFor } from "./arenas.ts";
 import { type Bot, driveBot, makeBot, newRound, PROFILES, type ProfileId, profileLoadout, ROSTER } from "./bots.ts";
 import "./hammer.css";
 import { loadGameFont } from "./font.ts";
@@ -239,11 +239,11 @@ const mount: HostMount = (ctx) => {
     const room = Math.floor(free / 10);
     const n = Math.max(1, Math.min(MAX_MONSTERS, 1 + Math.floor(round / 2), room));
     const segments = room < 1 ? free - 2 : undefined;
+    // only at heights where the side is open to the fight (not into a sealed corner behind a slab)
+    const rows = openSideRows(arena);
     for (let i = 0; i < n; i++) {
-      const left = i % 2 === 0;
       const kind = round >= 3 && i % 2 === 1 ? "armoredworm" : "worm";
-      const y = 120 + Math.random() * (arena.h - 240);
-      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, x: left ? -40 : arena.w + 40, y, dir: left ? 0 : Math.PI, segments }));
+      monsters.push(arena.addMonster({ id: ++monsterSerial, team: MONSTER_TEAM, kind, ...wormSpawn(arena, i, rows), segments }));
     }
   };
 
@@ -724,7 +724,8 @@ const mount: HostMount = (ctx) => {
         const a = byMachine.get(e.attacker);
         const v = byMachine.get(e.victim);
         if (e.dmg > 0) {
-          if (a?.human) host.send(a.id, { type: "hit", dmg: e.dmg });
+          // (a saw cut with nobody to credit names the victim as its own attacker)
+          if (a?.human && e.attacker !== e.victim) host.send(a.id, { type: "hit", dmg: e.dmg });
           if (v?.human) host.send(v.id, { type: "hurt", dmg: e.dmg });
         }
         if (v) pushOwn(v);
@@ -796,6 +797,10 @@ const mount: HostMount = (ctx) => {
         fx.shake = Math.min(12, fx.shake + 4);
         const s = byMachine.get(e.m);
         if (s?.human) host.send(s.id, { type: "hurt", dmg: 0 });
+      } else if (e.type === "hazard") {
+        // a saw cut (the damage, numbers and coins come with its "hit"): a spray of steel sparks
+        sound?.clash(60);
+        fx.burst(e.x, e.y, lite ? 8 : 16, 340, "#e8eef5", 1.5);
       } else {
         fx.burst(e.x, e.y, 40, 420, "#ffb547", 3);
         fx.burst(e.x, e.y, 16, 200, e.victim.color, 4);

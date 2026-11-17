@@ -132,6 +132,8 @@ export class Fx {
 export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
   private scale = 1;
+  /** Labels (names, health bars, damage numbers) grow with a zoomed-out arena, so they keep a readable size on the TV. */
+  private lz = 1;
 
   /** The arena backdrop, painted once per size (the TV can't afford to paint it every frame). */
   private bg: HTMLCanvasElement | null = null;
@@ -161,6 +163,7 @@ export class Renderer {
     this.canvas.width = w;
     this.canvas.height = Math.round((w * this.worldH) / this.worldW);
     this.scale = this.canvas.width / this.worldW;
+    this.lz = Math.max(1, (this.worldW / VIEW_W) * 0.75);
     this.bgFor = -1; // repainted on the next draw, with the arena's theme and static obstacles
   }
 
@@ -212,8 +215,9 @@ export class Renderer {
       // damage numbers: a cached picture each (outlined text cost the TV two text draws per number per frame)
       for (const f of fx.floats) {
         const t = this.textSprite(f.text, f.color, f.size);
+        const z = this.lz;
         ctx.globalAlpha = Math.min(1, f.life * 2);
-        ctx.drawImage(t.c, f.x - t.w / 2, f.y - t.asc, t.w, t.h);
+        ctx.drawImage(t.c, f.x - (t.w * z) / 2, f.y - t.asc * z, t.w * z, t.h * z);
       }
     }
     ctx.globalAlpha = 1;
@@ -264,7 +268,7 @@ export class Renderer {
     const key = `${text}|${color}|${size}`;
     let t = this.texts.get(key);
     if (t) return t;
-    const s = this.scale;
+    const s = this.scale * this.lz;
     const font = `${size}px "Russo One", system-ui, sans-serif`;
     this.ctx.font = font;
     const w = Math.ceil(this.ctx.measureText(text).width) + 8;
@@ -723,14 +727,40 @@ export class Renderer {
         continue;
       }
       const { x, y } = o.body;
+      if (o.kind === "saw") {
+        // one cached picture, turned: the spin is only drawn (the collider is a still octagon)
+        const sp = this.sawSprite(hw);
+        const a = arena.t * 9;
+        const c = Math.cos(a) * this.scale;
+        const sn = Math.sin(a) * this.scale;
+        ctx.setTransform(c, sn, -sn, c, x * this.scale + this.baseX, y * this.scale + this.baseY);
+        ctx.drawImage(sp, -hw - 2, -hw - 2, 2 * hw + 4, 2 * hw + 4);
+        ctx.setTransform(this.scale, 0, 0, this.scale, this.baseX, this.baseY);
+        continue;
+      }
       ctx.fillStyle = "#3a2a18";
       ctx.fillRect(x - hw, y - hh, 2 * hw, 2 * hh);
-      ctx.fillStyle = "#9a6b3a";
+      ctx.fillStyle = o.kind === "wall" ? "#8a6a42" : "#9a6b3a";
       ctx.fillRect(x - hw + 3, y - hh + 3, 2 * hw - 6, 2 * hh - 6);
-      // planks and the cross brace
       ctx.strokeStyle = "#5a3e20";
       ctx.lineWidth = 2;
       ctx.beginPath();
+      if (o.kind === "wall") {
+        // a plank wall: iron bands across, cracks once it is half broken (one path, as a crate)
+        for (let k = 1; k < 4; k++) {
+          const py = y - hh + (2 * hh * k) / 4;
+          ctx.moveTo(x - hw, py);
+          ctx.lineTo(x + hw, py);
+        }
+        if (o.hp < o.max * 0.5) {
+          ctx.moveTo(x - hw * 0.6, y - hh * 0.5);
+          ctx.lineTo(x + hw * 0.4, y - hh * 0.1);
+          ctx.lineTo(x - hw * 0.2, y + hh * 0.35);
+        }
+        ctx.stroke();
+        continue;
+      }
+      // planks and the cross brace
       for (let k = 1; k < 3; k++) {
         const py = y - hh + (2 * hh * k) / 3;
         ctx.moveTo(x - hw + 3, py);
@@ -746,6 +776,55 @@ export class Renderer {
       }
       ctx.stroke();
     }
+  }
+
+  private saws = new Map<number, HTMLCanvasElement>();
+  private sawScale = 0;
+  /** A saw disc of radius r (teeth, rim, hub), painted once per radius and scale at the canvas's pixel scale. */
+  private sawSprite(r: number): HTMLCanvasElement {
+    if (this.sawScale !== this.scale) {
+      this.saws.clear();
+      this.sawScale = this.scale;
+    }
+    let c = this.saws.get(r);
+    if (c) return c;
+    const R = r + 2;
+    const k = this.scale;
+    c = document.createElement("canvas");
+    c.width = c.height = Math.ceil(2 * R * k);
+    const g = c.getContext("2d")!;
+    g.scale(k, k);
+    g.translate(R, R);
+    const n = 14;
+    g.beginPath();
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * Math.PI * 2;
+      const a1 = a0 + (0.8 / n) * Math.PI * 2;
+      g.lineTo(Math.cos(a0) * r * 0.8, Math.sin(a0) * r * 0.8);
+      g.lineTo(Math.cos(a1) * r, Math.sin(a1) * r);
+    }
+    g.closePath();
+    g.fillStyle = "#c9d2dc";
+    g.fill();
+    g.strokeStyle = "#5a6470";
+    g.lineWidth = 1.5;
+    g.stroke();
+    g.beginPath();
+    g.arc(0, 0, r * 0.62, 0, Math.PI * 2);
+    g.fillStyle = "#8e98a4";
+    g.fill();
+    g.beginPath();
+    g.arc(0, 0, r * 0.22, 0, Math.PI * 2);
+    g.fillStyle = "#2b3038";
+    g.fill();
+    // a red warning band, so it reads as a hazard at a glance
+    g.beginPath();
+    g.arc(0, 0, r * 0.45, 0, Math.PI * 2);
+    g.strokeStyle = "#d6452f";
+    g.lineWidth = r * 0.12;
+    g.stroke();
+    this.saws.set(r, c);
+    return c;
   }
 
   /** Shield plates: on a short rod while attached, then falling debris. */
@@ -982,16 +1061,17 @@ export class Renderer {
     }
 
     // health bar: two rectangles (no paths); the name is a cached picture (text is slow on the TV)
-    const w = 40;
+    const z = this.lz;
+    const w = 40 * z;
     const frac = Math.max(0, m.hp / MACHINE.health);
-    const by = y - HULL_R - 22;
+    const by = y - HULL_R - 22 * z;
     ctx.fillStyle = "rgba(10,12,20,0.6)";
-    ctx.fillRect(x - w / 2 - 1, by, w + 2, 6);
+    ctx.fillRect(x - w / 2 - 1, by, w + 2, 6 * z);
     ctx.fillStyle = frac > 0.5 ? "#7dffa3" : frac > 0.2 ? "#ffd166" : "#ff5d73";
-    ctx.fillRect(x - w / 2, by + 1, w * frac, 4);
+    ctx.fillRect(x - w / 2, by + z, w * frac, 4 * z);
     if (this.opts.names) {
       const label = this.nameSprite(m.name, m.color);
-      ctx.drawImage(label.c, x - label.w / 2, by - 4 - NAME_ASC, label.w, NAME_H);
+      ctx.drawImage(label.c, x - (label.w * z) / 2, by - (4 + NAME_ASC) * z, label.w * z, NAME_H * z);
     }
   }
 
@@ -1076,7 +1156,7 @@ export class Renderer {
     const key = `${name}|${color}`;
     let l = this.names.get(key);
     if (l) return l;
-    const s = this.scale;
+    const s = this.scale * this.lz;
     const font = `11px "Russo One", system-ui, sans-serif`;
     const probe = this.ctx;
     probe.font = font;

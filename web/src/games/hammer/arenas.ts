@@ -31,6 +31,11 @@ export type ArenaTheme = "dusk" | "aria" | "sunrise" | "hammerball" | "arena-nig
 export interface ArenaDef {
   /** Size: k × the 960×540 frame (the TV shows all of it, zoomed out). */
   k: number;
+  /**
+   * The k the px sizes (half widths and heights, rope and chain lengths) were laid out for: they grow by k / base, so
+   * the room keeps its shape when the arena is zoomed out (default: k).
+   */
+  base?: number;
   obstacles: ObstacleRow[];
   /** Seat spawn points as shares of the arena (even seats left, odd right); else SPAWNS. */
   spawns?: [number, number][];
@@ -39,70 +44,87 @@ export interface ArenaDef {
   theme?: ArenaTheme;
 }
 
+/** Destructible walls (OURS): sturdy plank walls toward the sides, slam surfaces that break after a beating. */
+const WALL_HP = 60;
+
 /**
  * Arenas. classic…huge are OURS. stands…pit are simplified from Hammerfight's fight levels (ARIA_multy, ARIA2_multy,
  * HAMMERBALL_multy, the Melka ARENA, KADISH_small, MELKA_pit2): the rooms squeezed into the 16:9 frame, with the
  * original's cages on ropes (density 50, hp 10-30) and heavy freeza blocks (74 px, density 40; movable is ours).
  * A bigger arena is the same TV picture zoomed out; positions are shares of the arena size.
+ *
+ * 2026-11-17 (play test: "the machines are a bit big for the arenas, piling in the middle"): every arena is zoomed out
+ * (k up by 1.2-1.5, so a machine is 30-47 px tall on a 1080p TV instead of 33-66), the middle is open, and the
+ * destructible walls (`wall`) stand toward the sides as slam surfaces. Two arenas (big, huge) have a saw on each side
+ * wall. The level rooms keep their shapes (`base`); the clutter in their middles is gone (pit's stalagmite and floor
+ * crates, melka's middle cage, blocks' middle block).
  */
 export const ARENAS: Record<string, ArenaDef> = {
-  classic: { k: 1, obstacles: [] },
+  classic: { k: 1.5, obstacles: [] },
   crates: {
-    k: 1,
-    obstacles: [
-      ["pillar", 0.33, 0.52, 12, 34],
-      ["pillar", 0.67, 0.52, 12, 34],
-      ["crate", 0.5, 0.36, 22, 22],
-      ["crate", 0.5, 0.74, 22, 22],
-    ],
-  },
-  big: {
     k: 1.5,
     obstacles: [
-      ["pillar", 0.33, 0.52, 12, 34],
-      ["pillar", 0.67, 0.52, 12, 34],
-      ["crate", 0.5, 0.36, 22, 22],
-      ["crate", 0.5, 0.74, 22, 22],
-      ["crate", 0.18, 0.78, 20, 20],
-      ["crate", 0.82, 0.78, 20, 20],
+      ["wall", 0.1, 0.5, 12, 80, { hp: WALL_HP }],
+      ["wall", 0.9, 0.5, 12, 80, { hp: WALL_HP }],
+      ["crate", 0.05, 0.973, 22, 22],
+      ["crate", 0.95, 0.973, 22, 22],
     ],
+    spawns: [[0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7], [0.2, 0.5], [0.8, 0.5], [0.42, 0.55], [0.58, 0.55]],
+  },
+  big: {
+    k: 1.8,
+    obstacles: [
+      ["wall", 0.12, 0.42, 12, 70, { hp: WALL_HP }],
+      ["wall", 0.88, 0.42, 12, 70, { hp: WALL_HP }],
+      ["wall", 0.27, 0.943, 12, 55, { hp: WALL_HP }],
+      ["wall", 0.73, 0.943, 12, 55, { hp: WALL_HP }],
+      // a saw on each side wall, below the side walls: a shove into it cuts
+      ["saw", 0, 0.75, 44, 44],
+      ["saw", 1, 0.75, 44, 44],
+    ],
+    spawns: [[0.3, 0.3], [0.7, 0.3], [0.33, 0.66], [0.67, 0.66], [0.22, 0.5], [0.78, 0.5], [0.42, 0.5], [0.58, 0.5]],
   },
   huge: {
-    k: 2,
+    k: 2.2,
     obstacles: [
-      ["pillar", 0.25, 0.5, 12, 40],
-      ["pillar", 0.75, 0.5, 12, 40],
-      ["pillar", 0.5, 0.55, 40, 12],
-      ["crate", 0.5, 0.3, 22, 22],
-      ["crate", 0.38, 0.78, 22, 22],
-      ["crate", 0.62, 0.78, 22, 22],
-      ["crate", 0.12, 0.3, 20, 20],
-      ["crate", 0.88, 0.3, 20, 20],
+      ["wall", 0.1, 0.3, 12, 80, { hp: WALL_HP }],
+      ["wall", 0.1, 0.7, 12, 80, { hp: WALL_HP }],
+      ["wall", 0.9, 0.3, 12, 80, { hp: WALL_HP }],
+      ["wall", 0.9, 0.7, 12, 80, { hp: WALL_HP }],
+      ["crate", 0.3, 0.981, 22, 22],
+      ["crate", 0.7, 0.981, 22, 22],
+      ["saw", 0, 0.5, 52, 52],
+      ["saw", 1, 0.5, 52, 52],
     ],
+    spawns: [[0.3, 0.3], [0.7, 0.3], [0.3, 0.68], [0.7, 0.68], [0.2, 0.5], [0.8, 0.5], [0.42, 0.45], [0.58, 0.45]],
   },
-  // ARIA_multy: a bowl between two spectator stands; a post screens a nook under each stand
+  // ARIA_multy: a bowl between two spectator stands; a wooden post (it breaks) screens a nook under each stand
   stands: {
-    k: 1.25,
+    k: 1.6,
+    base: 1.25,
     theme: "aria",
     obstacles: [
-      ["pillar", 0.09, 0.205, 108, 30], ["pillar", 0.065, 0.39, 78, 94], ["pillar", 0.175, 0.778, 8, 82], ["pillar", 0.161, 0.95, 193, 34],
-      ["pillar", 0.91, 0.205, 108, 30], ["pillar", 0.935, 0.39, 78, 94], ["pillar", 0.825, 0.778, 8, 82], ["pillar", 0.839, 0.95, 193, 34],
+      ["pillar", 0.09, 0.205, 108, 30], ["pillar", 0.065, 0.39, 78, 94], ["wall", 0.175, 0.778, 10, 82, { hp: WALL_HP }], ["pillar", 0.161, 0.95, 193, 34],
+      ["pillar", 0.91, 0.205, 108, 30], ["pillar", 0.935, 0.39, 78, 94], ["wall", 0.825, 0.778, 10, 82, { hp: WALL_HP }], ["pillar", 0.839, 0.95, 193, 34],
     ],
     spawns: [[0.43, 0.8], [0.57, 0.8], [0.42, 0.12], [0.58, 0.12], [0.25, 0.6], [0.75, 0.6], [0.33, 0.35], [0.67, 0.35]],
   },
-  // ARIA2_multy: an open field with a tower near each side (a crate on each tower top is ours)
+  // ARIA2_multy: an open field with a tower near each side (a crate on each tower top and the low walls are ours)
   towers: {
-    k: 1.5,
+    k: 1.8,
+    base: 1.5,
     theme: "sunrise",
     obstacles: [
       ["ledge", 0.13, 0.469, 100, 25], ["pillar", 0.155, 0.604, 36, 84], ["pillar", 0.13, 0.854, 100, 118], ["crate", 0.13, 0.416, 18, 18, { hp: 30 }],
       ["ledge", 0.87, 0.469, 100, 25], ["pillar", 0.845, 0.604, 36, 84], ["pillar", 0.87, 0.854, 100, 118], ["crate", 0.87, 0.416, 18, 18, { hp: 30 }],
+      ["wall", 0.27, 0.938, 10, 50, { hp: WALL_HP }], ["wall", 0.73, 0.938, 10, 50, { hp: WALL_HP }],
     ],
     spawns: [[0.42, 0.85], [0.58, 0.85], [0.45, 0.12], [0.55, 0.12], [0.25, 0.3], [0.75, 0.3], [0.3, 0.55], [0.7, 0.55]],
   },
-  // HAMMERBALL_multy: a closed stone lens with a mouth at each side; the heavy ball in the bowl is ours
+  // HAMMERBALL_multy: a closed stone lens with a mouth at each side; the heavy ball in the bowl and the walls by the mouths are ours
   eye: {
-    k: 1.5,
+    k: 1.8,
+    base: 1.5,
     theme: "hammerball",
     obstacles: [
       ["pillar", 0.5, 0.078, 175, 33],
@@ -110,45 +132,50 @@ export const ARENAS: Record<string, ArenaDef> = {
       ["pillar", 0.1624, 0.7836, 285, 18, { a: 0.38 }], ["pillar", 0.8376, 0.7836, 285, 18, { a: -0.38 }],
       ["pillar", 0.5, 0.93, 240, 39],
       ["block", 0.5, 0.835, 30, 30, { d: 40 }],
+      ["wall", 0.2, 0.53, 10, 40, { hp: WALL_HP }], ["wall", 0.8, 0.53, 10, 40, { hp: WALL_HP }],
     ],
-    spawns: [[0.4, 0.62], [0.6, 0.62], [0.42, 0.3], [0.58, 0.3], [0.08, 0.53], [0.92, 0.53], [0.27, 0.47], [0.73, 0.47]],
+    spawns: [[0.4, 0.62], [0.6, 0.62], [0.42, 0.3], [0.58, 0.3], [0.08, 0.53], [0.92, 0.53], [0.29, 0.45], [0.71, 0.45]],
   },
-  // the Melka ARENA: a pit below, two balconies above, three cages hanging from the dome
+  // the Melka ARENA: a pit below, two balconies above (a breakable parapet at each balcony's end), two cages hanging from the dome
   melka: {
-    k: 1.25,
+    k: 1.6,
+    base: 1.25,
     theme: "arena-night",
     obstacles: [
       ["pillar", 0.09, 0.789, 108, 143], ["ledge", 0.179, 0.56, 215, 12],
       ["pillar", 0.91, 0.789, 108, 143], ["ledge", 0.821, 0.56, 215, 12],
       ["pillar", 0.131, 0.205, 223, 14, { a: -0.588 }], ["pillar", 0.869, 0.205, 223, 14, { a: 0.588 }],
       ["cage", 0.36, 0, 15, 24, { hp: 30, d: 50, rope: [0.36, 0.06, 150] }],
-      ["cage", 0.5, 0, 13, 13, { hp: 10, d: 50, rope: [0.5, 0.06, 110] }],
       ["cage", 0.64, 0, 15, 24, { hp: 28, d: 50, rope: [0.64, 0.06, 150] }],
-      ["crate", 0.25, 0.516, 23, 18, { hp: 10 }], ["crate", 0.75, 0.516, 23, 18, { hp: 10 }],
+      ["wall", 0.33, 0.492, 10, 34, { hp: WALL_HP }], ["wall", 0.67, 0.492, 10, 34, { hp: WALL_HP }],
     ],
     spawns: [[0.42, 0.85], [0.58, 0.85], [0.3, 0.3], [0.7, 0.3], [0.3, 0.72], [0.7, 0.72], [0.44, 0.6], [0.56, 0.6]],
   },
-  // KADISH_small: a hall with a sloped roof and heavy freeza blocks on the floor (movable is ours)
+  // KADISH_small: a hall with a sloped roof and heavy freeza blocks on the floor (movable is ours), walls under the roof ends
   blocks: {
-    k: 1.25,
+    k: 1.6,
+    base: 1.25,
     theme: "kadish-dusk",
     obstacles: [
       ["pillar", 0.0916, 0.192, 185, 16, { a: -0.685 }], ["pillar", 0.9084, 0.192, 185, 16, { a: 0.685 }],
       ["floor", 0.5, 1.0148, 600, 10],
-      ["block", 0.142, 0.9407, 40, 40, { d: 40 }], ["block", 0.318, 0.9407, 40, 40, { d: 40 }], ["block", 0.5, 0.9407, 40, 40, { d: 40 }],
+      ["block", 0.142, 0.9407, 40, 40, { d: 40 }], ["block", 0.318, 0.9407, 40, 40, { d: 40 }],
       ["block", 0.682, 0.9407, 40, 40, { d: 40 }], ["block", 0.858, 0.9407, 40, 40, { d: 40 }],
+      ["wall", 0.17, 0.6, 12, 55, { hp: WALL_HP }], ["wall", 0.83, 0.6, 12, 55, { hp: WALL_HP }],
     ],
-    spawns: [[0.41, 0.66], [0.59, 0.66], [0.4, 0.15], [0.6, 0.15], [0.07, 0.62], [0.93, 0.62], [0.27, 0.4], [0.73, 0.4]],
+    spawns: [[0.41, 0.66], [0.59, 0.66], [0.4, 0.15], [0.6, 0.15], [0.07, 0.62], [0.93, 0.62], [0.29, 0.4], [0.71, 0.4]],
   },
-  // MELKA_pit2: a low cave with overhangs, stalactites, benches and barrels
+  // MELKA_pit2: a low cave with overhangs, stalactites and benches; a breakable wall on each bench's edge
   pit: {
-    k: 1,
+    k: 1.4,
+    base: 1,
     theme: "pit-night",
     obstacles: [
-      ["pillar", 0.084, 0.16, 81, 62], ["pillar", 0.24, 0.098, 69, 23], ["pillar", 0.92, 0.16, 77, 62], ["pillar", 0.803, 0.115, 35, 32],
-      ["pillar", 0.084, 0.92, 81, 43], ["pillar", 0.91, 0.92, 86, 43], ["pillar", 0.576, 0.92, 10, 43],
-      ["crate", 0.13, 0.822, 10, 10, { hp: 10 }], ["crate", 0.9, 0.807, 22, 18, { hp: 20 }],
-      ["crate", 0.35, 0.935, 23, 17, { hp: 10 }], ["crate", 0.7, 0.948, 8, 10, { hp: 10 }],
+      // the overhangs and stalactites reach up into the ceiling: zoomed out, their old tops left a slot under the
+      // ceiling where a hull jammed
+      ["pillar", 0.084, 0.14, 81, 76], ["pillar", 0.24, 0.07, 69, 38], ["pillar", 0.92, 0.14, 77, 76], ["pillar", 0.803, 0.088, 35, 47],
+      ["pillar", 0.084, 0.92, 81, 43], ["pillar", 0.91, 0.92, 86, 43],
+      ["wall", 0.15, 0.767, 10, 40, { hp: WALL_HP }], ["wall", 0.85, 0.767, 10, 40, { hp: WALL_HP }],
     ],
     chains: [[0.53, 0.41, 175]],
     spawns: [[0.44, 0.7], [0.64, 0.7], [0.4, 0.35], [0.6, 0.35], [0.1, 0.55], [0.82, 0.55], [0.27, 0.55], [0.7, 0.45]],
@@ -161,20 +188,100 @@ export function applyArenaKind(arena: Arena, kind: string): { w: number; h: numb
   const a = ARENAS[id]!;
   const w = VIEW_W * a.k;
   const h = VIEW_H * a.k;
+  // px sizes grow with the zoom-out, so a level room keeps its shape
+  const g = a.k / (a.base ?? a.k);
   arena.kind = id;
   arena.theme = a.theme ?? "dusk";
-  arena.chains = (a.chains ?? []).map(([sx, sy, len]) => ({ x: sx * w, y: sy * h, len }));
+  arena.chains = (a.chains ?? []).map(([sx, sy, len]) => ({ x: sx * w, y: sy * h, len: len * g }));
   arena.setArena(
     w,
     h,
-    a.obstacles.map(([k, sx, sy, hw, hh, o]) => {
-      const rope = o?.rope ? { x: o.rope[0] * w, y: o.rope[1] * h, len: o.rope[2] } : undefined;
+    a.obstacles.map(([k, sx, sy, hw0, hh0, o]) => {
+      const hw = hw0 * g;
+      const hh = hh0 * g;
+      const rope = o?.rope ? { x: o.rope[0] * w, y: o.rope[1] * h, len: o.rope[2] * g } : undefined;
       // a cage hangs straight below its rope end (the rope ends at the cage's top centre)
       const [x, y] = rope ? [rope.x, rope.y + rope.len + hh] : [sx * w, sy * h];
       return { kind: k, x, y, hw, hh, a: o?.a, hp: o?.hp, d: o?.d, rope };
     }),
   );
   return { w, h };
+}
+
+/** Grid cell (px) of the reach map below. */
+const CELL = 20;
+/** Is (x, y) within `pad` px of an obstacle? (turned boxes in their own frame; blocks and saws as circles) */
+function blocked(arena: Arena, x: number, y: number, pad: number): boolean {
+  for (const o of arena.obstacles) {
+    const b = o.body;
+    if (o.kind === "block" || o.kind === "saw") {
+      if (Math.hypot(x - b.x, y - b.y) < o.hw + pad) return true;
+      continue;
+    }
+    const c = Math.cos(b.a);
+    const s = Math.sin(b.a);
+    const lx = (x - b.x) * c + (y - b.y) * s;
+    const ly = -(x - b.x) * s + (y - b.y) * c;
+    if (Math.abs(lx) < o.hw + pad && Math.abs(ly) < o.hh + pad) return true;
+  }
+  return false;
+}
+
+/**
+ * Heights (px) at which a worm can fly in from the left (side 0) or right (1) edge and reach the fight: rows whose
+ * two edge cells join the play space (a flood fill from seat 1's spawn round the obstacles). The sealed corners
+ * behind the eye's slabs and under the roofs of the hall and the melka dome are left out: worms that spawned there
+ * never got out (play test 2026-11-17: 2 of 3 monster waves in the eye timed out).
+ */
+export function openSideRows(arena: Arena): [number[], number[]] {
+  const nx = Math.ceil(arena.w / CELL);
+  const ny = Math.ceil(arena.h / CELL);
+  const seen = new Uint8Array(nx * ny);
+  const [sx, sy] = spawnPoint(arena, 0);
+  const q = [Math.floor(sx / CELL) + Math.floor(sy / CELL) * nx];
+  seen[q[0]!] = 1;
+  while (q.length) {
+    const i = q.pop()!;
+    const cx = i % nx;
+    const cy = (i - cx) / nx;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const x = cx + dx;
+      const y = cy + dy;
+      if (x < 0 || y < 0 || x >= nx || y >= ny) continue;
+      const j = x + y * nx;
+      if (seen[j] || blocked(arena, (x + 0.5) * CELL, (y + 0.5) * CELL, 18)) continue;
+      seen[j] = 1;
+      q.push(j);
+    }
+  }
+  const rows: [number[], number[]] = [[], []];
+  for (let y = 0; y < ny; y++) {
+    const py = (y + 0.5) * CELL;
+    if (py < 100 || py > arena.h - 100) continue;
+    // a straight way in over the first 12 % of the width (not into the lane behind a tower), with a margin: a worm's
+    // body is wider than one cell
+    const reach = Math.ceil((arena.w * 0.12) / CELL);
+    let left = true;
+    let right = true;
+    for (let x = 0; x <= reach && (left || right); x++) {
+      if (!seen[x + y * nx] || blocked(arena, (x + 0.5) * CELL, py, 30)) left = false;
+      if (!seen[nx - 1 - x + y * nx] || blocked(arena, arena.w - (x + 0.5) * CELL, py, 30)) right = false;
+    }
+    if (left && !blocked(arena, -20, py, 30)) rows[0].push(py);
+    if (right && !blocked(arena, arena.w + 20, py, 30)) rows[1].push(py);
+  }
+  return rows;
+}
+
+/** Where wave worm `i` flies in (host.ts and the benches): alternate sides, a random open row. */
+export function wormSpawn(arena: Arena, i: number, rows: [number[], number[]] = openSideRows(arena)): { x: number; y: number; dir: number } {
+  // the other side when this one is closed
+  const own = i % 2 === 0 ? rows[0] : rows[1];
+  const other = i % 2 === 0 ? rows[1] : rows[0];
+  const left = own.length || !other.length ? i % 2 === 0 : i % 2 !== 0;
+  const side = rows[left ? 0 : 1];
+  const y = side.length ? side[Math.floor(Math.random() * side.length)]! : 120 + Math.random() * (arena.h - 240);
+  return { x: left ? -40 : arena.w + 40, y, dir: left ? 0 : Math.PI };
 }
 
 /** The phone stick's force model (the game's `controls.tune`; these are its defaults). */
