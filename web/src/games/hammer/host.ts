@@ -962,6 +962,8 @@ const mount: HostMount = (ctx) => {
   let clashCd = 0;
   /** Frame rate cap for the current state: none while anyone can fight; 30 fps once a result is on screen. */
   const capFps = () => ((phase === "result" || phase === "match") && phaseFor > 1.5 ? 30 : 0);
+  let fpsFrames = 0;
+  let fpsFrom = performance.now();
   const frame = (now: number) => {
     raf = requestAnimationFrame(frame);
     // Paused: the canvas keeps its last picture. Drawing on under the pause menu made the TV redraw the
@@ -1023,6 +1025,13 @@ const mount: HostMount = (ctx) => {
     drewOnce = true;
     const d1 = tour ? performance.now() : 0;
     frameDrawn(now);
+    // the on-screen counter: frames drawn over the last half second (the text changes at most twice a second)
+    fpsFrames++;
+    if (now - fpsFrom >= 500) {
+      hud.setFps(Math.round((fpsFrames * 1000) / (now - fpsFrom)));
+      fpsFrames = 0;
+      fpsFrom = now;
+    }
     profBegin("hud");
     if (!abHudOff && !(abHudFrozen && phase === "fight")) maybeDrawHud();
     profEnd("hud");

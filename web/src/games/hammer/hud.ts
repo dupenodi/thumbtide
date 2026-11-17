@@ -48,6 +48,15 @@ export class Hud {
   private layoutKey = "";
   private annTimer = 0;
   private warmKey = "";
+  private fpsEl: HTMLElement;
+  private fpsShown = -1;
+
+  /** The small frame-rate counter in the bottom-right corner; the page changes only when the number does. */
+  setFps(fps: number): void {
+    if (fps === this.fpsShown) return;
+    this.fpsShown = fps;
+    this.fpsEl.textContent = `${fps} fps`;
+  }
 
   constructor(root: HTMLElement) {
     this.el = document.createElement("div");
@@ -57,8 +66,10 @@ export class Hud {
       <div class="hm-side hm-right"></div>
       <div class="hm-feed"></div>
       <div class="hm-ann"></div>
-      <div class="hm-warm" hidden><b></b><i><s></s></i></div>`;
+      <div class="hm-warm" hidden><b></b><i><s></s></i></div>
+      <div class="hm-fps"></div>`;
     root.appendChild(this.el);
+    this.fpsEl = this.el.querySelector(".hm-fps")!;
     this.left = this.el.querySelector(".hm-left")!;
     this.right = this.el.querySelector(".hm-right")!;
     this.feedEl = this.el.querySelector(".hm-feed")!;
