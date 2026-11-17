@@ -11,7 +11,7 @@
 
 import { STICK_DEFAULTS, type StickTune, stickPush } from "./arenas.ts";
 import type { Body } from "./engine.ts";
-import { aimable, type Arena, EDGE_M, EDGE_TOP, type Machine, STEP } from "./sim.ts";
+import { aimable, type Arena, EDGE_M, edgeTop, type Machine, STEP } from "./sim.ts";
 import { type GunKind, type PlateKind, WEAPON_KINDS, type WeaponKind } from "./weapons.ts";
 
 export type BotMode = "idle" | "wander" | "fight";
@@ -317,7 +317,7 @@ function stagePush(arena: Arena, m: Machine, out: [number, number]): void {
   const k = 1 / 80;
   if (h.x < EDGE_M + 40) out[0] += (EDGE_M + 40 - h.x) * k;
   if (h.x > arena.w - EDGE_M - 40) out[0] -= (h.x - (arena.w - EDGE_M - 40)) * k;
-  if (h.y < EDGE_TOP + 20) out[1] += (EDGE_TOP + 20 - h.y) * k;
+  if (h.y < edgeTop(arena) + 20) out[1] += (edgeTop(arena) + 20 - h.y) * k;
   if (h.y > arena.h - EDGE_M - 20) out[1] -= (h.y - (arena.h - EDGE_M - 20)) * k;
   // the next 0.2 s of the hull's path against each obstacle box
   const fx = h.x + h.vx * 0.2;
@@ -339,7 +339,7 @@ function stagePush(arena: Arena, m: Machine, out: [number, number]): void {
   }
 }
 
-const onStage = (arena: Arena, x: number, y: number) => x > EDGE_M + 30 && x < arena.w - EDGE_M - 30 && y > EDGE_TOP + 10 && y < arena.h - EDGE_M - 10;
+const onStage = (arena: Arena, x: number, y: number) => x > EDGE_M + 30 && x < arena.w - EDGE_M - 30 && y > edgeTop(arena) + 10 && y < arena.h - EDGE_M - 10;
 
 /** Steer toward (x, y) at up to `speed` px/s with a soft stick (arrive without overshoot). */
 function seek(arena: Arena, m: Machine, x: number, y: number, speed: number, t: StickTune): void {
@@ -543,7 +543,7 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
         }
       }
       px = Math.max(EDGE_M + 30, Math.min(arena.w - EDGE_M - 30, px));
-      py = Math.max(EDGE_TOP + 10, Math.min(arena.h - EDGE_M - 10, py));
+      py = Math.max(edgeTop(arena) + 10, Math.min(arena.h - EDGE_M - 10, py));
     }
     bot.intent = stunned ? "combo" : finishing ? "finish" : inPhase && ready ? "strike" : "windup";
 
@@ -612,7 +612,7 @@ function classicDrive(arena: Arena, m: Machine, bot: { theta: number; spin: numb
   }
   bot.theta += STEP * 3.2 * bot.spin;
   const x = Math.min(arena.w - EDGE_M, Math.max(EDGE_M, enemy.hull.x + Math.cos(bot.theta) * 90));
-  const y = Math.min(arena.h - EDGE_M, Math.max(EDGE_TOP, enemy.hull.y + Math.sin(bot.theta) * 90));
+  const y = Math.min(arena.h - EDGE_M, Math.max(edgeTop(arena), enemy.hull.y + Math.sin(bot.theta) * 90));
   if (viaStick) {
     seek(arena, m, x, y, 350, STICK_DEFAULTS);
   } else {

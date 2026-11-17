@@ -30,6 +30,8 @@ const WALL_SIDE = 16;
  */
 export const EDGE_M = 60;
 export const EDGE_TOP = 110;
+/** EDGE_TOP for an arena: the score cards cover a share of the picture, so a bigger (zoomed-out) arena needs more world px. */
+export const edgeTop = (a: { h: number }) => Math.max(EDGE_TOP, a.h * 0.16);
 /** px below the frame after which a falling wreck or weapon leaves play (the soft limit no longer holds it). */
 const OUT_OF_PLAY = 300;
 /** Gun aim (OURS, aim()): spring 1/s² and damping 1/s on the gun toward its aim point (Hammerfight's turret pull is 1500), and how far off it may still fire (11°). */
@@ -221,14 +223,20 @@ export type SimEvent =
   | { type: "slam"; m: Machine; impact: number; x: number; y: number }
   | { type: "crack"; by: Machine; obstacle: Obstacle; dmg: number; x: number; y: number }
   | { type: "break"; by: Machine; obstacle: Obstacle; x: number; y: number }
+  /** An arena hazard (a saw) cut a machine; the damage itself comes as a "hit" too (credited to whoever hit it last). */
+  | { type: "hazard"; victim: Machine; dmg: number; x: number; y: number }
   | { type: "ko"; victim: Machine; by: Machine | null; x: number; y: number };
 
 /**
- * Static: pillar (a stone box, may be turned), ledge (a plank), floor, crate (breaks). Dynamic (gravity on): cage (hangs
- * on a rope, breaks) and block (a heavy octagon that weapons and machines push; never breaks).
+ * Static: pillar (a stone box, may be turned), ledge (a plank), floor, crate (breaks), wall (a sturdy plank wall that
+ * breaks: a slam surface, OURS), saw (a spinning disc on a side wall that cuts machines, OURS; the collider is a static
+ * octagon, the spin is only drawn). Dynamic (gravity on): cage (hangs on a rope, breaks) and block (a heavy octagon
+ * that weapons and machines push; never breaks).
  */
-export type ObstacleKind = "crate" | "pillar" | "ledge" | "floor" | "cage" | "block";
-export const breakable = (k: ObstacleKind) => k === "crate" || k === "cage";
+export type ObstacleKind = "crate" | "pillar" | "ledge" | "floor" | "cage" | "block" | "wall" | "saw";
+export const breakable = (k: ObstacleKind) => k === "crate" || k === "cage" || k === "wall";
+/** A saw's cut (OURS): damage at the slowest and the fastest contact, the stun, the kick away (px/s), and the rest between two cuts of one machine (s). */
+export const SAW = { dmgMin: 6, dmgMax: 16, stun: 0.9, kick: 380, rest: 0.6 };
 export interface Obstacle {
   kind: ObstacleKind;
   body: Body;
@@ -843,7 +851,7 @@ export class Arena {
     // view. The top margin is bigger: the score cards cover the top of the screen.
     const edge = (v: number, lo: number, hi: number) => (v < lo ? (lo - v) / EDGE_M : v > hi ? -(v - hi) / EDGE_M : 0);
     const ex = 2 * Math.max(-1.5, Math.min(1.5, edge(core.x, EDGE_M, this.w - EDGE_M)));
-    const ey = 2 * Math.max(-1.5, Math.min(1.5, edge(core.y, EDGE_TOP, this.h - EDGE_M)));
+    const ey = 2 * Math.max(-1.5, Math.min(1.5, edge(core.y, edgeTop(this), this.h - EDGE_M)));
     const ax = (hx * k - hy * wig + ex) * 750 * st.layout.force;
     const ay = (hy * k + hx * wig + ey) * 750 * st.layout.force;
     // pull at the head end: the core and the jaw share the push for the whole body
@@ -914,9 +922,10 @@ export class Arena {
     for (const o of this.obstacles) this.world.remove(o.body);
     this.obstacles = [];
     this.obstacleOf.clear();
+    this.sawRest.clear();
     for (const s of obstacles) {
       const dynamic = s.kind === "cage" || s.kind === "block";
-      const mesh = s.kind === "block" ? octagon(s.hw) : [-s.hw, -s.hh, s.hw, -s.hh, s.hw, s.hh, -s.hw, s.hh];
+      const mesh = s.kind === "block" || s.kind === "saw" ? octagon(s.hw) : [-s.hw, -s.hh, s.hw, -s.hh, s.hw, s.hh, -s.hw, s.hh];
       // density 0: static (it never moves; the solver gives it no share of a correction)
       const body = new Body(mesh, dynamic ? (s.d ?? 40) : 0).place(s.x, s.y, s.a ?? 0);
       body.gravity = dynamic;
@@ -979,9 +988,14 @@ export class Arena {
     if (oa || ob) {
       const t = (oa ? c.b.data : c.a.data) as Tag | null;
       if (!t) return;
+      const o = (oa ?? ob)!;
+      if (o.kind === "saw") {
+        if (t.hull) this.sawCut(t.m, o, c);
+        return;
+      }
       // a reeling machine smashed into a crate or a pillar
       if (t.hull) this.slam(t.m, c.impulse * 1e-5, c.x, c.y);
-      this.hitObstacle((oa ?? ob)!, t, oa ? c.b : c.a, c);
+      this.hitObstacle(o, t, oa ? c.b : c.a, c);
       return;
     }
     const ta = c.a.data as Tag | null;
@@ -1008,6 +1022,32 @@ export class Arena {
     if (tb.hull) this.hurt(tb.m, c.b, ta, c.a, impact, c);
     if (ta.hull) this.hurt(ta.m, c.a, tb, c.b, impact, c);
   };
+
+  /** Until this arena time a machine is safe from the saws (one cut per touch). */
+  private sawRest = new Map<Machine, number>();
+  /**
+   * A hull touched a saw (OURS): a cut through damage() (health_low rule, sudden death, wreck), credited to whoever hit
+   * the machine last (a shove into the saw counts as their hit); a stun, a kick away from the disc, and the slam window
+   * (kicked into a wall, it slams). Off in the warm-up.
+   */
+  private sawCut(m: Machine, o: Obstacle, c: ContactReport): void {
+    if (!m.alive || this.tuning.damage <= 0 || this.t < (this.sawRest.get(m) ?? -1)) return;
+    this.sawRest.set(m, this.t + SAW.rest);
+    const h = m.hull;
+    const dmg = Math.round(clamp(SAW.dmgMin + c.approach / 40, SAW.dmgMin, SAW.dmgMax));
+    const before = m.hp;
+    this.damage(m, dmg, m.lastHitBy ?? m, false, dmg * 10, 2, c.x, c.y);
+    this.events.push({ type: "hazard", victim: m, dmg: before - m.hp, x: c.x, y: c.y });
+    if (!m.alive) return;
+    m.stun = Math.min(this.tuning.stunMax, m.stun + SAW.stun);
+    m.slamUntil = this.t + SLAM_S;
+    let dx = h.x - o.body.x;
+    let dy = h.y - o.body.y;
+    const d = Math.hypot(dx, dy) || 1;
+    dx /= d;
+    dy /= d;
+    h.setVelocity(dx * SAW.kick, dy * SAW.kick, h.w, STEP * this.timewarp);
+  }
 
   /** Stun from a slam (see onContact and the walls); once per stunning hit. */
   private slam(m: Machine, impact: number, x: number, y: number): void {
