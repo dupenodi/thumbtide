@@ -102,6 +102,8 @@ const mount: HostMount = (ctx) => {
   const abHudOff = import.meta.env.VITE_PERF === "1" && startParam("hud") === "off";
   // hud=frozen: the cards stop updating during a fight (they stay on screen): what the card updates cost
   const abHudFrozen = import.meta.env.VITE_PERF === "1" && startParam("hud") === "frozen";
+  // pvebots=1: in Co-op vs CPU, the bots in even slots play on the players' side (so a TV run with bots only can fight)
+  const abPveBots = import.meta.env.VITE_PERF === "1" && startParam("pvebots") === "1";
   const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
   // kos=burst (perf builds): every 6 s in a fight, wreck 3 machines at once (the worst moment for shards and coins)
   const abKoBurst = import.meta.env.VITE_PERF === "1" && startParam("kos") === "burst";
@@ -211,7 +213,7 @@ const mount: HostMount = (ctx) => {
   /** The mode of the current round (a change in Settings applies from the next warm-up). */
   let mode: Mode = settingMode();
   // co-op vs monsters: every seat (players and computer allies) is team 0
-  const teamOf = (s: Seat): number => (mode === "teams" ? s.slot % 2 : mode === "pve" ? (s.human ? 0 : 1) : mode === "pvm" ? 0 : s.slot);
+  const teamOf = (s: Seat): number => (mode === "teams" ? s.slot % 2 : mode === "pve" ? (s.human || (abPveBots && s.slot % 2 === 0) ? 0 : 1) : mode === "pvm" ? 0 : s.slot);
   const teamName = (t: number): string =>
     t === MONSTER_TEAM ? "The worms" : mode === "teams" ? TEAMS[t]!.name : mode === "pve" || mode === "pvm" ? PVE_TEAMS[t]!.name : "";
   const teamColor = (t: number): string => (t === MONSTER_TEAM ? MONSTER_COLOR : mode === "teams" ? TEAMS[t]!.color : PVE_TEAMS[t]!.color);

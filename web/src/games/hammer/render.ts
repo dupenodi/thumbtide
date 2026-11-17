@@ -1006,17 +1006,73 @@ export class Renderer {
   private creature(arena: Arena, m: Machine, alpha: number): void {
     const ctx = this.ctx;
     const st = m.monster!;
-    const look = MONSTER_LOOK[st.kind];
     const flash = m.flash > 0;
     ctx.globalAlpha = m.alive ? 1 : Math.max(0, 1 - (arena.t - m.diedAt) / 2.5);
-    // tail first, so the head is on top
+    // tail first, so the head is on top; each segment and the jaw is a cached picture (one drawImage, where the paths
+    // were 3 to 4 fills and strokes each: a worm of 10 segments was ~35 path draws a frame on the TV)
     for (let i = st.layout.parts.length - 1; i >= 0; i--) {
       const cp = st.layout.parts[i]!;
       if (cp.look !== "segment") continue;
       const b = st.part.get(cp.key);
       if (!b) continue;
-      const { maxX, maxY } = bounds(b);
+      const sp = this.creatureSprite(b, st.kind, st.layout.armored, flash, false);
       this.enter(b, alpha);
+      ctx.drawImage(sp.c, sp.x, sp.y, sp.w, sp.h);
+    }
+    const jaw = st.part.get("jaw");
+    if (jaw) {
+      const sp = this.creatureSprite(jaw, st.kind, st.layout.armored, flash, true);
+      this.enter(jaw, alpha);
+      ctx.drawImage(sp.c, sp.x, sp.y, sp.w, sp.h);
+    }
+    this.leave();
+    ctx.globalAlpha = 1;
+    if (!m.alive) return;
+    // health bar over the head
+    const head = jaw ?? m.hull;
+    const [x, y] = lerpBody(head, alpha);
+    const w = 44;
+    const frac = Math.max(0, m.hp / st.layout.hp);
+    ctx.fillStyle = "rgba(10,12,20,0.6)";
+    ctx.fillRect(x - w / 2 - 1, y - 34, w + 2, 6);
+    ctx.fillStyle = "#ff8a3d";
+    ctx.fillRect(x - w / 2, y - 33, w * frac, 4);
+    if (m.stun > 0) {
+      const st = this.starSprite();
+      const r = STAR_BOX / 2;
+      for (let i = 0; i < 3; i++) {
+        const t = arena.t * 7 + (i * Math.PI * 2) / 3;
+        ctx.drawImage(st, x + Math.cos(t) * 18 - r, y - 42 + Math.sin(t) * 5 - r, 2 * r, 2 * r);
+      }
+    }
+  }
+
+  private creatures = new Map<string, { c: HTMLCanvasElement; x: number; y: number; w: number; h: number }>();
+  private creatureScale = 0;
+  /**
+   * A worm segment (a ridged or armoured ellipse) or its jaw (a toothed wedge with an eye) in the body's own frame, at
+   * the canvas's pixel scale: made once per kind, size, armour and flash.
+   */
+  private creatureSprite(b: Body, kind: keyof typeof MONSTER_LOOK, armored: boolean, flash: boolean, jaw: boolean): { c: HTMLCanvasElement; x: number; y: number; w: number; h: number } {
+    if (this.creatureScale !== this.scale) {
+      this.creatures.clear();
+      this.creatureScale = this.scale;
+    }
+    const { maxX, maxY } = bounds(b);
+    const key = `${kind}|${jaw ? 1 : 0}|${armored ? 1 : 0}|${flash ? 1 : 0}|${maxX}|${maxY}`;
+    let sp = this.creatures.get(key);
+    if (sp) return sp;
+    const look = MONSTER_LOOK[kind];
+    // the shape's half sizes plus room for the outline (2) and its smoothed edge
+    const hx = (jaw ? maxX : maxX * 1.15) + 3;
+    const hy = maxY + 3;
+    const s = this.scale;
+    const c = document.createElement("canvas");
+    c.width = Math.ceil(2 * hx * s);
+    c.height = Math.ceil(2 * hy * s);
+    const ctx = c.getContext("2d")!;
+    ctx.setTransform(c.width / (2 * hx), 0, 0, c.height / (2 * hy), c.width / 2, c.height / 2);
+    if (!jaw) {
       ctx.fillStyle = flash ? "#ffffff" : look.fill;
       ctx.strokeStyle = look.stroke;
       ctx.lineWidth = 2;
@@ -1025,23 +1081,17 @@ export class Renderer {
       ctx.fill();
       ctx.stroke();
       // ridge, or armour plates
-      ctx.strokeStyle = look.stroke;
-      ctx.lineWidth = st.layout.armored ? 2.5 : 1.2;
+      ctx.lineWidth = armored ? 2.5 : 1.2;
       ctx.beginPath();
       ctx.moveTo(-maxX * 0.4, -maxY * 0.85);
       ctx.lineTo(-maxX * 0.4, maxY * 0.85);
-      if (st.layout.armored) {
+      if (armored) {
         ctx.moveTo(maxX * 0.4, -maxY * 0.85);
         ctx.lineTo(maxX * 0.4, maxY * 0.85);
       }
       ctx.stroke();
-      this.leave();
-    }
-    // the jaw: a wedge with teeth pointing forward (+x), and an eye
-    const jaw = st.part.get("jaw");
-    if (jaw) {
-      const { maxX, maxY } = bounds(jaw);
-      this.enter(jaw, alpha);
+    } else {
+      // the jaw: a wedge with teeth pointing forward (+x), and an eye
       ctx.fillStyle = flash ? "#ffffff" : look.jaw;
       ctx.strokeStyle = look.stroke;
       ctx.lineWidth = 2;
@@ -1069,27 +1119,11 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(-maxX * 0.35, -maxY * 0.45, Math.max(2, maxY * 0.18), 0, Math.PI * 2);
       ctx.fill();
-      this.leave();
     }
-    ctx.globalAlpha = 1;
-    if (!m.alive) return;
-    // health bar over the head
-    const head = jaw ?? m.hull;
-    const [x, y] = lerpBody(head, alpha);
-    const w = 44;
-    const frac = Math.max(0, m.hp / st.layout.hp);
-    ctx.fillStyle = "rgba(10,12,20,0.6)";
-    ctx.fillRect(x - w / 2 - 1, y - 34, w + 2, 6);
-    ctx.fillStyle = "#ff8a3d";
-    ctx.fillRect(x - w / 2, y - 33, w * frac, 4);
-    if (m.stun > 0) {
-      const st = this.starSprite();
-      const r = STAR_BOX / 2;
-      for (let i = 0; i < 3; i++) {
-        const t = arena.t * 7 + (i * Math.PI * 2) / 3;
-        ctx.drawImage(st, x + Math.cos(t) * 18 - r, y - 42 + Math.sin(t) * 5 - r, 2 * r, 2 * r);
-      }
-    }
+    sp = { c, x: -hx, y: -hy, w: 2 * hx, h: 2 * hy };
+    if (this.creatures.size > 128) this.creatures.clear();
+    this.creatures.set(key, sp);
+    return sp;
   }
 
   /** Fill and outline a body's mesh in a material. */
