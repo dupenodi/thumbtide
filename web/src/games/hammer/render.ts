@@ -11,6 +11,9 @@ const HULL_SH = 38;
 /** Name label box: height and the text baseline from its top (world units). */
 const NAME_H = 16;
 const NAME_ASC = 12;
+/** The health bar's width, and the name label's height with the bar's back (6) under the name (world units). */
+const BAR_W = 40;
+const LABEL_H = NAME_H + 6;
 
 /** Spin widths in the coin atlas. */
 const COIN_FRAMES = 6;
@@ -155,7 +158,7 @@ export class Renderer {
 
   constructor(
     readonly canvas: HTMLCanvasElement,
-    /** skip: perf A/B only (the host passes it in perf builds): layers not to draw (sky, trails, weapons, machines, sparks, floats). sky also hides the static obstacles (they are painted into the cached backdrop, which also does not shake). */
+    /** skip: perf A/B only (the host passes it in perf builds): layers not to draw (sky, trails, weapons = ropes + parts, machines = hulls + labels, plates, obstacles, coins, sparks, floats). sky also hides the static obstacles (they are painted into the cached backdrop, which also does not shake). */
     private opts: { maxDpr?: number; maxWidth?: number; names?: boolean; skip?: Set<string> } = {},
   ) {
     this.ctx = canvas.getContext("2d", { alpha: false })!;
@@ -208,19 +211,16 @@ export class Renderer {
       for (const m of arena.machines) if (!m.monster) this.trail(m, alpha, fx);
       this.trails();
     }
-    if (!skip?.has("weapons")) {
-      this.ropes(arena.machines, alpha);
-      for (const m of arena.machines) if (!m.monster) this.weapon(m, alpha);
-    }
+    if (!skip?.has("weapons")) for (const m of arena.machines) if (!m.monster) this.weapon(m, alpha);
     // a wreck that has faded out (or left play) draws nothing: skip its paths entirely
     if (!skip?.has("machines")) {
-      for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
-      this.labels(arena, alpha);
+      if (!skip?.has("hulls")) for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
+      if (!skip?.has("labels")) this.labels(arena, alpha);
     }
     if (arena.shots.length) this.shots(arena, alpha);
-    this.plates(arena, alpha);
-    if (arena.obstacles.length) this.obstacles(arena, alpha);
-    if (fx.coins.list.length) this.coins(fx.coins);
+    if (!skip?.has("plates")) this.plates(arena, alpha);
+    if (arena.obstacles.length && !skip?.has("obstacles")) this.obstacles(arena, alpha);
+    if (fx.coins.list.length && !skip?.has("coins")) this.coins(fx.coins);
 
     ctx.lineCap = "round";
     if (!skip?.has("sparks")) this.sparks(fx);
@@ -454,21 +454,20 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 
-  /**
-   * Ropes and chains of every machine: a line between the anchors of every rope joint (the hull one only while
-   * armed). One path per colour for all the machines (a stroke per colour per machine cost the TV ~20 strokes a frame
-   * with 8 machines), so every rope is under every weapon. Type 0 joints (the dual sets' spacers) are not drawn.
-   */
-  private ropes(machines: readonly Machine[], alpha: number): void {
+  private weapon(m: Machine, alpha: number): void {
     const ctx = this.ctx;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.lineWidth = 2.5;
-    for (const color of ROPE_COLORS) {
-      let any = false;
-      for (const m of machines) {
-        if (m.monster) continue;
-        for (const j of m.spec.joints) {
+    const spec = m.spec;
+
+    // Ropes and chains: a line between the anchors of every rope joint (the hull one only while armed). One path per
+    // colour, so a whole chain is a single stroke. Type 0 joints (the dual sets' spacers) are not drawn. (One path per
+    // colour for all the machines was tried on the TV: no faster, and it put every rope under every weapon.)
+    if (!this.opts.skip?.has("ropes")) {
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.lineWidth = 2.5;
+      for (const color of ROPE_COLORS) {
+        let any = false;
+        for (const j of spec.joints) {
           if (j.type === 2 || j.type === 0) continue;
           if (j.a === "hull" && !m.armed) continue;
           const a = j.a === "hull" ? m.hull : m.part.get(j.a);
@@ -483,20 +482,17 @@ export class Renderer {
           worldAt(b, j.sbx ?? 0, j.sby ?? 0, alpha);
           ctx.lineTo(scratch[0], scratch[1]);
         }
-      }
-      if (any) {
-        ctx.strokeStyle = color;
-        ctx.stroke();
+        if (any) {
+          ctx.strokeStyle = color;
+          ctx.stroke();
+        }
       }
     }
-  }
+    if (this.opts.skip?.has("parts")) return;
 
-  private weapon(m: Machine, alpha: number): void {
-    const ctx = this.ctx;
     lerp(m.hull, alpha);
     const hx = L[0];
     const hy = L[1];
-    const spec = m.spec;
 
     // Chain links: one path for all the links of a chain (the colour of the first link), with the corners worked out
     // here. A save, transform, stroke and restore per link made the chain weapons the slowest sets on the TV (up to
@@ -1054,7 +1050,7 @@ export class Renderer {
     live.length = 0;
     for (const m of arena.machines) if (m.alive && !m.monster) live.push(m);
     if (!live.length) return;
-    const w = 40;
+    const w = BAR_W;
     // Shock: stars circling over a machine whose engine is out.
     for (const m of live) {
       if (m.stun <= 0) continue;
@@ -1068,12 +1064,21 @@ export class Renderer {
       }
       ctx.globalAlpha = 1;
     }
-    // health bars: two rectangles each (no paths)
-    ctx.fillStyle = "rgba(10,12,20,0.6)";
-    for (const m of live) {
-      lerp(m.hull, alpha);
-      ctx.fillRect(L[0] - w / 2 - 1, L[1] - HULL_R - 22, w + 2, 6);
+    // the names, with the health bars' backs under them: cached pictures (text is slow on the TV)
+    if (this.opts.names) {
+      for (const m of live) {
+        lerp(m.hull, alpha);
+        const label = this.nameSprite(m.name, m.color);
+        ctx.drawImage(label.c, L[0] - label.w / 2, L[1] - HULL_R - 22 - NAME_H, label.w, LABEL_H);
+      }
+    } else {
+      ctx.fillStyle = "rgba(10,12,20,0.6)";
+      for (const m of live) {
+        lerp(m.hull, alpha);
+        ctx.fillRect(L[0] - w / 2 - 1, L[1] - HULL_R - 22, w + 2, 6);
+      }
     }
+    // the health in the bars (rectangles, no paths), by colour
     for (const color of BAR_COLORS) {
       let set = false;
       for (const m of live) {
@@ -1083,14 +1088,6 @@ export class Renderer {
         set = true;
         lerp(m.hull, alpha);
         ctx.fillRect(L[0] - w / 2, L[1] - HULL_R - 21, w * frac, 4);
-      }
-    }
-    // the names: cached pictures (text is slow on the TV)
-    if (this.opts.names) {
-      for (const m of live) {
-        lerp(m.hull, alpha);
-        const label = this.nameSprite(m.name, m.color);
-        ctx.drawImage(label.c, L[0] - label.w / 2, L[1] - HULL_R - 26 - NAME_ASC, label.w, NAME_H);
       }
     }
   }
@@ -1183,7 +1180,7 @@ export class Renderer {
   }
 
   private names = new Map<string, { c: HTMLCanvasElement; w: number }>();
-  /** A machine's name label (outlined text), drawn once per name, colour and scale. */
+  /** A machine's name label (outlined text) over its health bar's back, drawn once per name, colour and scale. */
   private nameSprite(name: string, color: string): { c: HTMLCanvasElement; w: number } {
     if (this.hullScale !== this.scale) {
       this.hulls.clear();
@@ -1197,12 +1194,15 @@ export class Renderer {
     const font = `11px "Russo One", system-ui, sans-serif`;
     const probe = this.ctx;
     probe.font = font;
-    const w = Math.ceil(probe.measureText(name).width) + 6;
+    // as wide as the name or the health bar's back, which is painted in under the name (one drawImage, not a fillRect more)
+    const w = Math.max(Math.ceil(probe.measureText(name).width) + 6, BAR_W + 2);
     const c = document.createElement("canvas");
     c.width = Math.ceil(w * s);
-    c.height = Math.ceil(NAME_H * s);
+    c.height = Math.ceil(LABEL_H * s);
     const g = c.getContext("2d")!;
-    g.scale(c.width / w, c.height / NAME_H);
+    g.scale(c.width / w, c.height / LABEL_H);
+    g.fillStyle = "rgba(10,12,20,0.6)";
+    g.fillRect(w / 2 - BAR_W / 2 - 1, NAME_H, BAR_W + 2, 6);
     g.font = font;
     g.textAlign = "center";
     g.lineWidth = 3;
