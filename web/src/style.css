@@ -158,6 +158,12 @@ body.phone #game:not([hidden]) { top: calc(45px + env(safe-area-inset-top)); pad
   background: var(--bg-2); border-top: 1px solid var(--bg-3);
 }
 .sh-foot .sh-act { padding: 0 8px; }
+/* a phone on its side: thinner header and footer, so the list in between has room */
+@media (max-height: 420px) {
+  .sh-head { padding: 10px 0 6px; }
+  .sh-foot { padding-top: 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
+  .sh-foot .sh-act { min-height: 44px; }
+}
 
 /* ------------------------------------------------------------ settings (settings-ui.ts picks the control for each) */
 .st, .st-adv { display: flex; flex-direction: column; gap: 16px; }
