@@ -450,7 +450,17 @@ machine round.
 
 With a weapon you can take a gun (arquebus, mortar, heavy mortar, rocket launcher; hold Fire on the phone) and a
 shield: two plates on short rods, from light wood to armour. A fast, hard hit knocks a plate off; holding Shield
-spreads the plates and halves thrust. The tribune's back blade is a gun of its own.
+spreads the plates and halves thrust. The tribune's back blade is a gun of its own. Hold Fire and push the stick to aim
+the arquebus (our addition: Hammerfight's guns don't aim): it swings toward the stick, fires once it points within
+11°, and only pushes while it aims. Blades cut on the side Hammerfight draws as the edge; the back of a one-sided axe
+only bludgeons. Weapons, guns and plates are drawn with Hammerfight's own sprites.
+
+The stick tune lives in `hammer.pad` (`stick 420`, `steer 5.6`; 30% softer than before after a play test).
+
+Arenas (setting **Arena**): Classic, Crates, Big and Huge with crates, and six after Hammerfight's levels (see
+`arenas.ts` and `RE_ARENAS.md`): **The Stands**, **Sunrise Towers**, **The Eye**, **Melka Arena** (cages swing on
+ropes), **Block Hall** (loose blocks to knock around) and **The Pit** (a hanging chain). Machines can't leave the
+screen at any edge.
 
 Each round starts with a warm-up: fly and swing with no damage, and pick a weapon, a gun and a shield on the phone.
 

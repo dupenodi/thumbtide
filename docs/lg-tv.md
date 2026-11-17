@@ -170,7 +170,9 @@ ran at 29, Cascade at 30–46, and Wet Paint and Cult at about 9.
   compositing** (the page is drawn at devicePixelRatio 2, about 5 ms per full-screen layer) and full-screen repaints.
   Fewer layers and smaller repaints help more than faster JavaScript.
 - Rotor Brawl is the exception: its physics runs on the CPU, so the number of bodies sets the frame rate. Chains drawn
-  as one path brought heavy chain sets to 53–58 fps, but 7–8 machines still drop to 21–31 fps.
+  as one path brought heavy chain sets to 53–58 fps. On 2026-11-17 (perf build, auto resolution at 33%) all ten
+  arenas averaged 55–58 fps with 3 computer players; with 7, the average was 50–55 and the slowest windows 28–31 fps.
+  The profiler showed physics 3–7 ms, drawing 8–15 ms and about 280 `lineTo` calls per frame in the slow windows.
 - Cascade's bigger boards (14 × 8 up to 20 × 12) haven't been tried on the TV.
 - What made Cascade faster:
   - static detail (agar, walnut grain, table) baked once into textures (`look/bake.ts`) instead of computed every frame
