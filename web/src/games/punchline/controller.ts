@@ -312,10 +312,13 @@ const mount: ControllerMount = (ctx) => {
           info(s.final ? "The last laugh" : `Round ${s.round + 1}`, s.final ? "One prompt. Everyone answers it." : s.round === 1 ? "Points count double." : "Two prompts each. Be funny."),
         );
       case "write":
-        if (own.state === "next" || !own.tasks.length) return void setScene("next", info("You're in next round", "You can vote on the answers in a moment."));
+        if (own.state === "next") return void setScene("next", info("You're in next round", "You can vote on the answers in a moment."));
+        // shared and own arrive apart: until this round's prompts are here, keep what is on screen
+        if (!own.tasks.length) return void (sceneKey || setScene("wait-tasks", info("Get ready")));
         return writeScene(own.tasks);
       case "vote":
-        if (!own.vote || !s.vote) return void setScene("vote-watch", info("Eyes on the TV"));
+        // shared and own arrive apart: until both name the same vote, keep what is on screen
+        if (!own.vote || !s.vote || own.vote.key !== s.vote.key) return void (sceneKey || setScene("vote-watch", info("Eyes on the TV")));
         return s.final ? finalVote(s, own) : pairVote(s, own);
       case "reveal":
         return void setScene(`reveal`, info("Votes are in", "Watch the TV."));

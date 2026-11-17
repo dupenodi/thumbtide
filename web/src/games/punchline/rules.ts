@@ -21,7 +21,7 @@
 //   head-to-head  each answer gets round(1000 × its share of the votes) × the round's multiplier (1, then 2).
 //                 Taking every vote, with at least 2 votes cast and two real answers, is a clean sweep: +250 × mult.
 //                 No votes: nobody scores. A stand-in ("[no answer]") never scores.
-//   last laugh    500 per vote. Every vote (at least 2) on one answer: +750.
+//   last laugh    500 per vote. Every vote from everyone else (at least 2) on one answer: +750.
 // The match winner has the most points; a tie shares the win.
 //
 // Who votes: everyone seated except the two authors (bots and newcomers waiting for the next round included). In the
@@ -213,18 +213,21 @@ export function scorePair(votes: [number, number], mult: number, real: [boolean,
   return { votes, points, sweep, winner };
 }
 
-export function scoreFinal(votes: number[]): FinalResult {
+/**
+ * Points for the last laugh. `authorVoted[i]` says whether entry i's author cast a vote (they cannot vote for
+ * themselves), so a sweep is every vote from everyone else: at least 2.
+ */
+export function scoreFinal(votes: number[], authorVoted: boolean[] = []): FinalResult {
   const total = votes.reduce((a, b) => a + b, 0);
   const max = Math.max(0, ...votes);
   const points = votes.map((v) => v * FINAL_VOTE);
   let sweep = -1;
-  if (total >= 2) {
-    const i = votes.indexOf(total);
-    if (i >= 0) {
+  votes.forEach((v, i) => {
+    if (sweep < 0 && v >= 2 && v === total - (authorVoted[i] ? 1 : 0)) {
       sweep = i;
       points[i]! += FINAL_SWEEP;
     }
-  }
+  });
   return { votes, points, sweep, top: max > 0 ? votes.flatMap((v, i) => (v === max ? [i] : [])) : [] };
 }
 
@@ -555,7 +558,7 @@ export class Punchline {
       // votes for someone who has left still count; votes from seats that are gone do too
       const counts = f.entries.map(() => 0);
       for (const v of f.votes.values()) counts[v]!++;
-      f.result = scoreFinal(counts);
+      f.result = scoreFinal(counts, f.entries.map((e) => f.votes.has(e.author)));
       f.entries.forEach((e, i) => this.award(e.author, f.result!.points[i]!));
       return this.go("reveal", revealMs(f.votes.size, true));
     }

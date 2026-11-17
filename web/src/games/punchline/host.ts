@@ -61,7 +61,7 @@ const mount: HostMount = (ctx) => {
     const want = wantedBots();
     let have = botSeats().filter((s) => !s.left);
     while (have.length < want && game.seats.size < MAX_SEATS && addBot()) have = botSeats().filter((s) => !s.left);
-    if (between()) {
+    if (between() && game.phase !== "end") {
       while (have.length > want) {
         const b = have.pop()!;
         game.seats.delete(b.id);
@@ -151,7 +151,7 @@ const mount: HostMount = (ctx) => {
   const offs = [
     host.on("join", (p) => {
       // nobody real is playing yet (a bots-only match, or a fresh table): start over with the newcomer
-      const fresh = game.phase !== "end" && !game.list().some((s) => !isBot(s.id) && !s.left && s.id !== p.id);
+      const fresh = !game.list().some((s) => !isBot(s.id) && !s.left && s.id !== p.id);
       if (fresh) return restart();
       seatAll();
       if (game.phase === "wait") game.ready();

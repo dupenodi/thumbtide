@@ -293,7 +293,7 @@ test("the last laugh: one prompt for everyone; you vote for any real answer but 
   g.vote(b!, f.key, f.entries.findIndex((e) => e.author === c));
   assert.equal(g.phase, "reveal");
   assert.deepEqual(f.result!.top, [top]);
-  assert.equal(f.result!.sweep, -1, "b voted too and not for themselves: no sweep");
+  assert.equal(f.result!.sweep, f.entries.findIndex((e) => e.author === b), "everyone else voted for b: a sweep");
   g.advance(60_000);
   assert.equal(g.phase, "end");
   assert.equal(g.winners().length >= 1, true);
@@ -304,6 +304,9 @@ test("final scoring: 500 a vote, and every vote on one answer is a sweep", () =>
   assert.deepEqual(scoreFinal([1, 1, 0]).top, [0, 1]);
   assert.deepEqual(scoreFinal([0, 0]).top, []);
   assert.equal(scoreFinal([1]).sweep, -1, "one vote is no sweep");
+  // the top author voted too (for someone else): every other vote on them is still a sweep
+  assert.equal(scoreFinal([3, 1, 0], [true, true, true]).sweep, 0);
+  assert.equal(scoreFinal([2, 1, 1], [true, true, true]).sweep, -1);
 });
 
 test("a full bots-only match ends with a winner, in a sensible time", () => {
