@@ -79,7 +79,7 @@ const mount: ControllerMount = (ctx) => {
   const $ = (sel: string) => pad.top.querySelector(sel) as HTMLElement;
   const again = $(".sta-again");
   const mini = $(".sta-mini");
-  let shownNext = "";
+  let shownNext = "-";
 
   const status = (): string => {
     const sh = ctl.shared;
@@ -111,6 +111,7 @@ const mount: ControllerMount = (ctx) => {
     const key = k ?? "";
     if (key === shownNext) return;
     shownNext = key;
+    mini.parentElement!.classList.toggle("empty", !k);
     if (!k) {
       mini.innerHTML = "";
       return;

@@ -23,7 +23,7 @@ export function createHud(root: HTMLElement) {
     /** The band sits in the table's top strip. */
     place(height: number) {
       band.style.height = `${height}px`;
-      layer.style.top = `${height}px`;
+      layer.style.paddingTop = `${height}px`;
     },
 
     update(game: Stack) {

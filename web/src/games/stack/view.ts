@@ -62,6 +62,8 @@ interface Tear {
   y: number;
   dir: number;
   t0: number;
+  /** A cracked paper row crumbles where it is instead of tearing off. */
+  crumble: boolean;
 }
 interface Slip {
   x0: number;
@@ -121,12 +123,13 @@ export class TableView {
     const dpr = window.devicePixelRatio || 1;
     this.res = isWebOS ? Math.min(dpr, 1920 / Math.max(1, W)) : dpr;
     this.band = Math.round(104 * u);
-    const M = 40 * u;
-    const G = 26 * u;
-    const pad = Math.round(14 * u);
+    const n = Math.max(1, list.length);
+    // many wells: tighter margins, so the cells stay as big as the width allows
+    const M = (n >= 6 ? 22 : 40) * u;
+    const G = (n >= 6 ? 14 : 26) * u;
+    const pad = Math.round((n >= 6 ? 9 : 14) * u);
     const head = Math.round(78 * u);
     const foot = Math.round(58 * u);
-    const n = Math.max(1, list.length);
 
     let best = { cell: 0, rows: 1 };
     for (const rows of n >= 5 ? [1, 2] : [1]) {
@@ -186,7 +189,7 @@ export class TableView {
       el.appendChild(board);
       this.cardsEl.appendChild(el);
       const stamp = el.querySelector(".sta-stamp") as HTMLElement;
-      Object.assign(stamp.style, { top: `${head + (ROWS * cell) / 2}px` });
+      Object.assign(stamp.style, { top: `${head + Math.round(ROWS * cell * 0.22)}px` });
       this.wells.set(s.id, {
         id: s.id, card, el, board, ctx: board.getContext("2d")!, mini,
         name: el.querySelector(".sta-nm") as HTMLElement, pips: el.querySelector(".sta-pips") as HTMLElement,
@@ -300,7 +303,6 @@ export class TableView {
     const y = sl.getContext("2d")!;
     y.fillStyle = LOOK.blue;
     y.fillRect(off, off, sw, sh);
-    y.globalCompositeOperation = "multiply";
     y.fillStyle = LOOK.pink;
     y.fillRect(0, 0, sw, sh);
     this.slipSprite = sl;
@@ -481,7 +483,7 @@ export class TableView {
       }
       const boardLeft = (w.card.x + parseFloat(w.board.style.left)) * this.res + g;
       const boardTop = (w.card.y + parseFloat(w.board.style.top)) * this.res;
-      this.tears.push({ img, x: boardLeft, y: boardTop + (row - HIDDEN) * cs, dir: i % 2 ? -1 : 1, t0: performance.now() });
+      this.tears.push({ img, x: boardLeft, y: boardTop + (row - HIDDEN) * cs, dir: i % 2 ? -1 : 1, t0: performance.now(), crumble: cracked });
     });
   }
 
@@ -512,10 +514,16 @@ export class TableView {
     this.fxDirty = true;
     const cs = this.cell * this.res;
     this.tears = this.tears.filter((t) => {
-      const k = (now - t.t0) / TEAR_MS;
+      const k = (now - t.t0) / (t.crumble ? TEAR_MS * 0.5 : TEAR_MS);
       if (k >= 1) return false;
       const e = k * k;
       x.save();
+      if (t.crumble) {
+        x.globalAlpha = 1 - k;
+        x.drawImage(t.img, t.x, t.y + e * cs * 0.6);
+        x.restore();
+        return true;
+      }
       x.globalAlpha = 1 - e;
       x.translate(t.x + t.img.width / 2 + t.dir * k * cs * 1.6, t.y + t.img.height / 2 - (k * 0.9 + e * 1.8) * cs);
       x.rotate(t.dir * (k * 0.14 + e * 0.12));
