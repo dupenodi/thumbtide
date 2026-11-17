@@ -848,6 +848,10 @@ const mount: HostMount = (ctx) => {
         // a saw cut (the damage, numbers and coins come with its "hit"): a spray of steel sparks
         sound?.clash(60);
         fx.burst(e.x, e.y, lite ? 8 : 16, 340, "#e8eef5", 1.5);
+      } else if (e.type === "hook" || e.type === "tear") {
+        // a spike dug in, or tore out (its damage comes with a "hit"): a clank and a few sparks
+        if (e.type === "hook" || e.dmg > 0) sound?.clash(e.type === "hook" ? 70 : 40);
+        fx.burst(e.x, e.y, lite ? 5 : 10, 220, "#e8eef5", 1.5);
       } else {
         fx.burst(e.x, e.y, 40, 420, "#ffb547", 3);
         fx.burst(e.x, e.y, 16, 200, e.victim.color, 4);

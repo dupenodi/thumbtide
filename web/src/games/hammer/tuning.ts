@@ -56,6 +56,26 @@ export interface Tuning {
   slam: number;
   /** Pieces a machine bursts into when it's wrecked; they hurt for 2.5 s. 0 = none. */
   gibs: number;
+  // ---- weapon faces (WEAPON_SHAPES.md; spike hooks follow the exe's impale, RE_WEAPONS.md §5.1, the rest is OURS)
+  /** A spike hits point-first when approach / relative speed at the contact is at least this (the exe: 0.98). */
+  pointOn: number;
+  /** A point-first spike hit does this many times the damage. */
+  pierce: number;
+  /** How long a spike stays hooked in: this × the exe's life, 0.005 · spike · (|v| + 1) s (0 = spikes never hook). */
+  hold: number;
+  /** Damage when a hooked spike tears out: this × spike × sharpness (at damage factor 0.1). */
+  tear: number;
+  /**
+   * A hooked spike tears out early when, in one step, the bodies try to move its anchors this many px further apart
+   * than the joint holds them (before the joints pull them back): 4 px is about 200–300 px/s apart, a hard blow.
+   */
+  tearPull: number;
+  /** A blunt blow (impact > 30) adds this × impact px/s to the victim, away from the weapon, at most kickMax. */
+  kick: number;
+  kickMax: number;
+  /** A saw's grind: damage per tick (every 0.1 s while it slides along a machine at sawMinV px/s or more). */
+  sawDmg: number;
+  sawMinV: number;
 }
 
 export const DEFAULT_TUNING: Tuning = {
@@ -85,6 +105,15 @@ export const DEFAULT_TUNING: Tuning = {
   stunMax: 1.5,
   slam: 0.004,
   gibs: 5,
+  pointOn: 0.8,
+  pierce: 1.5,
+  hold: 0.4,
+  tear: 1.5,
+  tearPull: 4,
+  kick: 0.8,
+  kickMax: 100,
+  sawDmg: 2,
+  sawMinV: 40,
 };
 
 export interface TuningField {
@@ -113,4 +142,7 @@ export const TUNING_FIELDS: TuningField[] = [
   { key: "hitstop", label: "Hit-stop (ms/10hp)", min: 0, max: 80, step: 1 },
   { key: "limit", label: "Limit past frame (px)", min: 0, max: 200, step: 5 },
   { key: "limitHz", label: "Limit stiffness (Hz)", min: 1, max: 20, step: 0.5 },
+  { key: "pierce", label: "Spike pierce (x damage)", min: 1, max: 3, step: 0.1 },
+  { key: "hold", label: "Spike hook hold (0 = off)", min: 0, max: 1, step: 0.05 },
+  { key: "kick", label: "Blunt knockback (px/s per impact)", min: 0, max: 3, step: 0.1 },
 ];

@@ -55,6 +55,9 @@ export interface RoundResult {
   slams: number;
   /** Sidearms broken off. */
   gunBreaks: number;
+  /** Spikes that hooked into a machine, and those torn out early by a hard pull (before their time). */
+  hooks: number;
+  pulls: number;
   hitsPerMin: number;
   /** Mean distance between two live machines (px, monsters left out): how spread out the fight is. */
   spread: number;
@@ -149,6 +152,8 @@ export function runRound(o: RoundOptions): RoundResult {
   let nextWindow = 3;
   let slams = 0;
   let gunBreaks = 0;
+  let hooks = 0;
+  let pulls = 0;
   let hits = 0;
   let comebackRisk = new Set<number>();
   const teams = () => new Set([...ms, ...worms].filter((m) => m.alive).map((m) => m.team));
@@ -198,6 +203,10 @@ export function runRound(o: RoundOptions): RoundResult {
         slams++;
       } else if (e.type === "gunbreak") {
         gunBreaks++;
+      } else if (e.type === "hook") {
+        hooks++;
+      } else if (e.type === "tear") {
+        if (e.pulled) pulls++;
       }
     }
     ar.events.length = 0;
@@ -272,6 +281,8 @@ export function runRound(o: RoundOptions): RoundResult {
     quiet: windows ? quietWindows / windows : 0,
     slams,
     gunBreaks,
+    hooks,
+    pulls,
     hitsPerMin: (hits * 60) / t,
     spread: spreadN ? spreadSum / spreadN : 0,
     spreadShare: spreadN ? spreadSum / spreadN / Math.hypot(ar.w, ar.h) : 0,
