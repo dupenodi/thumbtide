@@ -1,0 +1,22 @@
+# Trails: two big buttons. Hold one to turn that way; both or none runs straight.
+# Syntax and every setting: web/src/games/kit/pad.ts
+
+controller
+  orientation  any
+  send-rate    60hz
+
+button left
+  label        "Left"
+  hint         "Hold to turn left."
+  style        primary
+  haptic       8ms
+
+button right
+  label        "Right"
+  hint         "Hold to turn right."
+  style        primary
+  haptic       8ms
+
+buzz
+  crash        80 50 140
+  go           40

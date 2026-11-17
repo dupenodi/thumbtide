@@ -4,6 +4,7 @@ import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
 import hammerPad from "./hammer/hammer.pad?raw";
 import sandboxPad from "./sandbox/sandbox.pad?raw";
+import trailsPad from "./trails/trails.pad?raw";
 import wetpaintPad from "./wetpaint/wetpaint.pad?raw";
 
 /** Every game on the platform. Modules are lazy-loaded so phones only download what they need. */
@@ -207,6 +208,49 @@ export const GAMES: GameDef[] = [
     ],
     host: () => import("./hammer/host.ts"),
     controller: () => import("./hammer/controller.ts"),
+  },
+  {
+    id: "trails",
+    title: "Trails",
+    tagline: "Never stop. Never touch a line. Outlast everyone.",
+    minPlayers: 1,
+    maxPlayers: 8,
+    colors: ["#2ee6d6", "#ff5fc8"],
+    glyph: "dash",
+    controls: parsePad(trailsPad, "trails.pad"),
+    settings: [
+      {
+        key: "target",
+        label: "Match length",
+        options: [
+          { value: "short", label: "Short" },
+          { value: "normal", label: "Normal" },
+          { value: "long", label: "Long" },
+        ],
+        default: "normal",
+        applies: "now",
+      },
+      {
+        key: "speed",
+        label: "Speed",
+        options: [
+          { value: "calm", label: "Calm" },
+          { value: "normal", label: "Normal" },
+          { value: "fast", label: "Fast" },
+        ],
+        default: "normal",
+      },
+      { key: "gaps", label: "Gaps in trails", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: true },
+      {
+        key: "bots",
+        label: "Computer players",
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+        applies: "now",
+      },
+    ],
+    host: () => import("./trails/host.ts"),
+    controller: () => import("./trails/controller.ts"),
   },
   {
     id: "sandbox",
