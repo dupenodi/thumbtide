@@ -42,3 +42,4 @@ tune
   bot-think    700           # ms a computer looks at the board before it moves
   bot-walk     110           # ms per cell as a computer walks its cursor over
   away-wait    3000          # ms before the computer plays for someone whose phone dropped
+  away-skip    20000         # turn timer off: ms before the turn of someone whose phone is on another app passes on

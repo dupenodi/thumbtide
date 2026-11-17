@@ -101,7 +101,7 @@ const mount: HostMount = ({ host, root }) => {
       ...players.map((p) => {
         const isNew = !seen.has(p.id);
         seen.add(p.id);
-        return `<li class="seat ${p.connected ? "" : "away"} ${isNew ? "new" : ""}" style="--c:${colorFor(p.index)}">
+        return `<li class="seat ${p.connected && !p.away ? "" : "away"}${isNew ? "new" : ""}" style="--c:${colorFor(p.index)}">
           <span class="av"><b>${esc((p.name.trim()[0] ?? "?").toUpperCase())}</b>${p.id === shell.vip ? `<i class="vip">${CROWN}</i>` : ""}</span>
           <span class="nm">${esc(p.name)}</span></li>`;
       }),
@@ -160,6 +160,7 @@ const mount: HostMount = ({ host, root }) => {
       render();
     }),
     host.on("drop", render),
+    host.on("away", render),
     host.on("rejoin", render),
     host.on("leave", () => {
       blip("leave");

@@ -117,6 +117,17 @@ export function settle(b: Board, player: number, start: number, stopWhenSole: bo
   return waves;
 }
 
+/**
+ * Whether the current player's turn may pass on while they're away (`away[i]`: their phone is on another app
+ * or locked). Only when at least two others still in can play on: with one, they'd just take free moves
+ * against an empty chair, so the game waits for the player instead.
+ */
+export function canSkipAway(g: Game, away: readonly boolean[]): boolean {
+  let present = 0;
+  for (let q = 0; q < g.players; q++) if (q !== g.turn && g.alive[q] && !away[q]) present++;
+  return g.winner < 0 && present >= 2;
+}
+
 export class Game {
   readonly board: Board;
   readonly alive: boolean[];
@@ -180,12 +191,22 @@ export class Game {
       }
     }
     if (this.alive.filter(Boolean).length === 1) this.winner = p;
-    else {
-      let q = p;
-      do q = (q + 1) % this.players;
-      while (!this.alive[q]);
-      this.turn = q;
-    }
+    else this.next();
     return { player: p, cell: i, count, waves, eliminated, winner: this.winner };
+  }
+
+  /**
+   * Pass the turn on without a move (the player is away). It doesn't count as their first turn, so a player
+   * skipped from the start can't be knocked out (and the round can't end) until they're back or gone.
+   */
+  skip() {
+    if (this.winner < 0) this.next();
+  }
+
+  private next() {
+    let q = this.turn;
+    do q = (q + 1) % this.players;
+    while (!this.alive[q]);
+    this.turn = q;
   }
 }

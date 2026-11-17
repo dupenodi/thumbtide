@@ -17,7 +17,7 @@ import { CHEER_S, type Look } from "./look/look.ts";
 import { MarblesLook } from "./look/marbles.ts";
 import { ReactorLook } from "./look/reactor.ts";
 import { Stage } from "./look/stage.ts";
-import { Game, type Move } from "./rules.ts";
+import { Game, canSkipAway, type Move } from "./rules.ts";
 import { BOT_NAMES, boardFor, isLook, type CascadeGame, type CascadeOwn, type CascadeShared, type LookId, type SeatView } from "./shared.ts";
 import "./cascade.css";
 
@@ -40,6 +40,7 @@ const mount: HostMount = (ctx) => {
     think: tune["bot-think"] ?? 700, // ms a computer looks at the board before moving its cursor
     walk: tune["bot-walk"] ?? 110, // ms per cell as it walks there
     away: tune["away-wait"] ?? 3000, // ms before the computer plays for someone whose phone dropped
+    skip: tune["away-skip"] ?? 20000, // timer off: ms before an away player's turn passes on (never a computer move)
     intro: 1200, // ms between a new board and the first turn
     endCard: 1800, // ms of celebration before the winner's card
   };
@@ -89,6 +90,8 @@ const mount: HostMount = (ctx) => {
   let turnMs = 0;
   let turnLeft = 0;
   let lastTick = 0;
+  /** ms before the turn of an away player (phone on another app or locked) passes on. */
+  let awayLeft = 0;
   /** A computer's turn: wait, walk the cursor to `target`, then play it. */
   let plan: { target: number; wait: number } | null = null;
   const sentOwn = new Map<string, string>();
@@ -100,7 +103,8 @@ const mount: HostMount = (ctx) => {
   const colorOf = (i: number) => look.info.colors[i % look.info.colors.length]!;
   const seatOf = (id: string) => seats.findIndex((s) => s.id === id && !s.bot);
   const connected = (i: number) => !seats[i]!.bot && host.players.get(seats[i]!.id)?.connected === true;
-  const tell = (i: number, kind: string) => {
+  /** Their phone is on another app or locked: they're coming back, so a computer never plays for them. */
+  const away = (i: number) => !seats[i]!.bot && host.players.get(seats[i]!.id)?.away === true;  const tell = (i: number, kind: string) => {
     if (connected(i)) host.send(seats[i]!.id, { type: "buzz", kind });
   };
   const decider = () => (shell.vip ? host.players.get(shell.vip)?.name : undefined);
@@ -165,14 +169,16 @@ const mount: HostMount = (ctx) => {
     stir();
     const s = game.turn;
     turnLeft = turnMs;
+    awayLeft = turnMs || T.skip;
     lastTick = 0;
     plan = null;
     look.turn(s);
     showCursor();
     sfx?.turn();
     tell(s, "turn");
+    // away: nobody plays for them; the turn banner says "Waiting for…" and awayTurn() runs the clock
     if (seats[s]!.bot) planFor(T.think);
-    else if (!connected(s)) planFor(T.away);
+    else if (!away(s) && !connected(s)) planFor(T.away);
     publish();
   }
 
@@ -266,7 +272,7 @@ const mount: HostMount = (ctx) => {
           color: colorOf(i),
           alive: shownAlive[i] ?? true,
           bot: s.bot,
-          away: !s.bot && host.players.get(s.id)?.connected === false,
+          away: !s.bot && (host.players.get(s.id)?.connected === false || host.players.get(s.id)?.away === true),
           pieces: shownPieces[i] ?? 0,
           wins: wins.get(s.id) ?? 0,
         }),
@@ -313,6 +319,7 @@ const mount: HostMount = (ctx) => {
     }
     if (busy) return;
     const s = game.turn;
+    if (away(s)) return awayTurn(s, ms);
     if (turnMs) {
       turnLeft -= ms;
       hud.timer(turnLeft / turnMs);
@@ -339,6 +346,22 @@ const mount: HostMount = (ctx) => {
         plan.wait = cursor[s] === plan.target ? 260 : T.walk;
       }
     }
+  }
+
+  /**
+   * The player whose turn it is is away (phone on another app, or locked). Nobody plays for them: after the
+   * turn timer (or `away-skip` with the timer off) their turn passes on, if enough others are still playing;
+   * otherwise the game holds the turn for them.
+   */
+  function awayTurn(s: number, ms: number) {
+    plan = null;
+    if (!canSkipAway(game, seats.map((_, i) => away(i)))) return hud.timer(null);
+    awayLeft -= ms;
+    hud.timer(Math.max(0, awayLeft / (turnMs || T.skip)));
+    if (awayLeft > 0) return;
+    hud.note(`<b>${esc(seats[s]!.name)}</b> is away · turn passed on`, colorOf(s));
+    game.skip();
+    startTurn();
   }
 
   /** The frame rate for the current state. */
@@ -401,7 +424,22 @@ const mount: HostMount = (ctx) => {
     }),
     host.on("drop", (p) => {
       const i = seatOf(p.id);
-      if (i >= 0 && i === game.turn && phase === "play" && !busy && startIn <= 0 && !plan) planFor(T.away);
+      // a real disconnect: the computer plays for them. Not when they said they're away first (that's a pause)
+      if (i >= 0 && i === game.turn && phase === "play" && !busy && startIn <= 0 && !plan && !p.away) planFor(T.away);
+      publish();
+    }),
+    host.on("away", (p) => {
+      const i = seatOf(p.id);
+      if (i >= 0 && i === game.turn && phase === "play" && !busy && startIn <= 0) {
+        if (p.away) {
+          plan = null; // a computer never moves for an away player
+          awayLeft = turnMs ? Math.max(0, turnLeft) : T.skip;
+        } else {
+          turnLeft = turnMs; // back: a fresh turn
+          lastTick = 0;
+          if (!p.connected && !plan) planFor(T.away);
+        }
+      }
       publish();
     }),
     host.on("leave", (p) => {

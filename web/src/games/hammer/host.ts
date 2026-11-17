@@ -672,8 +672,9 @@ const mount: HostMount = (ctx) => {
     const inp = p?.connected ? p.input : null;
     const moving = !!inp && (inp.f === 1 || inp.g === 1 || (inp.k === 1 ? Math.abs(inp.x) + Math.abs(inp.y) > 0.05 : inp.x !== s.tx || inp.y !== s.ty));
     s.idle = moving ? 0 : s.idle + STEP;
-    // away (or phone asleep) in a fight: a bot flies for them, so the round doesn't stall
-    if (phase === "fight" && s.idle > IDLE_S) {
+    // idle (or phone asleep) in a fight: a bot flies for them, so the round doesn't stall. Not while their phone
+    // is on another app or locked (p.away): they're coming back, so their machine just hangs idle
+    if (phase === "fight" && s.idle > IDLE_S && !p?.away) {
       s.auto ??= makeBot("fight", m.hull.x, m.hull.y, "pilot", m.id);
       driveBot(arena, m, s.auto);
       if (inp && inp.k === 0) {

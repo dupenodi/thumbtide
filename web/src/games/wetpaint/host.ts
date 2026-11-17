@@ -112,10 +112,12 @@ const mount: HostMount = (ctx) => {
       if (b) hud.toast(`${swatch(b.slot)} <b>${esc(p.name)}</b> picked up a brush`);
     }),
     host.on("rejoin", (p) => {
-      if (sim.brushes.has(p.id)) sim.setConnected(p.id, true);
+      if (sim.brushes.has(p.id)) sim.setConnected(p.id, !p.away);
       else join(p);
     }),
     host.on("drop", (p) => sim.setConnected(p.id, false)),
+    // phone on another app or locked: the brush stands still and keeps its place (no bot takes it)
+    host.on("away", (p) => sim.setConnected(p.id, p.connected && !p.away)),
     host.on("leave", (p) => {
       sim.removeBrush(p.id);
       // a brush came free: hand it to someone who was watching, else back to a bot

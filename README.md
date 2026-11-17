@@ -154,8 +154,10 @@ role, their hand of cards).
 
 You don't need to build any of this into a game:
 
-- **Dropped phones.** A phone that sleeps, loses Wi-Fi or reloads keeps its place for 60 seconds and rejoins as the
+- **Dropped phones.** A phone that loses Wi-Fi or reloads keeps its place for 60 seconds and rejoins as the
   same player. A TV page reload keeps the same room and everyone stays in.
+- **Phones on another app.** A phone that switches app or locks tells the TV it's *away* first. Its player is
+  paused, not dropped: the seat waits up to 10 minutes and no computer takes it over.
 - **The host menu.** Pause, resume, restart, end the game, change settings, lock the room and remove players, all
   from the host's phone. The TV never needs a keyboard. A game switches on pause and restart by returning those functions.
 - **Phone-as-controller problems.** Fullscreen on Android (and an Add to Home Screen prompt on iPhone, which can't go
@@ -337,8 +339,9 @@ const mount: HostMount = (ctx) => {
 export default mount;
 ```
 
-Each player has `id`, `name`, `index` (their join order, used for colours), `connected` and `input`. Other events:
-`drop` (their phone disconnected, they may come back) and `rejoin`.
+Each player has `id`, `name`, `index` (their join order, used for colours), `connected`, `away` and `input`. Other events:
+`drop` (their phone disconnected, they may come back), `rejoin`, and `away` (`p.away` changed: their phone is on
+another app or locked; keep their seat, let their piece idle and don't hand it to a computer).
 Settings are read with `ctx.settings()`. `ctx.onSettings(fn)` tells you when the host changes one mid-game.
 `ctx.exit()` returns to the lobby.
 

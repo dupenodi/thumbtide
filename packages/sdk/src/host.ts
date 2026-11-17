@@ -38,6 +38,12 @@ type HostEvents<G extends GameMessages> = {
   /** Player's connection dropped; they may come back. */
   drop: (p: HostPlayer<G>) => void;
   rejoin: (p: HostPlayer<G>) => void;
+  /**
+   * `p.away` changed. Away: the phone's page is in the background (another app, the screen locked), so the
+   * player is still there and comes back. Keep their seat and let their piece idle: never hand it to a computer.
+   * Their input is cleared. A `drop` while away is part of the same pause, not a disconnect.
+   */
+  away: (p: HostPlayer<G>) => void;
   /** Player is gone for good. */
   leave: (p: HostPlayer<G>, reason: RemoveReason) => void;
   message: (p: HostPlayer<G>, data: G["toHost"]) => void;
@@ -218,6 +224,14 @@ export class Host<G extends GameMessages = AnyGame> extends Emitter<HostEvents<G
         }
         Object.assign(p, m.p);
         this.emit("rejoin", p);
+        break;
+      }
+      case "away": {
+        const p = this.players.get(m.id);
+        if (!p || p.away === m.away) return;
+        p.away = m.away;
+        if (m.away) p.input = null;
+        this.emit("away", p);
         break;
       }
       case "remove": {

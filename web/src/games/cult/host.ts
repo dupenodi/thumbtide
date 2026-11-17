@@ -249,7 +249,7 @@ const mount: HostMount = (ctx) => {
         color: SEAT_COLORS[i % SEAT_COLORS.length]!,
         alive: s.alive,
         bot: botSeats.has(i),
-        away: !botSeats.has(i) && host.players.get(s.id)?.connected === false,
+        away: !botSeats.has(i) && (host.players.get(s.id)?.connected === false || host.players.get(s.id)?.away === true),
       })),
       mayor: g.mayor,
       sheriff: g.sheriff,
@@ -334,6 +334,7 @@ const mount: HostMount = (ctx) => {
     host.on("join", () => publish()), // they watch until the next game
     host.on("rejoin", () => publish()),
     host.on("drop", () => publish()),
+    host.on("away", () => publish()), // the game waits for them; only a player who leaves gets a bot
     host.on("leave", (p) => {
       const i = seatOf(p.id);
       if (i >= 0 && g.phase !== "end") {
