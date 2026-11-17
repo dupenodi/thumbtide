@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Body, joint, World } from "./engine.ts";
 import { stickPush } from "./arenas.ts";
-import { Arena, edgeAt, edgeOut, VIEW_H, VIEW_W } from "./sim.ts";
+import { Arena, edgeAt, edgeOut, GUN_HP, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
 import { MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
@@ -835,14 +835,23 @@ test("guns: a sidearm's body does no contact damage, takes blows, and breaks off
   }
   assert.equal(hits, 0, "the gun body hurt the foe");
   assert.equal(foe.hp, 100);
-  // three hard blows break it off: the machine keeps its hammer and loses the gun's body and joints
+  // one huge blow doesn't break it, a few hard ones do: the machine keeps its hammer and loses the gun's body and joints
   const bodies = m.parts.length;
   let breaks = 0;
-  for (let i = 0; i < 3; i++) {
-    (a as unknown as Hidden).gunHurt(m, g, 50, foe, g.body.x, g.body.y);
+  const blow = (impact: number) => {
+    // blows in one step: only the first counts (a grind), so each one here is a new clash
+    g.hitAt = -1;
+    (a as unknown as Hidden).gunHurt(m, g, impact, foe, g.body.x, g.body.y);
     for (const e of a.events) if (e.type === "gunbreak") breaks++;
     a.events.length = 0;
-  }
+  };
+  blow(500);
+  assert.equal(breaks, 0);
+  assert.equal(m.guns.length, 1);
+  // a grind: many contacts in one step count once
+  for (let i = 0; i < 6; i++) (a as unknown as Hidden).gunHurt(m, g, 60, foe, g.body.x, g.body.y);
+  assert.equal(m.guns.length, 1);
+  for (let i = 0; i < 3; i++) blow(60);
   assert.equal(breaks, 1);
   assert.equal(m.guns.length, 0);
   assert.ok(m.armed);
@@ -856,5 +865,5 @@ test("guns: a sidearm's body does no contact damage, takes blows, and breaks off
   // the next round brings it back
   a.respawn(m, 300, 300, "hammer", "arquebus");
   assert.equal(m.guns.length, 1);
-  assert.equal(m.guns[0]!.hp, 120);
+  assert.equal(m.guns[0]!.hp, GUN_HP);
 });

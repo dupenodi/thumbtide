@@ -100,13 +100,17 @@ const PUSH_MASS = 66000;
 /** A shot's push can't make a light part (a claw, a link) jump faster than this, px/s. */
 const PUSH_MAX_DV = 600;
 /**
- * Fragile guns (OURS; Hammerfight's guns can't break, RE_GUNS.md §5): a sidearm takes the impact (impulse · 1e-5)
- * of each enemy blow above GUN_HIT_MIN, and of shots × GUN_SHOT_SHARE, and breaks off at GUN_HP. A hard melee blow
- * is about 40–80, so two or three of them break it.
+ * Fragile guns (OURS, RE_GUNS.md §5): a sidearm takes the impact (impulse · 1e-5) of each enemy blow from
+ * GUN_HIT_MIN up, at most GUN_HIT_MAX a blow (one huge blow is not enough), and of shots × GUN_SHOT_SHARE, and breaks
+ * off at GUN_HP: four hard blows. Measured in 2 v 2 bot rounds, blows on guns: impact p50 35, p90 107. With 120 and
+ * no cap the guns broke after a median 1.1 s, in the opening clash.
  */
-export const GUN_HP = 120;
-const GUN_HIT_MIN = 15;
+export const GUN_HP = 200;
+const GUN_HIT_MIN = 20;
+const GUN_HIT_MAX = 60;
 const GUN_SHOT_SHARE = 0.5;
+/** Seconds between two blows that count on one gun (a grinding contact reports every step). */
+const GUN_HIT_GAP = 0.3;
 
 export interface Tag {
   /** The machine this body belongs to now (a picked-up weapon changes owner). */
@@ -160,8 +164,9 @@ export interface GunState {
   ammo: number;
   /** Seconds until it can fire again (between shots, or the reload). */
   timer: number;
-  /** Sidearms: what it can still take before it breaks off (GUN_HP). */
+  /** Sidearms: what it can still take before it breaks off (GUN_HP), and when the last blow counted. */
   hp: number;
+  hitAt: number;
 }
 
 export interface Shot {
@@ -237,7 +242,7 @@ export interface Machine {
 }
 
 export type SimEvent =
-  | { type: "hit"; attacker: Machine; victim: Machine; dmg: number; impact: number; cut: number; x: number; y: number }
+  | { type: "hit"; attacker: Machine; victim: Machine; dmg: number; impact: number; cut: number; x: number; y: number; shot?: boolean }
   | { type: "clash"; a: Machine; b: Machine; impact: number; x: number; y: number }
   | { type: "disarm"; victim: Machine; by: Machine; x: number; y: number }
   | { type: "pickup"; m: Machine; weapon: WeaponKind }
@@ -697,7 +702,8 @@ export class Arena {
       const vy = b.vy + dy * gs.speed;
       shot.setVelocity(vx, vy, 0, dt);
       shot.group = m.id;
-      shot.team = this.tuning.teamCollision >= 1 ? -1 : m.team;
+      // shots fly through teammates unless friendly fire is on (with no damage they would only shove an ally about)
+      shot.team = this.tuning.teamDamage >= 1 ? -1 : m.team;
       shot.spinDamp = 0;
       // a rocket flies straight under its own thrust and goes off on the first touch
       if (gs.blast) shot.gravity = false;
@@ -774,7 +780,7 @@ export class Arena {
         if (d > bl.radius) continue;
         const k = 1 - d / bl.radius;
         m.stun = Math.min(1, m.stun + 0.5 * k);
-        this.damage(m, Math.round(bl.damage * k * (this.tuning.damage / 0.1)), owner, true, bl.push * k, 1, m.hull.x, m.hull.y);
+        this.damage(m, Math.round(bl.damage * k * (this.tuning.damage / 0.1)), owner, true, bl.push * k, 1, m.hull.x, m.hull.y, true);
       }
     }
     this.events.push({ type: "blast", m: owner, radius: bl.radius, x, y });
@@ -1093,7 +1099,8 @@ export class Arena {
     const sh = st.shot!;
     const v = ot.m;
     if (sh.contacts >= sh.maxContacts) return;
-    if (!v.alive || ot.loose || ot.gibUntil !== undefined || !(ot.hull || ot.plate || v.armed)) {
+    // (a teammate with friendly fire off: only a deflection, no push; with team collision off it doesn't touch at all)
+    if (!v.alive || ot.loose || ot.gibUntil !== undefined || !(ot.hull || ot.plate || v.armed) || !this.enemies(st.m, v)) {
       sh.contacts++;
       return;
     }
@@ -1113,7 +1120,8 @@ export class Arena {
     if (oBody.invMass > 0) oBody.setVelocity(oBody.vx + ux * dv, oBody.vy + uy * dv, oBody.w, STEP * this.timewarp);
     const impact = J * 1e-5;
     const by = st.m;
-    const foe = this.enemies(by, v) && tn.damage > 0;
+    // the warm-up (damage 0): the push only
+    const foe = tn.damage > 0;
     if (ot.hull) {
       if (!foe) return;
       if (sh.hit.stun > 0) {
@@ -1122,7 +1130,7 @@ export class Arena {
       }
       const bonus = v.monster && sh.look === "bullet" ? MONSTER_SHOT_BONUS : 1;
       const dmg = Math.max(1, Math.round(sh.hit.dmg * k * bonus * (tn.damage / 0.1)));
-      if (sh.hit.dmg > 0) this.damage(v, dmg, by, true, impact, 1, c.x, c.y);
+      if (sh.hit.dmg > 0) this.damage(v, dmg, by, true, impact, 1, c.x, c.y, true);
       return;
     }
     this.events.push({ type: "ping", m: v, heavy: impact > 40, x: c.x, y: c.y });
@@ -1140,7 +1148,10 @@ export class Arena {
   /** A sidearm takes a blow (GUN_HIT_MIN and up); at 0 it breaks off. */
   private gunHurt(m: Machine, g: GunState, impact: number, by: Machine, x: number, y: number): void {
     if (!m.alive || !m.armed || impact < GUN_HIT_MIN || this.tuning.damage <= 0 || !m.guns.includes(g)) return;
-    g.hp -= impact;
+    // a grind reports a contact every step: one blow per GUN_HIT_GAP
+    if (this.t < g.hitAt + GUN_HIT_GAP) return;
+    g.hitAt = this.t;
+    g.hp -= Math.min(impact, GUN_HIT_MAX);
     if (g.hp <= 0) this.breakGun(m, g, by, x, y);
   }
 
@@ -1228,7 +1239,7 @@ export class Arena {
   }
 
   /** Take `dmg` off a machine (the health_low rule), report it, and wreck it at 0. */
-  private damage(victim: Machine, dmg: number, attacker: Machine, owned: boolean, impact: number, cut: number, x: number, y: number): void {
+  private damage(victim: Machine, dmg: number, attacker: Machine, owned: boolean, impact: number, cut: number, x: number, y: number, shot = false): void {
     if (!victim.alive || dmg <= 0) return;
     // health_low rule: below 12 only a lethal hit counts; the first lethal hit leaves 12, the next one kills.
     // In sudden death (ours, to end long rounds) every hit simply subtracts.
@@ -1246,7 +1257,7 @@ export class Arena {
     }
     if (owned) victim.lastHitBy = attacker;
     victim.flash = 0.12;
-    this.events.push({ type: "hit", attacker, victim, dmg: before - victim.hp, impact, cut, x, y });
+    this.events.push({ type: "hit", attacker, victim, dmg: before - victim.hp, impact, cut, x, y, shot });
     if (victim.hp <= 0) this.wreck(victim);
   }
 
@@ -1448,7 +1459,7 @@ export class Arena {
       m.part.set(p.key, b);
       m.parts.push(b);
       if (p.gun) {
-        const g: GunState = { spec: p.gun, body: b, ammo: p.gun.clip, timer: 0, hp: GUN_HP };
+        const g: GunState = { spec: p.gun, body: b, ammo: p.gun.clip, timer: 0, hp: GUN_HP, hitAt: -1 };
         m.guns.push(g);
         // a sidearm (not the tribune's back blade, which is a blade first) is harmless and fragile
         if (p.key === "gun") (b.data as Tag).sidearm = g;
