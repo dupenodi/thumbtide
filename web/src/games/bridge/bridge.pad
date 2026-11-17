@@ -1,0 +1,31 @@
+# Bridge Panic: the phone shows your panel of controls and your order. Tap the controls (yours and your crew's).
+# Syntax and every setting: web/src/games/kit/pad.ts
+
+controller
+  orientation  any
+
+button push
+  label        "Push button"
+  hint         "Tap a push button to fire it. Your order is at the top: the control is usually on someone else's phone, so shout."
+  style        primary
+  haptic       14ms
+
+button switch
+  label        "Toggle, lever"
+  hint         "Tap a toggle to flip it on or off. A lever has two ends: tap the end you want."
+  style        secondary
+  haptic       12ms
+
+button set
+  label        "Dial, slider"
+  hint         "Tap a number on a dial (1 to 5) or a notch on a slider (0 to 4) to set it."
+  style        secondary
+  haptic       12ms
+
+buzz
+  done         30
+  miss         120 50 160
+  wrong        60 40 60
+  swap         40 40 40 40 40
+  sector       30 40 30 40 120
+  over         200 60 300
