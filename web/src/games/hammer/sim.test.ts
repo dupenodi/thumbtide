@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Body, joint, World } from "./engine.ts";
 import { stickPush } from "./arenas.ts";
-import { Arena, edgeAt, edgeOut, GUN_HP, STEP, VIEW_H, VIEW_W } from "./sim.ts";
-import { DEFAULT_TUNING } from "./tuning.ts";
-import { GUN_KINDS, MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
+import { Arena, cutFactor, edgeAt, edgeOut, faceAt, GUN_HP, STEP, VIEW_H, VIEW_W } from "./sim.ts";
+import { DEFAULT_TUNING, type Tuning } from "./tuning.ts";
+import { facesOf, GUN_KINDS, MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
 const arena = () => new Arena({ ...DEFAULT_TUNING });
 
@@ -566,7 +566,8 @@ test("plates: two per machine, the shield spreads them and halves thrust, a fast
   // a heavy, fast weapon knocks a light plate off
   const victim = m;
   const p = victim.plates[0]!.body;
-  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "krankhammer", x: p.x + 120, y: p.y });
+  // (the iron hammer: since the krank hammer's mesh got its drawn conical caps, its head meets the hull first here)
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: p.x + 120, y: p.y });
   let off = 0;
   for (let i = 0; i < 40 && !off; i++) {
     // a hard swing: 1500 px/s straight at the plate
@@ -1059,4 +1060,224 @@ test("guns: a rocket bounces off a held weapon (no blast; the exe's rocket takes
   assert.ok(pingAt >= 0, "the rocket met the head");
   assert.ok(blastAt < 0 || blastAt > pingAt + 2, `it went off on the weapon (ping ${pingAt}, blast ${blastAt})`);
   assert.ok(after > 300, `speed after the bounce ${after.toFixed(0)}`);
+});
+
+// ---------------------------------------------------------------- weapon faces (WEAPON_SHAPES.md)
+
+test("faces: the part's feature that meets the other body picks the face (spike tips, blunt block, shaft edge, chain ring)", () => {
+  // the face a part shows toward a contact normal given in the part's own frame, at body angle `a`
+  const at = (k: WeaponKind, key: string, nx: number, ny: number, a: number) => {
+    const p = WEAPONS[k].parts.find((q) => q.key === key)!;
+    const b = new Body(p.mesh, p.density).place(50, 20, a);
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    return faceAt(facesOf(p), b, nx * c - ny * s, nx * s + ny * c).kind;
+  };
+  for (const a of [0, 1, Math.PI / 2, -2.5]) {
+    // the klevec's spikes on both striking faces; the block's end is blunt
+    assert.equal(at("klevec", "head", 0, 1, a), "spike");
+    assert.equal(at("klevec", "head", 0, -1, a), "spike");
+    assert.equal(at("klevec", "head", 1, 0, a), "blunt");
+    assert.equal(at("pike", "head", 0, 1, a), "spike");
+    assert.equal(at("pike", "head", 1, 0, a), "blunt");
+    // the berdish's shaft runs along its top; its blade hangs below
+    assert.equal(at("berdish", "head", 0, -1, a), "shaft");
+    assert.equal(at("berdish", "head", 0, 1, a), "blade");
+    // a spiked flail segment: the chain ring behind, the crescent blade in front
+    assert.equal(at("spikedflail", "spike3", -1, 0, a), "shaft");
+    assert.equal(at("spikedflail", "spike3", 1, 0, a), "blade");
+    // one-sided: the axe's edge (+y) and its back; the gold axe's horn spike on its back
+    assert.equal(at("axe", "head", 0, 1, a), "blade");
+    assert.equal(at("axe", "head", 0, -1, a), "blunt");
+    assert.equal(at("goldaxe", "head", 0, -1, a), "spike");
+    assert.equal(at("cyclone", "head", 1, 0, a), "saw");
+    assert.equal(at("hammer", "head", 0, 1, a), "blunt");
+    assert.equal(at("starmace", "hand", 0, 1, a), "shaft");
+  }
+});
+
+test("faces: meshes redrawn to the art keep each part's mass; every face list ends with a catch-all", () => {
+  const mass = (k: WeaponKind, key: string) => {
+    const p = WEAPONS[k].parts.find((q) => q.key === key)!;
+    return new Body(p.mesh, p.density).mass;
+  };
+  // the old boxes: klevec 16 × 32 at 60, pike 9 × 45 at 70, gold axe 19 × 35 at 55, krank 17 × 34 at 64
+  assert.ok(Math.abs(mass("klevec", "head") - 16 * 32 * 60) < 1);
+  assert.ok(Math.abs(mass("pike", "head") - 9 * 45 * 70) < 1);
+  assert.ok(Math.abs(mass("goldaxe", "head") - 19 * 35 * 55) < 1);
+  assert.ok(Math.abs(mass("krankhammer", "head") - 17 * 34 * 64) < 1);
+  for (const k of WEAPON_KINDS) {
+    for (const p of WEAPONS[k].parts) {
+      // a collider must be convex (the SAT), hold the origin (the mass fan), and fit the collision buffers (16)
+      const b = new Body(p.mesh, p.density);
+      assert.ok(b.count <= 16, `${k}.${p.key}: ${b.count} vertices`);
+      for (let i = 0; i < b.count; i++) {
+        const j = (i + 1) % b.count;
+        const l = (i + 2) % b.count;
+        const turn = (b.lx[j]! - b.lx[i]!) * (b.ly[l]! - b.ly[j]!) - (b.ly[j]! - b.ly[i]!) * (b.lx[l]! - b.lx[j]!);
+        assert.ok(turn > 0, `${k}.${p.key}: not convex at vertex ${j}`);
+        assert.ok(b.lx[i]! * b.ly[j]! - b.lx[j]! * b.ly[i]! > 0, `${k}.${p.key}: the origin is outside edge ${i}`);
+      }
+      const f = facesOf(p);
+      const last = f[f.length - 1]!;
+      assert.ok(last.x0 === undefined && last.x1 === undefined && last.y0 === undefined && last.y1 === undefined, `${k}.${p.key}: no catch-all face`);
+      for (const x of f) if (x.kind === "spike") assert.ok((x.spike ?? 0) > 0, `${k}.${p.key}: a spike face with no spike value`);
+    }
+  }
+});
+
+/**
+ * a's weapon thrown at `speed` along +x with its −y face leading, into b's hull just beside the hanging head; steps
+ * until it lands (the events of that step are kept).
+ */
+function faceHit(weapon: WeaponKind, speed: number, tune?: (t: Tuning) => void) {
+  const ar = arena();
+  ar.tuning.slomo = 0;
+  tune?.(ar.tuning);
+  const a = ar.add({ id: 0, name: "a", color: "#f00", weapon, x: 300, y: 200 });
+  const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 345, y: 260 });
+  a.striker.setVelocity(speed, 0, 0, 0.02);
+  for (let i = 0; i < 4 && !ar.events.some((e) => e.type === "hit" && e.victim === b); i++) {
+    ar.events.length = 0;
+    ar.step();
+  }
+  return { ar, a, b };
+}
+
+test("spikes: a point-first hit pierces and hooks in; the hook holds the victim, then tears out with damage", () => {
+  const { ar, a, b } = faceHit("klevec", 600);
+  // the machines' own joints (the two weapons' rods)
+  const joints = a.joints.length + b.joints.length;
+  const hit = ar.events.find((e) => e.type === "hit" && e.victim === b);
+  assert.ok(hit && hit.type === "hit");
+  // a pierce: sharpness 3 × tuning.pierce (a blunt face of the klevec hits at 2)
+  assert.equal(hit.dmg, Math.floor(0.1 * 3 * DEFAULT_TUNING.pierce * hit.impact));
+  assert.ok(ar.events.some((e) => e.type === "hook" && e.victim === b && e.attacker === a));
+  assert.equal(ar.hooked(), 1);
+  assert.equal(ar.world.joints.length, joints + 2);
+  ar.events.length = 0;
+  // it holds: the spike passes through things and b stays on it
+  let tear = null as null | Extract<(typeof ar.events)[number], { type: "tear" }>;
+  let at = 0;
+  for (let i = 1; i < 120 && !tear; i++) {
+    if (ar.hooked()) {
+      assert.equal(a.striker.solid, false);
+      assert.ok(Math.hypot(a.striker.x - b.hull.x, a.striker.y - b.hull.y) < 30, "the victim came off the spike");
+    }
+    ar.step();
+    for (const e of ar.events) {
+      if (e.type === "tear") {
+        tear = e;
+        at = i * STEP;
+      }
+    }
+    ar.events.length = 0;
+  }
+  assert.ok(tear, "it never let go");
+  // the exe's life 0.005 · spike · (|v| + 1) × tuning.hold, from 0.25 s
+  assert.ok(at > 0.25 && at < 1.6, `held ${at.toFixed(2)} s`);
+  assert.equal(tear.pulled, false);
+  assert.ok(tear.dmg > 0, "tearing out did no damage");
+  assert.equal(ar.world.joints.length, joints);
+  for (let i = 0; i < 10; i++) ar.step();
+  assert.equal(a.striker.solid, true, "the spike stayed a ghost");
+  assert.equal(ar.hooked(), 0);
+});
+
+test("spikes: a hard knock on the hooked victim tears the spike out early; hold 0 turns hooks off", () => {
+  const { ar, b } = faceHit("klevec", 600);
+  assert.equal(ar.hooked(), 1);
+  let pulled = false;
+  for (let i = 0; i < 20 && !pulled; i++) {
+    if (i === 6) b.hull.setVelocity(b.hull.vx + 500, b.hull.vy, 0, STEP);
+    ar.step();
+    for (const e of ar.events) if (e.type === "tear") pulled = e.pulled && e.dmg > 0;
+    ar.events.length = 0;
+  }
+  assert.ok(pulled, "the knock did not tear it out");
+  const off = faceHit("klevec", 600, (t) => (t.hold = 0));
+  assert.equal(off.ar.hooked(), 0);
+  assert.ok(off.b.hp < 100, "no hook, but still a pierce");
+});
+
+test("spikes: a spike hit side-on (on its flank) neither pierces nor hooks in", () => {
+  // hammerHit's swing: the head curls up into b's hull and meets its corner on the spike's flank
+  const ar = arena();
+  ar.tuning.slomo = 0;
+  const a = ar.add({ id: 0, name: "a", color: "#f00", weapon: "klevec", x: 300, y: 200 });
+  const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 385, y: 200 });
+  for (let i = 0; i < 5; i++) ar.step();
+  a.striker.setVelocity(600, -120, 0, 0.02);
+  let dmg = 0;
+  for (let i = 0; i < 30; i++) {
+    ar.step();
+    for (const e of ar.events) {
+      assert.notEqual(e.type, "hook");
+      if (e.type === "hit" && e.victim === b) dmg += e.dmg;
+    }
+    ar.events.length = 0;
+  }
+  assert.ok(dmg > 0, "the knock did no damage");
+});
+
+test("shafts: a shaft edge only pushes (the berdish's top); a blunt face knocks the victim back", () => {
+  const { ar, b } = faceHit("berdish", 500);
+  let hits = 0;
+  for (let i = 0; i < 6; i++) {
+    ar.step();
+    for (const e of ar.events) if (e.type === "hit" && e.victim === b) hits++;
+    ar.events.length = 0;
+  }
+  assert.equal(hits, 0);
+  assert.ok(b.hull.vx > 50, `b was not pushed: vx ${b.hull.vx.toFixed(0)}`);
+  // the iron hammer's face: the same blow, with and without the knockback
+  const knock = (kick: number) => {
+    const h = faceHit("hammer", 600, (t) => (t.kick = kick));
+    assert.ok(h.ar.events.some((e) => e.type === "hit" && e.victim === h.b), "the hammer missed");
+    return h.b.hull.vx;
+  };
+  const plain = knock(0);
+  const kicked = knock(DEFAULT_TUNING.kick);
+  assert.ok(kicked > plain + 30, `knockback ${plain.toFixed(0)} -> ${kicked.toFixed(0)} px/s`);
+});
+
+test("blades: an edge cuts more the faster it slides across; head-on or with no edge it doesn't", () => {
+  const b = new Body(WEAPONS.axe.parts[0]!.mesh, 65).place(0, 0, 0);
+  // the contact normal (0, 1): the +y edge; sliding is motion along x
+  const slide = (vx: number, vy: number, blade: number) => {
+    b.vx = vx;
+    b.vy = vy;
+    return cutFactor(b, blade, 0, 1);
+  };
+  assert.ok(slide(600, 0, 1) > 2.5);
+  assert.ok(slide(900, 0, 1) > slide(600, 0, 1));
+  assert.equal(slide(0, 600, 1), 1);
+  assert.equal(slide(600, 0, 0), 1);
+  // and the axe's back face has no edge, its front has (faceAt picks them; see the faces test)
+  const f = facesOf(WEAPONS.axe.parts[0]!);
+  assert.equal(faceAt(f, b, 0, -1).blade, 0);
+  assert.equal(faceAt(f, b, 0, 1).blade, 1);
+});
+
+test("saws: the cyclone's disc grinds a machine sliding along it, in small bites, even too slowly for a blow", () => {
+  const ar = arena();
+  ar.tuning.slomo = 0;
+  const a = ar.add({ id: 0, name: "a", color: "#f00", weapon: "cyclone", x: 300, y: 200 });
+  const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 328, y: 175 });
+  const disc = a.part.get("head")!;
+  const dx = disc.x;
+  const dy = disc.y;
+  const bites: number[] = [];
+  for (let i = 0; i < 50; i++) {
+    // b slides down past the disc, pressing in a little (40 px/s: under bluntMinV); the disc is held in place
+    b.hull.setVelocity(-40, 100, 0, STEP);
+    a.hull.setVelocity(0, 0, 0, STEP);
+    ar.step();
+    disc.x = disc.px = dx;
+    disc.y = disc.py = dy;
+    for (const e of ar.events) if (e.type === "hit" && e.victim === b) bites.push(e.dmg);
+    ar.events.length = 0;
+  }
+  assert.ok(bites.length >= 3, `bites ${bites.join(",")}`);
+  assert.ok(bites.every((d) => d === DEFAULT_TUNING.sawDmg), `bites ${bites.join(",")}`);
 });
