@@ -52,7 +52,9 @@ const mount: HostMount = (ctx) => {
 
   // ------------------------------------------------------------ seats
   const humans = () => [...game.seats.values()].filter((s) => !isBot(s.id)).length;
-  const fillBots = () => bots.setCount(Math.min(MAX_SEATS - humans(), Math.max(Number(ctx.settings().bots) || 0, 2 - humans())));
+  const wantedBots = () => Math.min(MAX_SEATS - humans(), Math.max(Number(ctx.settings().bots) || 0, 2 - humans()));
+  // during a round bots are only added: taking a line away mid-round could end it. Extra bots go at the round result.
+  const fillBots = () => bots.setCount(game.phase === "count" || game.phase === "play" ? Math.max(wantedBots(), bots.count) : wantedBots());
   const join = (p: HostPlayer<TrailsGame>) => {
     if (game.seats.has(p.id)) return;
     // a bot steps aside if every seat is taken
@@ -145,6 +147,7 @@ const mount: HostMount = (ctx) => {
         publish();
         break;
       case "round": {
+        fillBots();
         const s = e.survivor ? game.seats.get(e.survivor) ?? null : null;
         hud.roundResult(game, s);
         break;
@@ -185,7 +188,7 @@ const mount: HostMount = (ctx) => {
 
   function restart() {
     for (const p of host.players.values()) join(p);
-    fillBots();
+    bots.setCount(wantedBots());
     game.startMatch();
     view.clear();
     hud.clear();
