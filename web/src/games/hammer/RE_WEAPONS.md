@@ -117,7 +117,7 @@ Mace heads: Weapon class, mount joint type 3 r 10, m_desowning_time 0.75 (0x48bf
 | 244 | mortar_heavy | box 22×14 | 25 | 7 700 | m_arm 100, clip 1, rod 19 |
 | 243 | launcher | box 44×13 | 25 | 14 300 | m_arm 101, clip 3, rod 17 |
 | 241 | gun_blade (file) | 4-gon, area 548 | 40.8 | 22 379 | sharp 5 (u 0.3), blade (u 0 / d 1), m_arm 108, clip 20, rod 34 |
-| 242 | tribun (file) | 4-gon, area 909 | 25 | 22 732 | sharp 5 (u 0.3), blade (0/1), spike 1/1, m_arm 108, clip 40, rod 30 |
+| 242 | tribun (file) | 4-gon, area 909 | 25 | 22 732 | sharp 5 (u 0.3), blade (0/1), spike 0 (side values 1/1: the product is 0, no impaling; RE_GUNS.md §7), m_arm 108, clip 40, rod 30 |
 | 184–198 | plates | boxes | 15–40 | 5 040–21 120 | sharpness 0.5, m_overkill 0.3–0.8, m_shadensity 0.05 |
 | 99 | bow1 | box 66×9 | 20 | 11 880 | sharpness 0 (story only) |
 | 180 | basket_load_01 | box 27×51 | 20 | 27 540 | a cargo basket on a chain (not a weapon) |
@@ -216,7 +216,7 @@ if victim.m_spasm_shock ≠ 0 and victim is a part owned by a machine (owner ite
 Only when the attacker is weapon class (flags & 0x81f) and the other body has **m_meta & 2 (wood)** and **mass > 34 000**
 (0x415ce2: `fcomp 34000; test ah,0x41; jne skip`, the same pattern as "M > 30"):
 - the hit must be nearly head-on: `|v̂ × N| < 0.2` (the opposite of a blade cut, which needs > 0.7);
-- `spike · (|v| + 1) > 300` (spike = side spike value, vfunc +0xac). Pike (0.9): |v| > 332; tribun (1): 299.
+- `spike · (|v| + 1) > 300` (spike = side spike value, vfunc +0xac). Pike (0.9): |v| > 332. (The tribun has `m_spikeable=0`, so its spike value is 0: it never impales; RE_GUNS.md §7.)
 - Then the weapon's layer is saved and set to 0, and two joints tie the wood to the weapon (type 4 r 5, necess 3, and
   a type 0 distance joint), both with a finite life (they expire). The wood is carried on the spike.
 - **Machines can be impaled**: the PC hull has m_meta 66 (0x42, wood bit set) and mass 66 000. Light plates (< 34 000)
@@ -278,7 +278,7 @@ Links, hands and handles do not collide (layer 0). All chain joints run all 30 p
 | 7 | No mass in controls; weapons slow the machine only through joints, gravity and swing | Matches if `hover` = 0 | Keep `hover` 0 for the original feel. No handling stat to add. |
 | 8 | Dropped weapon stays "owned" for m_desowning_time 0.75 s (1 s star/bich) (INFERRED from the field) | `owned()` uses `m.armed`, so a dropped weapon is unowned at once (`drop()`, sim.ts 864) | Keep a loose weapon owned for 0.75 s after it falls off. |
 | 9 | Unowned ×0.1 rule only for sharpness ≤ 1 | Same | Loose heads (sharpness ≥ 2) hit at full damage. Our loose links will not matter after #1. |
-| 10 | Spikes impale wood bodies **heavier than 34 000** (machine hulls) on a head-on hit with `spike·(|v|+1) > 300` | Not modelled | Optional: on such a hit by a spiked weapon (pike 0.9, posolski, axis, gold axe, tribun, star, claw), tie the victim hull to the spike with a timed type 4 joint and make the weapon non-solid while it holds. |
+| 10 | Spikes impale wood bodies **heavier than 34 000** (machine hulls) on a head-on hit with `spike·(|v|+1) > 300` | Not modelled | Optional: on such a hit by a spiked weapon (pike 0.9, posolski, axis, gold axe, star, claw; not the tribun: `m_spikeable=0`), tie the victim hull to the spike with a timed type 4 joint and make the weapon non-solid while it holds. |
 | 11 | Coins: contact pickup by bodies of a player machine (weapon INFERRED); machines take a loose weapon by contact when it moves < 200 | `coins.ts`: hull and held weapon collect (matches). Loose weapon: hull within 34 px of the grip, 1 s delay (OURS) | Coins: none. Weapon pickup: optional, accept contact with any solid part of the loose weapon when its speed < 200. |
 | 12 | Death: detached decorations become layer 0 debris (no collisions); the hull stays solid with gravity | `wreck()`: hull gets gravity (matches); weapon dropped via `drop()`; plates knocked off and stay solid | Make knocked-off plates and links non-solid after a death (the head stays solid). |
 | 13 | mace_sharp: 3 bladed segments (sharp 3, bladeable 1, solid) between the chain and the head | `spikedflail` has them with sharpness 4 | Sharpness 3 (see #17); keep them solid; links non-solid. |

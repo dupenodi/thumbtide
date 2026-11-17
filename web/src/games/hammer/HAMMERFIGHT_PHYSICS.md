@@ -104,7 +104,7 @@ PC values from the object files: `m_shock_value` 0.02, `m_level` 4, `m_collision
 - **Blades** (katar): the cut factor uses `m_bladeable_d` = 1 on one edge and `m_bladeable_u` = 0.6 on the other (the side
   is the sign of the contact point's local y). Blades never pass through bodies: a blade only gets more damage (C up to
   10), slow motion when C > 4, and its sound.
-- **Disarm** (Weapon onHit 0x420ca0): when two held weapons clash, if one moves more than 1.5× faster
+- **Disarm** (Weapon onHit 0x420ca0 raises event 0x65 through 0x483b40; the clash handler 0x4843c9 does the disarm, path 0x48474e, rate gate 0x468f20; for a plate victim it is the `m_overkill` knock-off instead; RE_GUNS.md §6): when two held weapons clash, if one moves more than 1.5× faster
   (`(|v|+1)/(|v_other|+1) > 1.5`) and `M > (25·R_other + 75)` (× 0.25 when the other is at ≤ 12 health), the slower
   weapon comes off its machine. At most once per second. At full health the threshold is 145, so disarms happen mostly to
   weak machines.

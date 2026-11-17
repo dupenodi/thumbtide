@@ -588,6 +588,8 @@ test("guns: the arquebus fires every 0.1 s while held, bullets hurt, the clip re
   const target = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 300, y: 120 });
   // the target's hammer would hang in the line of fire: take it away
   (a as unknown as { destroy(m: typeof target): void }).destroy(target);
+  // 40-odd bullets would bring it to health_low, where a shot is lethal: keep it alive for the body count
+  target.hp = 1e6;
   const bodies = a.world.bodies.length;
   assert.equal(shooter.guns.length, 1);
   const gun = shooter.guns[0]!;
@@ -983,4 +985,59 @@ test("guns: every sidearm aims round with its weight (the mortars are heavier no
     assert.ok(shots >= 1, `${gun}: shots ${shots}`);
     assert.ok(offAtShot < 0.4, `${gun}: fired ${offAtShot.toFixed(2)} rad off the aim`);
   }
+});
+
+test("guns: at health_low a shot is the lethal hit (the exe's bullet does about 155); a blast ignores health_low", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "axe", sidearm: "arquebus", x: 400, y: 400 });
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 100, y: 100 });
+  (a as unknown as Hidden).destroy(foe);
+  for (let i = 0; i < 10; i++) a.step();
+  const g = m.guns[0]!.body;
+  foe.hull.place(g.x + Math.cos(g.a) * 120, g.y + Math.sin(g.a) * 120);
+  foe.hp = MACHINE.healthLow;
+  a.fire(m);
+  for (let i = 0; i < 10; i++) a.step();
+  assert.equal(foe.alive, false);
+  // a rocket's blast at 13 health: 13 − blast damage, with no stop at 12
+  const b = arena();
+  const l = b.add({ id: 1, name: "L", color: "#f00", weapon: "hammer", sidearm: "launcher", x: 300, y: 300 });
+  const f2 = b.add({ id: 2, name: "F", color: "#00f", weapon: "hammer", x: 300, y: 160 });
+  (b as unknown as Hidden).destroy(f2);
+  f2.hp = 13;
+  b.fire(l);
+  for (let i = 0; i < 40; i++) b.step();
+  assert.ok(f2.hp < MACHINE.healthLow, `hp after the blast ${f2.hp}`);
+});
+
+test("guns: a rocket bounces off a held weapon (no blast; the exe's rocket takes no damage from it) and flies on", () => {
+  const a = arena();
+  const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "axe", sidearm: "launcher", x: 400, y: 330 });
+  const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 700, y: 100 });
+  for (let i = 0; i < 10; i++) a.step();
+  const g = m.guns[0]!.body;
+  const ux = Math.cos(g.a);
+  const uy = Math.sin(g.a);
+  const head = foe.part.get("head")!;
+  const hx = g.x + ux * 100;
+  const hy = g.y + uy * 100;
+  foe.hull.place(hx - uy * 60, hy + ux * 60);
+  head.place(hx, hy, head.a);
+  let pingAt = -1;
+  let blastAt = -1;
+  let after = 0;
+  a.fire(m);
+  for (let i = 0; i < 20; i++) {
+    a.step();
+    for (const e of a.events) {
+      if (e.type === "ping" && e.m === foe && pingAt < 0) pingAt = i;
+      if (e.type === "blast" && blastAt < 0) blastAt = i;
+    }
+    a.events.length = 0;
+    // two steps after the bounce: still flying, and back up to speed (it may then hit the hull and go off)
+    if (pingAt >= 0 && i === pingAt + 2 && a.shots.length) after = Math.hypot(a.shots[0]!.body.vx, a.shots[0]!.body.vy);
+  }
+  assert.ok(pingAt >= 0, "the rocket met the head");
+  assert.ok(blastAt < 0 || blastAt > pingAt + 2, `it went off on the weapon (ping ${pingAt}, blast ${blastAt})`);
+  assert.ok(after > 300, `speed after the bounce ${after.toFixed(0)}`);
 });

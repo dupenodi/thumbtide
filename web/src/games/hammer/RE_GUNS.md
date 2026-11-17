@@ -25,7 +25,9 @@ Fire switch: table 0x41c0dc, index `m_arm` − 0x60: 0x6c bullet → 0x41a1f7, 0
 
 | Question | The original | The port (section 9) |
 |---|---|---|
-| Bullet on a machine hull | Generic damage, about **155** at 2000 px/s (2 bullets kill: health_low), a full stun; the bullet dies | 3 damage, push 40 px/s, spent (OURS sizes) |
+| Bullet on a machine hull | Generic damage, about **155** at 2000 px/s (2 bullets kill: health_low), a full stun; the bullet dies | 3 damage, push 40 px/s, spent (OURS sizes); at health_low it is lethal, as in the exe |
+| Rocket on a held weapon | Takes no damage, so it bounces and flies on | Bounces and flies on |
+| Tribune's back blade | A blade (sharpness 5) with a gun; no impaling; can't break | The same |
 | Bullet on a weapon or gun | Ricochets at **half speed**, sharpness drops to 1; the gun has health 1e8 | Spent at once: push on the part, a spark |
 | Bullet on a wall | Stone: ricochet at half speed (dies below 200 px/s); wood: dies | Bounces (CoR 0.3) up to 2 contacts |
 | Mortar | 5 bullets with `m_collisions` 5, ±0.2 on each axis | 5 balls; spent on any machine |
@@ -141,8 +143,20 @@ mass share, gravity on the gun and the swing load. The mount's `m_fake` is 0.9 (
   `m_sharpness` × sharp_u/d (+0x750/+0x754).
 - **gun_blade** (arquebus): sharpness 5; top side × 0.3 (1.5) with blade 0; bottom side × 1 (5) with bladeable 1, so
   the cut factor reaches 10 on cross hits: **it cuts like a sword**.
-- **tribun**: the same, but `m_spikeable=0` in the file, so it does not impale (this conflicts with RE_WEAPONS.md,
-  "tribun impales"). The factory also writes +0x134 = 2.0 (not traced).
+- **tribun**: the same, but `m_spikeable=0` in the file, so it does not impale (RE_WEAPONS.md said "tribun impales";
+  corrected there). The factory also writes +0x134 = 2.0 (not traced). File values: class Weapon, `m_meta=4`,
+  `m_type=64`, `m_arm=108`, `m_ammoclip_size=40`, `m_sharpness=5`, `m_sharpness_u=0.3`, `m_bladeable=1`,
+  `m_bladeable_u=0`, `m_spikeable=0` (`_u`/`_d` 1), health 9.99999e7, health_low 12.
+
+### 7.1 The health_low rule and shots (0x410705–0x410847)
+- The rule runs only when the victim is player-class (`[+0x20] & 0xbf == 0xbf`, 0x41070b) **and the attacker's
+  `m_jaws` (+0x3ac) is 0** (0x410721–0x41072e); a biter skips it (plain subtract, 0x4107fc). A bullet has `m_jaws` 0,
+  so the rule holds for shots.
+- new = health − dmg. new ≤ 0: health ≠ health_low → setHealth(health_low) (0x410768); = health_low → setHealth(new),
+  death. new > 0: health > health_low → setHealth(new); else the stun-kill test 0x4107b3 (stun > 0.35 · CRITICAL_SHOCK,
+  dmg > 2, attacker weapon-class 0x281f or `m_spasmtype` ≠ 0) → setHealth(0); otherwise nothing.
+- The explosion 0x416f60 reads the health (+0x4d8) and calls setHealth (vfunc +0xe0) itself at 0x4171ed and 0x4173ad,
+  so a blast is not stopped by the rule; then it calls the damage function (+0xe4) at 0x41722d / 0x4173f3.
 - **mortar, heavy mortar, launcher: `m_sharpness` 0** (factory `[+0x394] = edi`, edi = 0 from 0x487014 to 0x48b86e;
   `pishal.seria` mortar `m_sharpness=0`). Their contact damage is always 0; they still stun (M > 30) and push. (The
   port's weapons.ts has sharpness 1 for them; with the port's rule below it doesn't matter.)
@@ -382,7 +396,10 @@ its guns are indestructible, so most of this is OURS. Code: `sim.ts` (`shotHit`,
 | 3 | Shot on a wall or crate | Stone: ricochet at half speed; wood: dies | CoR 0.3 bounce, then gone after 2 (bullet) or 3 (ball; the exe 5) contacts | Fewer live bodies on the TV |
 | 4 | Shot on a wreck, loose weapon, debris | Same as 2 | A plain bounce (counts a contact) | |
 | 5 | Shot on a teammate (friendly fire off) | (no teams) | Flies through: the engine's bounce is taken back from both bodies, then the shot is not solid for 0.04 s | With collision on, team bodies still touch shots (a heavy ball moved an ally 118 px/s before the take-back) |
-| 5b | Rocket | Goes off on a hull or a stone wall (damage ≥ 5), **not** on a held weapon or gun; a 30 s fuse | Goes off on its first contact of any kind, or at the end of its 1.5 s life (unchanged) | Kept: a rocket that clanks off a weapon would read as a dud |
+| 5b | Rocket | Goes off on a hull or a stone wall (damage ≥ 5), **not** on a held weapon or gun (it takes 0 from them, 0x410540–0x410575): it bounces and its own thrust (0x408123) drives it on; a 30 s fuse | Goes off on a hull, a wall, a crate, a wreck or a loose weapon; on a live enemy's weapon, gun or plate it bounces (a "ping"), then eases back to its speed in about 0.2 s (`ROCKET_THRUST`); it goes off at the end of its 1.5 s life (OURS: the TV's body budget) | The user: match the original (2026-11-17) |
+| 5c | Shot at health_low | The health_low rule (0x410734–0x4107fa) holds for every attacker with `m_jaws` 0 (+0x3ac, tested at 0x410721), so for shots too; but a shot does about 155, so at health_low every landing shot is lethal | At health_low (12) a shot's damage is raised to the machine's health: it is the lethal hit, as in the exe. Monsters have no health_low rule | The user: match the original |
+| 5d | Blast and health_low | The explosion sets the health itself (setHealth vfunc +0xe0 at 0x4171ed and 0x4173ad, after reading +0x4d8), so the health_low rule does not stop it; then the normal damage call (+0xe4, 0x41722d) | A blast's damage subtracts past health_low (`damage(…, direct)`) | Match the original |
+| 5e | Tribune's back blade | `tribun.seria`: class Weapon, `m_type=64` (0x40, a gun), `m_arm=108` (bullets), clip 40, `m_sharpness=5`, `m_bladeable=1` (u 0), `m_spikeable=0` (side values 1/1, so the spike product is 0: **no impaling**), health 9.99999e7 (can't break) | A blade that shoots: it cuts (no `Tag.sidearm`), it can't break, its bullets are the sidearm bullets | Already as the original; no change |
 | 6 | Values | Bullet 155 / stun 1 | Bullet 3 dmg, push 40; mortar ball 5, 60, stun 0.07 (5 balls: 25, 300, 0.35); heavy ball 20, 320, 0.6; rocket 0 (its blast does the harm) | Keeps the bot balance (below) |
 | 7 | Recoil | Mortars: the full momentum on the gun body; arquebus and launcher none | 0.5 × pellets × `hit.push` on the bare hull speed: arquebus 20 px/s a shot, mortar 150, heavy 160, launcher 0; 70 % on the hull, 30 % on the gun | The request (arquebus too); the launcher stays recoilless as in the exe |
 | 8 | Weight | Physics only | Physics only, with heavier mortars and launcher: density 68 / 72 / 32 (masses about 15 000 / 22 200 / 18 300; arquebus 22 379 as the exe) | Measured below |
