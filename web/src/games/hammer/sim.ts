@@ -105,6 +105,8 @@ const PUSH_MASS = 66000;
  * hull (weapon and gun), and the exe puts the kick on the gun body only. Not tuned further (OURS).
  */
 const RECOIL_SHARE = 0.5;
+/** A rocket regains its speed after a bounce at this rate, 1/s (OURS, RE_GUNS.md §2.5). */
+const ROCKET_THRUST = 5;
 /** Seconds a shot flies through a teammate it touched (a bullet covers 80 px, a mortar ball 44). */
 const SHOT_GHOST = 0.04;
 /** A shot's push can't make a light part (a claw, a link) jump faster than this, px/s. */
@@ -769,6 +771,16 @@ export class Arena {
         any = true;
         if (sh.blast) this.blast(sh);
       } else {
+        // a rocket pushes itself back up to its speed after a bounce (the exe: thrust mass · 2000 against drag
+        // 5 · mass · v, 0x408123; here a 0.2 s ease back to the muzzle speed along its flight)
+        if (sh.blast) {
+          const s = Math.hypot(b.vx, b.vy);
+          if (s > 1 && s < sh.speed) {
+            const dt = STEP * this.timewarp;
+            const k = (s + (sh.speed - s) * Math.min(1, dt * ROCKET_THRUST)) / s;
+            b.setVelocity(b.vx * k, b.vy * k, b.w, dt);
+          }
+        }
         sh.vx = b.vx;
         sh.vy = b.vy;
         if (sh.ghostUntil && this.t >= sh.ghostUntil) {
@@ -805,7 +817,7 @@ export class Arena {
         if (d > bl.radius) continue;
         const k = 1 - d / bl.radius;
         m.stun = Math.min(1, m.stun + 0.5 * k);
-        this.damage(m, Math.round(bl.damage * k * (this.tuning.damage / 0.1)), owner, true, bl.push * k, 1, m.hull.x, m.hull.y, true);
+        this.damage(m, Math.round(bl.damage * k * (this.tuning.damage / 0.1)), owner, true, bl.push * k, 1, m.hull.x, m.hull.y, true, true);
       }
     }
     this.events.push({ type: "blast", m: owner, radius: bl.radius, x, y });
@@ -1157,6 +1169,12 @@ export class Arena {
     const sh = st.shot!;
     const v = ot.m;
     if (sh.contacts >= sh.maxContacts) return;
+    // a rocket against a live machine's weapon, gun or plate: the exe's rocket takes no damage from a held weapon
+    // (0x410540–0x410575), so it doesn't go off; it bounces and pushes itself on (ageShots). On a hull it goes off.
+    if (sh.blast && v.alive && this.enemies(st.m, v) && !ot.hull && !ot.loose && ot.gibUntil === undefined && (ot.plate || v.armed)) {
+      this.events.push({ type: "ping", m: v, heavy: true, x: c.x, y: c.y });
+      return;
+    }
     // a teammate with friendly fire off: the shot flies on through (with team collision off they never touch; with
     // it on, the engine has bounced it: take the bounce back from both, and let the shot pass for SHOT_GHOST s)
     if (v.alive && !this.enemies(st.m, v)) {
@@ -1200,7 +1218,11 @@ export class Arena {
         v.slamUntil = this.t + SLAM_S;
       }
       const bonus = v.monster && sh.look === "bullet" ? MONSTER_SHOT_BONUS : 1;
-      const dmg = Math.max(1, Math.round(sh.hit.dmg * k * bonus * (tn.damage / 0.1)));
+      let dmg = Math.max(1, Math.round(sh.hit.dmg * k * bonus * (tn.damage / 0.1)));
+      // health_low (0x410734–0x4107fa) holds for shots too (it is skipped only for a biter, m_jaws ≠ 0); but the exe's
+      // shot does about 155 (RE_GUNS.md §2.4), so at health_low every landing shot is the lethal hit. Ours are small:
+      // at health_low a shot counts as lethal, so a gun can finish a machine as in the exe.
+      if (!v.monster && v.hp <= MACHINE.healthLow) dmg = Math.max(dmg, Math.ceil(v.hp));
       if (sh.hit.dmg > 0) this.damage(v, dmg, by, true, impact, 1, c.x, c.y, true);
       return;
     }
@@ -1310,13 +1332,14 @@ export class Arena {
   }
 
   /** Take `dmg` off a machine (the health_low rule), report it, and wreck it at 0. */
-  private damage(victim: Machine, dmg: number, attacker: Machine, owned: boolean, impact: number, cut: number, x: number, y: number, shot = false): void {
+  private damage(victim: Machine, dmg: number, attacker: Machine, owned: boolean, impact: number, cut: number, x: number, y: number, shot = false, direct = false): void {
     if (!victim.alive || dmg <= 0) return;
     // health_low rule: below 12 only a lethal hit counts; the first lethal hit leaves 12, the next one kills.
     // In sudden death (ours, to end long rounds) every hit simply subtracts.
     const before = victim.hp;
     const low = MACHINE.healthLow;
-    if (this.suddenDeath || victim.monster) {
+    // (`direct`: a blast sets the health itself, past this rule: the exe's explosion calls setHealth, 0x4171ed)
+    if (this.suddenDeath || victim.monster || direct) {
       // monsters have no health_low rule either
       victim.hp = Math.max(0, victim.hp - dmg);
     } else if (victim.hp - dmg > 0) {
