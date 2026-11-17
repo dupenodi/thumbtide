@@ -12,8 +12,8 @@
  *   node tools/e2e/away.mjs --real-grace     # relay's real limits (60 s drop grace, 10 min away): one extra 65 s wait
  *   node tools/e2e/away.mjs --relay-port=8897 --web-port=5190
  *
- * Short graces by default (drop 6 s, away 40 s, set through startServer options in this script, not in the
- * product), so "an away seat outlives the drop grace" takes seconds. The relay's record hook is the wire-level
+ * Short graces by default (drop 12 s, away 40 s, set through startServer options in this script, not in the
+ * product), so "an away seat outlives the drop grace" takes seconds. A full run takes about 3 minutes. The relay's record hook is the wire-level
  * truth: every {t:"away"} a phone sends, every socket open and close.
  *
  * How a phone goes away: document.visibilityState is overridden (headless pages are always "visible") and
@@ -209,8 +209,6 @@ async function openPhone(spec) {
   await ctx.addInitScript(phoneInit, { wake: spec.wake });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => log(`${spec.name} page error:`, e.message));
-  page.on("framenavigated", (f) => f === page.mainFrame() && ph.id && log(`${spec.name} page navigated: ${f.url()}`));
-  page.on("console", (m) => /vite|reload/i.test(m.text()) && log(`${spec.name} console: ${m.text()}`));
   const cdp = await ctx.newCDPSession(page);
   const ph = { ...spec, ctx, page, cdp, id: null };
   await joinRoom(ph);
@@ -463,15 +461,30 @@ async function cascadeScenario() {
     const b2 = await turnBanner();
     check("Cascade back: banner shows '<name>'s turn' again", b2.includes(awayPh.name) && !/Waiting/.test(b2), b2);
     const before = (await cascadeShared()).seats[s0].pieces;
+    // the cursor starts on the middle cell, which a timed-out player may own by now: step it with the stick
+    // (one push = one cell) until the TV takes the piece
     const nRec = records.length;
-    const tapped = await placeFromPhone(awayPh);
-    const sent = await until(() => records.slice(nRec).some((r) => r.ev === "phone" && r.id === awayPh.id && r.m?.d?.type === "place"), 3000);
-    const after = await until(async () => {
-      const s = await cascadeShared();
-      return s.seats[s0].pieces > before && s;
-    }, 3000);
-    // the cursor starts on the middle cell, which a timed-out player may own by now: then the TV refuses the cell
-    check("Cascade back: the player's own phone sends Place on its turn (control restored)", tapped && sent, `piece placed: ${!!after}`);
+    let after = null;
+    const tried = [];
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [-1, 0], [-1, 0], [0, -1], [0, -1]]) {
+      if (dx || dy) await stickPush(awayPh, dx, dy);
+      tried.push(`${dx},${dy}`);
+      await placeFromPhone(awayPh);
+      // a placed piece plays out first (turn -1), and the counts update when it is done
+      after = await until(async () => {
+        const s = await cascadeShared();
+        return (s.turn === -1 || s.seats[s0].pieces > before) && s;
+      }, 1200);
+      if (after) {
+        after = await until(async () => {
+          const s = await cascadeShared();
+          return s.seats[s0].pieces > before && s;
+        }, 5000);
+        break;
+      }
+    }
+    const sent = records.slice(nRec).filter((r) => r.ev === "phone" && r.id === awayPh.id && r.m?.t === "msg").map((r) => r.m.d.type);
+    check("Cascade back: the player's own phone places a piece on its turn (control restored)", after && after.seats[s0].pieces > before, `pushes ${tried.join(" ")}; sent ${sent.join(",")}; pieces ${before} -> ${after?.seats[s0].pieces}`);
   } else check("Cascade back: their turn came round", false);
 
   // --- control: a plain drop on their turn -> the computer plays for them after ~3 s (old path)
@@ -514,6 +527,24 @@ async function cascadeScenario() {
     await show(a);
     await show(other);
   }
+}
+
+/** One short push of the controller's stick (CDP touch drag), released before it starts repeating. */
+async function stickPush(ph, dx, dy) {
+  const r = await ph.page.evaluate(() => {
+    const r = document.querySelector(".gp-stick")?.getBoundingClientRect();
+    return r && { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  if (!r) return false;
+  await ph.cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: r.x, y: r.y, id: 5 }] });
+  for (let i = 1; i <= 4; i++) {
+    await ph.cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: r.x + dx * i * 15, y: r.y + dy * i * 15, id: 5 }] });
+    await sleep(20);
+  }
+  await sleep(60);
+  await ph.cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await sleep(150);
+  return true;
 }
 
 /** A real touch (CDP) on the controller's Place button. */
@@ -579,12 +610,25 @@ async function hammerScenario() {
 
 async function expiryScenario() {
   if (REAL) return log("expiry: skipped with --real-grace (10 min)");
-  const ali = phones[1];
-  log(`expiry: ${ali.name} away for longer than awayGraceMs (${AWAY_GRACE / 1000} s), socket kept open`);
+  const [ivy, ali] = phones;
+  log(`expiry: ${ali.name} away (socket open) and ${ivy.name} away + offline, both longer than awayGraceMs (${AWAY_GRACE / 1000} s)`);
   await hide(ali);
+  await hide(ivy, { freeze: true });
+  await until(async () => (await tvPlayer(ivy.id))?.away === true, 3000);
+  await goOffline(ivy);
   await until(async () => (await tvPlayer(ali.id))?.away === true, 3000);
+  const oldIvy = ivy.id;
   await sleep(AWAY_GRACE + 2000);
   check("away limit: the seat goes after awayGraceMs even with the socket open", !(await seatOf(ali)));
+  check("away limit: the seat of an away + dropped phone goes after awayGraceMs", !(await seatOf(ivy)));
+  // the dropped phone comes back: its token is dead, so it joins again as a new seat (no message)
+  await goOnline(ivy);
+  await show(ivy);
+  const newIvy = await until(() => tvEval((n) => shellMod().then((m) => m.shell.host.list.find((p) => p.name === n && p.connected)?.id), ivy.name), 10_000);
+  const ivyForm = await ivy.page.evaluate(() => document.getElementById("join-form")?.hidden === false && document.getElementById("join-error")?.textContent);
+  log(`expiry: ${ivy.name} (dropped while away) on coming back: ${newIvy ? `joined again as a new seat ${oldIvy} -> ${newIvy}` : `join form: ${JSON.stringify(ivyForm)}`}`);
+  check("away limit, dropped phone back: it gets into the room again (a new seat; it is not told its old seat went)", !!newIvy && newIvy !== oldIvy);
+  if (newIvy) ivy.id = newIvy;
   await show(ali);
   await sleep(1500);
   const txt = await ali.page.evaluate(() => (document.getElementById("join-form")?.hidden === false ? document.getElementById("join-error")?.textContent : null));
