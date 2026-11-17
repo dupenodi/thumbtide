@@ -1,7 +1,7 @@
 // Canvas 2D drawing for the fight: simple vector shapes drawn from the real collision meshes,
 // interpolated between 50 Hz physics steps.
 
-import type { Body } from "./engine.ts";
+import { type Body, wrapPi } from "./engine.ts";
 import { type Arena, lerpBody, type Machine, type Tag, VIEW_H, VIEW_W } from "./sim.ts";
 import { COIN_FADE, COIN_LOOK, Coins } from "./coins.ts";
 
@@ -53,6 +53,8 @@ interface Spark {
   max: number;
   color: string;
   w: number;
+  /** The colour and width as one key (render groups sparks by it). */
+  group: string;
 }
 
 interface Float {
@@ -72,6 +74,12 @@ const ROTOR_Y = -HULL_R - 12;
 const ROTOR_H = 13;
 /** Sparks fade in this many steps (each step of each colour is one stroke). */
 const SPARK_LEVELS = 3;
+/** Swing trails are drawn at this many brightness steps (all trails of one step are one stroke). */
+const TRAIL_LEVELS = 4;
+/** The stun star's picture box (world units): the 4.5 radius star with a margin for its smoothed edge. */
+const STAR_BOX = 11;
+const BAR_COLORS = ["#7dffa3", "#ffd166", "#ff5d73"] as const;
+const barColor = (frac: number) => (frac > 0.5 ? BAR_COLORS[0] : frac > 0.2 ? BAR_COLORS[1] : BAR_COLORS[2]);
 
 export class Fx {
   sparks: Spark[] = [];
@@ -88,11 +96,12 @@ export class Fx {
 
   burst(x: number, y: number, n: number, speed: number, color: string, w = 2): void {
     n = Math.min(n, this.maxSparks - this.sparks.length);
+    const group = `${color}|${w}`;
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const s = speed * (0.3 + Math.random() * 0.7);
       const life = 0.18 + Math.random() * 0.35;
-      this.sparks.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life, max: life, color, w });
+      this.sparks.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life, max: life, color, w, group });
     }
   }
 
@@ -197,10 +206,19 @@ export class Renderer {
 
     // monsters first (behind the machines), then the machines' trails, weapons and hulls
     for (const m of arena.machines) if (m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.creature(arena, m, alpha);
-    if (!skip?.has("trails")) for (const m of arena.machines) if (!m.monster) this.trail(m, alpha, fx);
-    if (!skip?.has("weapons")) for (const m of arena.machines) if (!m.monster) this.weapon(m, alpha);
+    if (!skip?.has("trails")) {
+      for (const m of arena.machines) if (!m.monster) this.trail(m, alpha, fx);
+      this.trails();
+    }
+    if (!skip?.has("weapons")) {
+      this.ropes(arena.machines, alpha);
+      for (const m of arena.machines) if (!m.monster) this.weapon(m, alpha);
+    }
     // a wreck that has faded out (or left play) draws nothing: skip its paths entirely
-    if (!skip?.has("machines")) for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
+    if (!skip?.has("machines")) {
+      for (const m of arena.machines) if (!m.monster && (m.alive || (arena.t - m.diedAt < 2.5 && !arena.parked.has(m)))) this.machine(arena, m, alpha);
+      this.labels(arena, alpha);
+    }
     if (arena.shots.length) this.shots(arena, alpha);
     this.plates(arena, alpha);
     if (arena.obstacles.length) this.obstacles(arena, alpha);
@@ -224,34 +242,36 @@ export class Renderer {
    * Sparks in a few strokes, not one each: grouped by colour and by one of SPARK_LEVELS brightness (and width)
    * steps of their remaining life. With 8 machines there were up to ~55 separate strokes a frame.
    */
-  private sparkPaths = new Map<string, number[]>();
+  /** Spark groups: per colour and width (Spark.group), one list of segments per brightness level. */
+  private sparkPaths = new Map<string, { color: string; w: number; levels: number[][] }>();
   private sparks(fx: Fx): void {
     const ctx = this.ctx;
     const groups = this.sparkPaths;
-    for (const g of groups.values()) g.length = 0;
+    if (groups.size > 64) groups.clear(); // colours come and go with players
+    for (const g of groups.values()) for (const l of g.levels) l.length = 0;
     for (const p of fx.sparks) {
       const k = p.life / p.max;
       const level = Math.min(SPARK_LEVELS - 1, Math.floor(k * SPARK_LEVELS));
-      const key = `${p.color}|${p.w}|${level}`;
-      let g = groups.get(key);
-      if (!g) groups.set(key, (g = []));
-      g.push(p.x, p.y, p.x - p.vx * 0.03, p.y - p.vy * 0.03);
+      let g = groups.get(p.group);
+      if (!g) groups.set(p.group, (g = { color: p.color, w: p.w, levels: Array.from({ length: SPARK_LEVELS }, () => []) }));
+      g.levels[level]!.push(p.x, p.y, p.x - p.vx * 0.03, p.y - p.vy * 0.03);
     }
-    for (const [key, g] of groups) {
-      if (!g.length) continue;
-      const [color, w, lv] = key.split("|");
-      const k = (Number(lv) + 0.5) / SPARK_LEVELS;
-      ctx.strokeStyle = color!;
-      ctx.globalAlpha = Math.min(1, k * 1.5);
-      ctx.lineWidth = Number(w) * k + 0.5;
-      ctx.beginPath();
-      for (let i = 0; i < g.length; i += 4) {
-        ctx.moveTo(g[i]!, g[i + 1]!);
-        ctx.lineTo(g[i + 2]!, g[i + 3]!);
+    for (const g of groups.values()) {
+      for (let lv = 0; lv < SPARK_LEVELS; lv++) {
+        const seg = g.levels[lv]!;
+        if (!seg.length) continue;
+        const k = (lv + 0.5) / SPARK_LEVELS;
+        ctx.strokeStyle = g.color;
+        ctx.globalAlpha = Math.min(1, k * 1.5);
+        ctx.lineWidth = g.w * k + 0.5;
+        ctx.beginPath();
+        for (let i = 0; i < seg.length; i += 4) {
+          ctx.moveTo(seg[i]!, seg[i + 1]!);
+          ctx.lineTo(seg[i + 2]!, seg[i + 3]!);
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
     }
-    if (groups.size > 64) groups.clear(); // colours come and go with players
   }
 
   private texts = new Map<string, { c: HTMLCanvasElement; w: number; h: number; asc: number }>();
@@ -344,12 +364,20 @@ export class Renderer {
     if (this.bg) this.ctx.drawImage(this.bg, 0, 0);
   }
 
-  /** Transform the context into a body's local frame. */
+  /**
+   * Transform the context into a body's local frame; leave() goes back to the world frame. One setTransform each way,
+   * not save, translate, rotate and restore (the TV pays for every recorded canvas call twice: in our JavaScript and
+   * again when the browser plays the frame back). Nothing between enter() and leave() may count on restore().
+   */
   private enter(b: Body, alpha: number): void {
-    const [x, y, a] = lerpBody(b, alpha);
-    this.ctx.save();
-    this.ctx.translate(x, y);
-    this.ctx.rotate(a);
+    lerp(b, alpha);
+    const s = this.scale;
+    const c = Math.cos(L[2]) * s;
+    const sn = Math.sin(L[2]) * s;
+    this.ctx.setTransform(c, sn, -sn, c, L[0] * s + this.baseX, L[1] * s + this.baseY);
+  }
+  private leave(): void {
+    this.ctx.setTransform(this.scale, 0, 0, this.scale, this.baseX, this.baseY);
   }
 
   private mesh(b: Body): void {
@@ -362,6 +390,10 @@ export class Renderer {
     ctx.closePath();
   }
 
+  /** The trails to draw this frame, per brightness level (TRAIL_LEVELS); reused lists. */
+  private trailLevels: { x: number; y: number }[][][] = Array.from({ length: TRAIL_LEVELS }, () => []);
+
+  /** Moves a machine's swing trail on by one point, and lists it for trails() at its brightness level. */
   private trail(m: Machine, alpha: number, fx: Fx): void {
     // no weapon, no trail (after a pickup, `striker` still points at the weapon the taker now holds)
     if (!m.alive || !m.armed) {
@@ -369,71 +401,101 @@ export class Renderer {
       return;
     }
     const b = m.striker;
-    const [x, y, a] = lerpBody(b, alpha);
-    let maxX = 0;
-    for (let i = 0; i < b.count; i++) maxX = Math.max(maxX, b.lx[i]!);
-    const tip = { x: x + Math.cos(a) * maxX, y: y + Math.sin(a) * maxX };
+    lerp(b, alpha);
+    const { maxX } = bounds(b);
     let pts = fx.trails.get(m);
     if (!pts) fx.trails.set(m, (pts = []));
+    // 9 points: the oldest one is reused for the newest
+    const tip = pts.length >= 9 ? pts.shift()! : { x: 0, y: 0 };
+    tip.x = L[0] + Math.cos(L[2]) * maxX;
+    tip.y = L[1] + Math.sin(L[2]) * maxX;
     pts.push(tip);
-    if (pts.length > 9) pts.shift();
-    if (!m.alive || pts.length < 2) return;
+    if (pts.length < 2) return;
     const speed = Math.hypot(b.vx, b.vy);
     const k0 = Math.min(1, Math.max(0, (speed - 200) / 500));
     if (k0 <= 0) return;
-    // two strokes, not one per segment (each stroke costs the TV): a faint thin tail and a brighter, wider head
+    this.trailLevels[Math.min(TRAIL_LEVELS - 1, Math.floor(k0 * TRAIL_LEVELS))]!.push(pts);
+  }
+
+  /**
+   * All the swing trails in two strokes per brightness level, not two per machine (each stroke costs the TV): a faint
+   * thin tail and a brighter, wider head. The brightness follows the striker's speed in TRAIL_LEVELS steps.
+   */
+  private trails(): void {
     const ctx = this.ctx;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    const half = pts.length >> 1;
-    ctx.globalAlpha = 0.14 * k0;
     ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(pts[0]!.x, pts[0]!.y);
-    for (let i = 1; i <= half; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
-    ctx.stroke();
-    ctx.globalAlpha = 0.3 * k0;
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.moveTo(pts[half]!.x, pts[half]!.y);
-    for (let i = half + 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
-    ctx.stroke();
+    for (let lv = 0; lv < TRAIL_LEVELS; lv++) {
+      const list = this.trailLevels[lv]!;
+      if (!list.length) continue;
+      const k0 = (lv + 1) / TRAIL_LEVELS;
+      ctx.globalAlpha = 0.14 * k0;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      for (const pts of list) {
+        const half = pts.length >> 1;
+        ctx.moveTo(pts[0]!.x, pts[0]!.y);
+        for (let i = 1; i <= half; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 0.3 * k0;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      for (const pts of list) {
+        const half = pts.length >> 1;
+        ctx.moveTo(pts[half]!.x, pts[half]!.y);
+        for (let i = half + 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+      }
+      ctx.stroke();
+      list.length = 0;
+    }
     ctx.globalAlpha = 1;
   }
 
-  private weapon(m: Machine, alpha: number): void {
+  /**
+   * Ropes and chains of every machine: a line between the anchors of every rope joint (the hull one only while
+   * armed). One path per colour for all the machines (a stroke per colour per machine cost the TV ~20 strokes a frame
+   * with 8 machines), so every rope is under every weapon. Type 0 joints (the dual sets' spacers) are not drawn.
+   */
+  private ropes(machines: readonly Machine[], alpha: number): void {
     const ctx = this.ctx;
-    const [hx, hy] = lerpBody(m.hull, alpha);
-    const spec = m.spec;
-
-    // Ropes and chains: a line between the anchors of every rope joint (the hull one only while armed). One path per
-    // colour, so a whole chain is a single stroke. Type 0 joints (the dual sets' spacers) are not drawn.
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     ctx.lineWidth = 2.5;
     for (const color of ROPE_COLORS) {
       let any = false;
-      for (const j of spec.joints) {
-        if (j.type === 2 || j.type === 0) continue;
-        if (j.a === "hull" && !m.armed) continue;
-        const a = j.a === "hull" ? m.hull : m.part.get(j.a);
-        const b = m.part.get(j.b);
-        if (!a || !b || ropeColor((b.data as Tag).spec?.material ?? "iron") !== color) continue;
-        if (!any) {
-          ctx.beginPath();
-          any = true;
+      for (const m of machines) {
+        if (m.monster) continue;
+        for (const j of m.spec.joints) {
+          if (j.type === 2 || j.type === 0) continue;
+          if (j.a === "hull" && !m.armed) continue;
+          const a = j.a === "hull" ? m.hull : m.part.get(j.a);
+          const b = m.part.get(j.b);
+          if (!a || !b || ropeColor((b.data as Tag).spec?.material ?? "iron") !== color) continue;
+          if (!any) {
+            ctx.beginPath();
+            any = true;
+          }
+          worldAt(a, j.sax ?? 0, j.say ?? 0, alpha);
+          ctx.moveTo(scratch[0], scratch[1]);
+          worldAt(b, j.sbx ?? 0, j.sby ?? 0, alpha);
+          ctx.lineTo(scratch[0], scratch[1]);
         }
-        worldAt(a, j.sax ?? 0, j.say ?? 0, alpha);
-        ctx.moveTo(scratch[0], scratch[1]);
-        worldAt(b, j.sbx ?? 0, j.sby ?? 0, alpha);
-        ctx.lineTo(scratch[0], scratch[1]);
       }
       if (any) {
         ctx.strokeStyle = color;
         ctx.stroke();
       }
     }
+  }
+
+  private weapon(m: Machine, alpha: number): void {
+    const ctx = this.ctx;
+    lerp(m.hull, alpha);
+    const hx = L[0];
+    const hy = L[1];
+    const spec = m.spec;
 
     // Chain links: one path for all the links of a chain (the colour of the first link), with the corners worked out
     // here. A save, transform, stroke and restore per link made the chain weapons the slowest sets on the TV (up to
@@ -448,15 +510,24 @@ export class Renderer {
       }
     }
     let linksDrawn = false;
+    /** The context is still in the last part's frame (set back only when a path comes, or at the end). */
+    let local = false;
+    const world = () => {
+      if (local) ctx.setTransform(this.scale, 0, 0, this.scale, this.baseX, this.baseY);
+      local = false;
+    };
     const strokeLinks = () => {
       linksDrawn = true;
+      world();
       ctx.beginPath();
       for (const b of m.parts) {
         const part = (b.data as Tag).spec!;
         if (part.look !== "link" || PALETTE[part.material].fill !== linkFill) continue; // another colour: drawn on its own
-        const [x, y, a] = lerpBody(b, alpha);
-        const c = Math.cos(a);
-        const s = Math.sin(a);
+        lerp(b, alpha);
+        const x = L[0];
+        const y = L[1];
+        const c = Math.cos(L[2]);
+        const s = Math.sin(L[2]);
         // the 10 × 6 link outline, corner by corner
         ctx.moveTo(x - 5 * c + 3 * s, y - 5 * s - 3 * c);
         ctx.lineTo(x + 5 * c + 3 * s, y + 5 * s - 3 * c);
@@ -475,11 +546,15 @@ export class Renderer {
         if (!linksDrawn) strokeLinks();
         continue;
       }
-      const [bx, by, ba] = lerpBody(b, alpha);
+      lerp(b, alpha);
+      const bx = L[0];
+      const by = L[1];
+      const ba = L[2];
       const { minX } = bounds(b);
       // an original sprite of a rod part holds its own shaft: no drawn line then
       if (m.armed && part.rod && !(atlasReady() && atlasEntry(spec.kind, part)?.shaft)) {
         // the shaft from the machine to the part's back end
+        world();
         ctx.strokeStyle = part.material === "silver" ? "#b9c0cc" : "#8a6a4a";
         ctx.lineWidth = 4;
         ctx.beginPath();
@@ -498,8 +573,9 @@ export class Renderer {
       const sn = Math.sin(ba) * this.scale;
       ctx.setTransform(c, sn, -sn, c, bx * this.scale + this.baseX, by * this.scale + this.baseY);
       ctx.drawImage(sp.c, sp.x, sp.y, sp.w, sp.h);
-      ctx.setTransform(this.scale, 0, 0, this.scale, this.baseX, this.baseY);
+      local = true;
     }
+    world();
   }
 
   private parts = new WeakMap<Body, { c: HTMLCanvasElement; x: number; y: number; w: number; h: number }>();
@@ -688,7 +764,7 @@ export class Renderer {
       if (o.kind === "block") {
         this.enter(o.body, alpha);
         this.solid(o.body, { fill: th.block, stroke: "rgba(0,0,0,0.5)" }, 2);
-        ctx.restore();
+        this.leave();
         continue;
       }
       if (o.kind === "cage") {
@@ -719,7 +795,7 @@ export class Renderer {
         ctx.moveTo(-hw, hh);
         ctx.lineTo(hw, hh);
         ctx.stroke();
-        ctx.restore();
+        this.leave();
         continue;
       }
       const { x, y } = o.body;
@@ -757,7 +833,7 @@ export class Renderer {
         // a wreck's shard: its colour while it can still hurt, then scorched grey
         this.enter(b, alpha);
         this.solid(b, { fill: t.wood ? "#9a6b3a" : arena.t < t.gibUntil ? t.m.color : "#4a4d57", stroke: "rgba(0,0,0,0.55)" }, 1.5);
-        ctx.restore();
+        this.leave();
         continue;
       }
       if (!t?.plate) continue;
@@ -766,7 +842,7 @@ export class Renderer {
       if (e) {
         this.enter(b, alpha);
         ctx.drawImage(ATLAS_IMG!, e.sx, e.sy, e.sw, e.sh, -e.ox * e.scale, -e.oy * e.scale, e.sw * e.scale, e.sh * e.scale);
-        ctx.restore();
+        this.leave();
         continue;
       }
       const pal = PALETTE[PLATES[t.plate].material];
@@ -787,7 +863,7 @@ export class Renderer {
       ctx.fillStyle = pal.stroke;
       for (const sy of [-1, 1]) ctx.fillRect(-1.5, sy * (maxY - 5) - 1.5, 3, 3);
       ctx.fillRect(maxX - 4, -1.5, 3, 3);
-      ctx.restore();
+      this.leave();
     }
   }
 
@@ -878,7 +954,7 @@ export class Renderer {
         ctx.lineTo(maxX * 0.4, maxY * 0.85);
       }
       ctx.stroke();
-      ctx.restore();
+      this.leave();
     }
     // the jaw: a wedge with teeth pointing forward (+x), and an eye
     const jaw = st.part.get("jaw");
@@ -912,7 +988,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(-maxX * 0.35, -maxY * 0.45, Math.max(2, maxY * 0.18), 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
+      this.leave();
     }
     ctx.globalAlpha = 1;
     if (!m.alive) return;
@@ -926,10 +1002,11 @@ export class Renderer {
     ctx.fillStyle = "#ff8a3d";
     ctx.fillRect(x - w / 2, y - 33, w * frac, 4);
     if (m.stun > 0) {
-      ctx.fillStyle = "#ffe066";
+      const st = this.starSprite();
+      const r = STAR_BOX / 2;
       for (let i = 0; i < 3; i++) {
         const t = arena.t * 7 + (i * Math.PI * 2) / 3;
-        star(ctx, x + Math.cos(t) * 18, y - 42 + Math.sin(t) * 5, 4.5);
+        ctx.drawImage(st, x + Math.cos(t) * 18 - r, y - 42 + Math.sin(t) * 5 - r, 2 * r, 2 * r);
       }
     }
   }
@@ -947,7 +1024,6 @@ export class Renderer {
 
   private machine(arena: Arena, m: Machine, alpha: number): void {
     const ctx = this.ctx;
-    const [x, y] = lerpBody(m.hull, alpha);
     this.enter(m.hull, alpha);
     if (!m.alive) ctx.globalAlpha = Math.max(0, 1 - (arena.t - m.diedAt) / 2.5);
 
@@ -962,37 +1038,77 @@ export class Renderer {
 
     // the hull is one picture (body, shade, window), made once per colour and facing
     ctx.drawImage(this.hullSprite(m.flash > 0 ? "#ffffff" : m.alive ? m.color : "#3b3b44", m.hull.vx >= 0), -HULL_SW / 2, -HULL_SH / 2, HULL_SW, HULL_SH);
-    ctx.restore();
+    this.leave();
     ctx.globalAlpha = 1;
+  }
 
-    if (!m.alive) return;
-
+  /**
+   * Over the live machines: the stun stars, the health bars and the names. Each kind in one run with one fill colour
+   * where it can (the bars' backs, then the bars by colour), not a colour change per machine, and the stars are a
+   * cached picture (each was a 10-point path).
+   */
+  private labels(arena: Arena, alpha: number): void {
+    const ctx = this.ctx;
+    const live = this.live;
+    live.length = 0;
+    for (const m of arena.machines) if (m.alive && !m.monster) live.push(m);
+    if (!live.length) return;
+    const w = 40;
     // Shock: stars circling over a machine whose engine is out.
-    if (m.stun > 0) {
-      const n = 3;
-      ctx.fillStyle = "#ffe066";
-      for (let i = 0; i < n; i++) {
-        const t = arena.t * 7 + (i * Math.PI * 2) / n;
-        const sx = x + Math.cos(t) * 18;
-        const sy = y - HULL_R - 2 + Math.sin(t) * 5;
-        ctx.globalAlpha = Math.min(1, m.stun * 3);
-        star(ctx, sx, sy, 4.5);
+    for (const m of live) {
+      if (m.stun <= 0) continue;
+      lerp(m.hull, alpha);
+      const st = this.starSprite();
+      const r = STAR_BOX / 2;
+      ctx.globalAlpha = Math.min(1, m.stun * 3);
+      for (let i = 0; i < 3; i++) {
+        const t = arena.t * 7 + (i * Math.PI * 2) / 3;
+        ctx.drawImage(st, L[0] + Math.cos(t) * 18 - r, L[1] - HULL_R - 2 + Math.sin(t) * 5 - r, 2 * r, 2 * r);
       }
       ctx.globalAlpha = 1;
     }
-
-    // health bar: two rectangles (no paths); the name is a cached picture (text is slow on the TV)
-    const w = 40;
-    const frac = Math.max(0, m.hp / MACHINE.health);
-    const by = y - HULL_R - 22;
+    // health bars: two rectangles each (no paths)
     ctx.fillStyle = "rgba(10,12,20,0.6)";
-    ctx.fillRect(x - w / 2 - 1, by, w + 2, 6);
-    ctx.fillStyle = frac > 0.5 ? "#7dffa3" : frac > 0.2 ? "#ffd166" : "#ff5d73";
-    ctx.fillRect(x - w / 2, by + 1, w * frac, 4);
-    if (this.opts.names) {
-      const label = this.nameSprite(m.name, m.color);
-      ctx.drawImage(label.c, x - label.w / 2, by - 4 - NAME_ASC, label.w, NAME_H);
+    for (const m of live) {
+      lerp(m.hull, alpha);
+      ctx.fillRect(L[0] - w / 2 - 1, L[1] - HULL_R - 22, w + 2, 6);
     }
+    for (const color of BAR_COLORS) {
+      let set = false;
+      for (const m of live) {
+        const frac = Math.max(0, m.hp / MACHINE.health);
+        if (barColor(frac) !== color) continue;
+        if (!set) ctx.fillStyle = color;
+        set = true;
+        lerp(m.hull, alpha);
+        ctx.fillRect(L[0] - w / 2, L[1] - HULL_R - 21, w * frac, 4);
+      }
+    }
+    // the names: cached pictures (text is slow on the TV)
+    if (this.opts.names) {
+      for (const m of live) {
+        lerp(m.hull, alpha);
+        const label = this.nameSprite(m.name, m.color);
+        ctx.drawImage(label.c, L[0] - label.w / 2, L[1] - HULL_R - 26 - NAME_ASC, label.w, NAME_H);
+      }
+    }
+  }
+  private live: Machine[] = [];
+
+  private stars: HTMLCanvasElement | null = null;
+  private starScale = 0;
+  /** The stun star (radius 4.5 in a STAR_BOX square) at the canvas's pixel scale. */
+  private starSprite(): HTMLCanvasElement {
+    if (this.stars && this.starScale === this.scale) return this.stars;
+    const c = document.createElement("canvas");
+    c.width = c.height = Math.ceil(STAR_BOX * this.scale);
+    const g = c.getContext("2d")!;
+    g.setTransform(c.width / STAR_BOX, 0, 0, c.height / STAR_BOX, c.width / 2, c.height / 2);
+    g.fillStyle = "#ffe066";
+    star(g, 0, 0, 4.5);
+    this.stars = c;
+    this.starScale = this.scale;
+    return c;
   }
 
   private rotors: HTMLCanvasElement | null = null;
@@ -1281,11 +1397,20 @@ const scratch: [number, number] = [0, 0];
 
 /** A point in a body's local frame, in world px, blended between steps; written to `scratch`. */
 function worldAt(b: Body, lx: number, ly: number, alpha: number): void {
-  const [x, y, a] = lerpBody(b, alpha);
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  scratch[0] = x + lx * c - ly * s;
-  scratch[1] = y + lx * s + ly * c;
+  lerp(b, alpha);
+  const c = Math.cos(L[2]);
+  const s = Math.sin(L[2]);
+  scratch[0] = L[0] + lx * c - ly * s;
+  scratch[1] = L[1] + lx * s + ly * c;
+}
+
+/** Output of lerp (read it before the next call). */
+const L: [number, number, number] = [0, 0, 0];
+/** lerpBody without a new array per call (it runs a few hundred times a frame): x, y and angle into `L`. */
+function lerp(b: Body, alpha: number): void {
+  L[0] = b.rx + (b.x - b.rx) * alpha;
+  L[1] = b.ry + (b.y - b.ry) * alpha;
+  L[2] = b.ra + wrapPi(b.a - b.ra) * alpha;
 }
 
 const ROPE_COLORS = ["#a07a50", "#cfd6e4", "#9aa1ae"];
