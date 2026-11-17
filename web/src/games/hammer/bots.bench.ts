@@ -103,6 +103,6 @@ test("bot free-for-all", () => {
 function summary(label: string, rs: RoundResult[]) {
   const mean = (f: (r: RoundResult) => number) => rs.reduce((s, r) => s + f(r), 0) / Math.max(1, rs.length);
   console.log(
-    `\n${label.toUpperCase()}: ${rs.length} rounds · ${mean((r) => r.seconds).toFixed(1)} s mean · time up ${pct(mean((r) => (r.timeUp ? 1 : 0)))} · hits/min ${mean((r) => r.hitsPerMin).toFixed(0)} · quiet ${pct(mean((r) => r.quiet))} · lead changes ${mean((r) => r.leadChanges).toFixed(2)} · comebacks ${pct(mean((r) => (r.comeback ? 1 : 0)))} · slams ${mean((r) => r.slams).toFixed(1)} · stunned ${mean((r) => r.stats.reduce((s, x) => s + x.stunned, 0) / r.stats.length).toFixed(1)} s · edge ${mean((r) => r.stats.reduce((s, x) => s + x.edge, 0) / r.stats.length / r.seconds).toFixed(2)}`,
+    `\n${label.toUpperCase()}: ${rs.length} rounds · ${mean((r) => r.seconds).toFixed(1)} s mean · time up ${pct(mean((r) => (r.timeUp ? 1 : 0)))} · hits/min ${mean((r) => r.hitsPerMin).toFixed(0)} · quiet ${pct(mean((r) => r.quiet))} · lead changes ${mean((r) => r.leadChanges).toFixed(2)} · comebacks ${pct(mean((r) => (r.comeback ? 1 : 0)))} · slams ${mean((r) => r.slams).toFixed(1)} · guns broken ${mean((r) => r.gunBreaks).toFixed(2)} · stunned ${mean((r) => r.stats.reduce((s, x) => s + x.stunned, 0) / r.stats.length).toFixed(1)} s · edge ${mean((r) => r.stats.reduce((s, x) => s + x.edge, 0) / r.stats.length / r.seconds).toFixed(2)}`,
   );
 }

@@ -24,6 +24,8 @@ export interface SettingDef {
   applies?: "now" | "round";
   /** Only shown while another setting has this value (e.g. a board's width once "Custom" is picked). */
   when?: { key: string; value: SettingValue };
+  /** Fine-tuning most hosts never touch: shown under "More settings", folded away by default. */
+  advanced?: boolean;
 }
 
 export function defaultSettings(defs: SettingDef[] = []): Settings {

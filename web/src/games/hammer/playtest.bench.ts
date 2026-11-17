@@ -49,7 +49,7 @@ test("every mode in every arena", () => {
         const pick = (i: number) => (i < humans ? "pilot" : MIX && i % 2 === 1 ? (["chaser", "spinner"] as const)[(i >> 1) % 2]! : ROSTER[(i + r) % ROSTER.length]!);
         const es = teams.map((team, i) => entrant(pick(i), seed + i, team));
         const worms = mode === "pvm" ? Math.min(4, 1 + Math.floor((r + 2) / 2)) : 0;
-        rs.push(withSeed(seed, () => runRound({ arena, entrants: es, worms, armored: r >= 1 })));
+        rs.push(withSeed(seed, () => runRound({ arena, entrants: es, monsters: worms, armored: r >= 1 })));
       }
       rows.push(line(arena, rs));
       byMode.set(mode, [...(byMode.get(mode) ?? []), ...rs]);

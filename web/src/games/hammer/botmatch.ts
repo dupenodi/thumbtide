@@ -35,6 +35,8 @@ export interface EntrantStats {
   alive: boolean;
   /** Seconds this machine was in the frame's outer band (60 px from a side): cornered or camping. */
   edge: number;
+  /** Of `dealt`, the damage done by shots and rocket blasts. */
+  shotDealt: number;
 }
 
 export interface RoundResult {
@@ -51,6 +53,8 @@ export interface RoundResult {
   /** Share of 3 s windows with no hit at all (boring stretches). */
   quiet: number;
   slams: number;
+  /** Sidearms broken off. */
+  gunBreaks: number;
   hitsPerMin: number;
   /** Mean distance between two live machines (px, monsters left out): how spread out the fight is. */
   spread: number;
@@ -69,6 +73,8 @@ export interface RoundResult {
   /** Breakable obstacles (crates, cages, walls) broken, and how many the arena had. */
   breaks: number;
   breakables: number;
+  /** Co-op vs monsters: the worms were the last side standing (or still alive at the time limit). */
+  monstersWon: boolean;
 }
 
 /** Hull to hull distance under which machines count as one pile (two hulls with weapons overlapping). */
@@ -81,8 +87,9 @@ export interface RoundOptions {
   /** Fight length cap in s (90, as on the TV). */
   limit?: number;
   suddenDeathAt?: number;
-  /** Co-op vs monsters (host.ts spawnWave): this many worms fly in from the sides at the start (armoured from `armored`). */
-  worms?: number;
+  /** Co-op vs monsters (host.ts "pvm"): this many worms fly in from the sides as one more side, at the host's spawn rows (wormSpawn). */
+  monsters?: number;
+  /** Every other worm armoured (default; host.ts: from wave 3). */
   armored?: boolean;
 }
 
@@ -90,7 +97,7 @@ export interface RoundOptions {
 export function modeTeams(mode: "ffa" | "teams" | "pve" | "pvm", n: number, humans = 1): number[] {
   return Array.from({ length: n }, (_, i) => (mode === "teams" ? i % 2 : mode === "pve" ? (i < humans ? 0 : 1) : mode === "pvm" ? 0 : i));
 }
-const MONSTER_TEAM = 9;
+const MONSTER_TEAM = 99;
 
 export function runRound(o: RoundOptions): RoundResult {
   const ar = new Arena({ ...DEFAULT_TUNING, passes: 15, gibs: 3, ...o.tuning });
@@ -100,14 +107,14 @@ export function runRound(o: RoundOptions): RoundResult {
     const [x, y] = spawnPoint(ar, i);
     return ar.add({ id: i + 1, team: e.team ?? i, name: e.name, color: "#fff", weapon: e.weapon, sidearm: e.sidearm ?? null, plate: e.plate ?? null, x, y });
   });
-  const drivers = o.entrants.map((e, i) => e.driver(ar, ms[i]!));
-  const st: EntrantStats[] = o.entrants.map((e) => ({ name: e.name, weapon: e.weapon, dealt: 0, hits: 0, bigHit: 0, kos: 0, slammed: 0, stunned: 0, minHp: 100, hpEnd: 0, alive: true, edge: 0 }));
-  const idx = new Map(ms.map((m, i) => [m, i]));
   const worms: Machine[] = [];
-  const rows = o.worms ? openSideRows(ar) : null;
-  for (let i = 0; i < (o.worms ?? 0); i++) {
-    worms.push(ar.addMonster({ id: 1000 + i, team: MONSTER_TEAM, kind: o.armored && i % 2 === 1 ? "armoredworm" : "worm", ...wormSpawn(ar, i, rows!) }));
+  const rows = o.monsters ? openSideRows(ar) : null;
+  for (let i = 0; i < (o.monsters ?? 0); i++) {
+    worms.push(ar.addMonster({ id: 1000 + i, team: MONSTER_TEAM, kind: (o.armored ?? true) && i % 2 === 1 ? "armoredworm" : "worm", ...wormSpawn(ar, i, rows!) }));
   }
+  const drivers = o.entrants.map((e, i) => e.driver(ar, ms[i]!));
+  const st: EntrantStats[] = o.entrants.map((e) => ({ name: e.name, weapon: e.weapon, dealt: 0, hits: 0, bigHit: 0, kos: 0, slammed: 0, stunned: 0, minHp: 100, hpEnd: 0, alive: true, edge: 0, shotDealt: 0 }));
+  const idx = new Map(ms.map((m, i) => [m, i]));
   let spreadSum = 0;
   let spreadN = 0;
   let pileT = 0;
@@ -130,6 +137,7 @@ export function runRound(o: RoundOptions): RoundResult {
   let quietWindows = 0;
   let nextWindow = 3;
   let slams = 0;
+  let gunBreaks = 0;
   let hits = 0;
   let comebackRisk = new Set<number>();
   const teams = () => new Set([...ms, ...worms].filter((m) => m.alive).map((m) => m.team));
@@ -143,6 +151,7 @@ export function runRound(o: RoundOptions): RoundResult {
         const a = idx.get(e.attacker);
         if (a !== undefined) {
           st[a]!.dealt += e.dmg;
+          if (e.shot) st[a]!.shotDealt += e.dmg;
           st[a]!.hits++;
           st[a]!.bigHit = Math.max(st[a]!.bigHit, e.dmg);
         }
@@ -162,6 +171,8 @@ export function runRound(o: RoundOptions): RoundResult {
         const v = idx.get(e.m);
         if (v !== undefined) st[v]!.slammed++;
         slams++;
+      } else if (e.type === "gunbreak") {
+        gunBreaks++;
       }
     }
     ar.events.length = 0;
@@ -235,6 +246,7 @@ export function runRound(o: RoundOptions): RoundResult {
     comeback: winner >= 0 && comebackRisk.has(winner),
     quiet: windows ? quietWindows / windows : 0,
     slams,
+    gunBreaks,
     hitsPerMin: (hits * 60) / t,
     spread: spreadN ? spreadSum / spreadN : 0,
     spreadShare: spreadN ? spreadSum / spreadN / Math.hypot(ar.w, ar.h) : 0,
@@ -246,6 +258,7 @@ export function runRound(o: RoundOptions): RoundResult {
     monsterKos,
     breaks,
     breakables,
+    monstersWon: worms.some((w) => w.alive) && (alive.length === 0 || timeUp),
   };
 }
 
