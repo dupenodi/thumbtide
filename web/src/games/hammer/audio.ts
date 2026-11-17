@@ -268,7 +268,9 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
   // straight to the speakers, as the element was: the slow-motion filter doesn't touch the music
   bufOut.connect(c.destination);
   const syncBuffered = () => {
-    const want = mood === "off" || !musicOn || paused ? "" : TRACKS[mood];
+    if (disposed) return;
+    // a pause suspends the whole context, which holds the track where it is: no stop and restart from 0 for it
+    const want = mood === "off" || !musicOn ? "" : TRACKS[mood];
     if (want === bufTrack && (bufSrc || !want)) return;
     bufSrc?.stop();
     bufSrc = null;
@@ -296,6 +298,7 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
         }
       })
       .catch(() => {
+        if (disposed) return;
         // the element streams it instead
         bufferMusic = false;
         bufs.clear();
@@ -493,6 +496,15 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
         el.removeAttribute("src");
         el.load(); // let go of the stream
       }
+      // the buffered music plays straight to the speakers (not through master): stop it and let its buffers go
+      try {
+        bufSrc?.stop();
+      } catch {
+        /* already stopped */
+      }
+      bufSrc = null;
+      bufOut.disconnect();
+      bufs.clear();
       bank.clear();
       // the context is shared with the lobby: leave it running
       if (paused) void c.resume().catch(() => {});

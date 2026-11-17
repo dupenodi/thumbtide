@@ -936,6 +936,7 @@ const mount: HostMount = (ctx) => {
       phase,
       machines: arena.machines.length,
       music: sound?.samples().music ?? "none",
+      audio: audio()?.state ?? "none",
       ...(tour ? tour.report() : {}),
     };
   });
