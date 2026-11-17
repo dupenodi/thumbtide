@@ -74,8 +74,6 @@ const ROTOR_Y = -HULL_R - 12;
 const ROTOR_H = 13;
 /** Sparks fade in this many steps (each step of each colour is one stroke). */
 const SPARK_LEVELS = 3;
-/** Swing trails are drawn at this many brightness steps (all trails of one step are one stroke). */
-const TRAIL_LEVELS = 4;
 /** The stun star's picture box (world units): the 4.5 radius star with a margin for its smoothed edge. */
 const STAR_BOX = 11;
 const BAR_COLORS = ["#7dffa3", "#ffd166", "#ff5d73"] as const;
@@ -390,10 +388,7 @@ export class Renderer {
     ctx.closePath();
   }
 
-  /** The trails to draw this frame, per brightness level (TRAIL_LEVELS); reused lists. */
-  private trailLevels: { x: number; y: number }[][][] = Array.from({ length: TRAIL_LEVELS }, () => []);
-
-  /** Moves a machine's swing trail on by one point, and lists it for trails() at its brightness level. */
+  /** Moves a machine's swing trail on by one point, and draws it (or lists it for trails() at full brightness). */
   private trail(m: Machine, alpha: number, fx: Fx): void {
     // no weapon, no trail (after a pickup, `striker` still points at the weapon the taker now holds)
     if (!m.alive || !m.armed) {
@@ -414,22 +409,29 @@ export class Renderer {
     const speed = Math.hypot(b.vx, b.vy);
     const k0 = Math.min(1, Math.max(0, (speed - 200) / 500));
     if (k0 <= 0) return;
-    this.trailLevels[Math.min(TRAIL_LEVELS - 1, Math.floor(k0 * TRAIL_LEVELS))]!.push(pts);
+    if (k0 >= 1) this.fullTrails.push(pts);
+    else {
+      this.oneTrail[0] = pts;
+      this.strokeTrails(this.oneTrail, k0);
+    }
+  }
+  /** The trails at full brightness this frame (a fast swing; most trails in a melee), drawn together by trails(). */
+  private fullTrails: { x: number; y: number }[][] = [];
+  private oneTrail: { x: number; y: number }[][] = [];
+
+  /** The full-brightness trails, all in one pair of strokes (fainter ones are drawn one by one, at their own alpha). */
+  private trails(): void {
+    if (this.fullTrails.length) this.strokeTrails(this.fullTrails, 1);
+    this.fullTrails.length = 0;
   }
 
-  /**
-   * All the swing trails in two strokes per brightness level, not two per machine (each stroke costs the TV): a faint
-   * thin tail and a brighter, wider head. The brightness follows the striker's speed in TRAIL_LEVELS steps.
-   */
-  private trails(): void {
+  /** Trails in two strokes: a faint thin tail and a brighter, wider head. */
+  private strokeTrails(list: { x: number; y: number }[][], k0: number): void {
     const ctx = this.ctx;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#ffffff";
-    for (let lv = 0; lv < TRAIL_LEVELS; lv++) {
-      const list = this.trailLevels[lv]!;
-      if (!list.length) continue;
-      const k0 = (lv + 1) / TRAIL_LEVELS;
+    {
       ctx.globalAlpha = 0.14 * k0;
       ctx.lineWidth = 4;
       ctx.beginPath();
@@ -448,7 +450,6 @@ export class Renderer {
         for (let i = half + 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
       }
       ctx.stroke();
-      list.length = 0;
     }
     ctx.globalAlpha = 1;
   }
