@@ -1058,10 +1058,16 @@ export class Renderer {
       this.creatures.clear();
       this.creatureScale = this.scale;
     }
-    const { maxX, maxY } = bounds(b);
+    // worms come in random sizes: the picture is made for the size rounded to 1 px and stretched to the exact size when
+    // drawn (outlines off by under 0.1 px), so a new worm mostly reuses pictures instead of making ~10 new canvases
+    const b0 = bounds(b);
+    const maxX = Math.max(1, Math.round(b0.maxX));
+    const maxY = Math.max(1, Math.round(b0.maxY));
+    const fx = b0.maxX / maxX;
+    const fy = b0.maxY / maxY;
     const key = `${kind}|${jaw ? 1 : 0}|${armored ? 1 : 0}|${flash ? 1 : 0}|${maxX}|${maxY}`;
     let sp = this.creatures.get(key);
-    if (sp) return sp;
+    if (sp) return this.stretch(sp, fx, fy);
     const look = MONSTER_LOOK[kind];
     // the shape's half sizes plus room for the outline (2) and its smoothed edge
     const hx = (jaw ? maxX : maxX * 1.15) + 3;
@@ -1123,7 +1129,18 @@ export class Renderer {
     sp = { c, x: -hx, y: -hy, w: 2 * hx, h: 2 * hy };
     if (this.creatures.size > 128) this.creatures.clear();
     this.creatures.set(key, sp);
-    return sp;
+    return this.stretch(sp, fx, fy);
+  }
+  /** A cached creature picture's box stretched by (fx, fy), in a reused object (read it before the next call). */
+  private stretched = { c: null as unknown as HTMLCanvasElement, x: 0, y: 0, w: 0, h: 0 };
+  private stretch(sp: { c: HTMLCanvasElement; x: number; y: number; w: number; h: number }, fx: number, fy: number) {
+    const o = this.stretched;
+    o.c = sp.c;
+    o.x = sp.x * fx;
+    o.y = sp.y * fy;
+    o.w = sp.w * fx;
+    o.h = sp.h * fy;
+    return o;
   }
 
   /** Fill and outline a body's mesh in a material. */
