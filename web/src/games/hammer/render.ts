@@ -15,7 +15,34 @@ const NAME_ASC = 12;
 /** Spin widths in the coin atlas. */
 const COIN_FRAMES = 6;
 import { MONSTER_LOOK } from "./monsters.ts";
-import { MACHINE, type Material, PLATES, WEAPONS } from "./weapons.ts";
+import { GUN_KINDS, MACHINE, type Material, type PartSpec, type PlateKind, PLATES, SIDEARMS, type WeaponKind, WEAPONS } from "./weapons.ts";
+
+// ------------------------------------------------------------------ Hammerfight's weapon sprites
+// One 320×440 atlas cut from weapons.dds, weapons2.dds, characters.dds and level.dds (media.script rects), with a map
+// per weapon kind and part key: the atlas rect, the hotspot (= the body origin), the scale (1 sprite px = 1 mesh px;
+// the big chains' first link 0.66), `shaft` when the sprite holds its own rod, and `cutL` to crop the shaft end
+// under the hull. Until it has loaded (or for a part with no entry), parts are drawn from their meshes as before.
+interface AtlasEntry { sx: number; sy: number; sw: number; sh: number; ox: number; oy: number; scale: number; shaft?: boolean; cutL?: number }
+type AtlasMap = Record<string, Record<string, AtlasEntry>>;
+const ATLAS_URL = Object.values(import.meta.glob("./sprites/weapons-atlas.png", { query: "?url", import: "default", eager: true }))[0] as string;
+const ATLAS_MAP = Object.values(import.meta.glob("./sprites/weapons-atlas.json", { import: "default", eager: true }))[0] as AtlasMap;
+let ATLAS_IMG: HTMLImageElement | null = null;
+if (typeof Image !== "undefined" && ATLAS_URL) {
+  const img = new Image();
+  img.onload = () => (ATLAS_IMG = img);
+  img.src = ATLAS_URL;
+}
+const atlasReady = () => ATLAS_IMG !== null;
+/** The sidearm's gun kind from its GunSpec (the part is spread from SIDEARMS[kind].part). */
+const gunOf = new Map(GUN_KINDS.map((k) => [SIDEARMS[k].part.gun!, k]));
+function atlasEntry(kind: WeaponKind, part: PartSpec): AtlasEntry | undefined {
+  if (part.key === "gun" && part.gun) {
+    const g = gunOf.get(part.gun);
+    if (g) return (ATLAS_MAP._guns as unknown as AtlasMap | undefined)?.[g]?.gun;
+  }
+  return ATLAS_MAP[kind]?.[part.key];
+}
+const plateEntry = (k: PlateKind): AtlasEntry | undefined => (ATLAS_MAP._plates as unknown as AtlasMap | undefined)?.[k]?.plate;
 
 interface Spark {
   x: number;
@@ -449,8 +476,9 @@ export class Renderer {
         continue;
       }
       const [bx, by, ba] = lerpBody(b, alpha);
-      const { minX, maxX, maxY } = bounds(b);
-      if (m.armed && part.rod) {
+      const { minX } = bounds(b);
+      // an original sprite of a rod part holds its own shaft: no drawn line then
+      if (m.armed && part.rod && !(atlasReady() && atlasEntry(spec.kind, part)?.shaft)) {
         // the shaft from the machine to the part's back end
         ctx.strokeStyle = part.material === "silver" ? "#b9c0cc" : "#8a6a4a";
         ctx.lineWidth = 4;
@@ -465,7 +493,7 @@ export class Renderer {
         continue;
       }
       // the part is one picture, painted once (paths cost the TV per frame; 8 machines of them took ~9 fps)
-      const sp = this.partSprite(b, part);
+      const sp = this.partSprite(b, part, spec.kind);
       const c = Math.cos(ba) * this.scale;
       const sn = Math.sin(ba) * this.scale;
       ctx.setTransform(c, sn, -sn, c, bx * this.scale + this.baseX, by * this.scale + this.baseY);
@@ -476,14 +504,33 @@ export class Renderer {
 
   private parts = new WeakMap<Body, { c: HTMLCanvasElement; x: number; y: number; w: number; h: number }>();
   private partScale = 0;
+  /** Whether the part cache was made with the original sprites (it is remade once the atlas has loaded). */
+  private partAtlas = false;
   /** A weapon part's picture in its own frame (origin at the body, +x along it), at the canvas's pixel scale. */
-  private partSprite(b: Body, part: NonNullable<Tag["spec"]>): { c: HTMLCanvasElement; x: number; y: number; w: number; h: number } {
-    if (this.partScale !== this.scale) {
+  private partSprite(b: Body, part: NonNullable<Tag["spec"]>, kind: WeaponKind): { c: HTMLCanvasElement; x: number; y: number; w: number; h: number } {
+    if (this.partScale !== this.scale || this.partAtlas !== atlasReady()) {
       this.parts = new WeakMap();
       this.partScale = this.scale;
+      this.partAtlas = atlasReady();
     }
     let sp = this.parts.get(b);
     if (sp) return sp;
+    // Hammerfight's own picture of the part, from the atlas: hotspot = body origin, 1 sprite px = 1 mesh px
+    const e = atlasEntry(kind, part);
+    if (e && ATLAS_IMG) {
+      const k = e.cutL ?? 0;
+      const x = (k - e.ox) * e.scale;
+      const y = -e.oy * e.scale;
+      const w = (e.sw - k) * e.scale;
+      const h = e.sh * e.scale;
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.ceil(w * this.scale));
+      c.height = Math.max(1, Math.ceil(h * this.scale));
+      c.getContext("2d")!.drawImage(ATLAS_IMG, e.sx + k, e.sy, e.sw - k, e.sh, 0, 0, c.width, c.height);
+      sp = { c, x, y, w, h };
+      this.parts.set(b, sp);
+      return sp;
+    }
     const { minX, maxX, maxY } = bounds(b);
     // room for the spikes, the tip, the guard and the barrel round the mesh (all within 8 px) plus the stroke
     const r = part.look === "hammer" || part.look === "mallet" || part.look === "axe" || part.look === "blade" || part.look === "spike" || part.look === "link" || part.look === "handle" || part.look === "gun" ? maxY : Math.max(maxX, maxY);
@@ -714,6 +761,14 @@ export class Renderer {
         continue;
       }
       if (!t?.plate) continue;
+      // Hammerfight's plate picture (it holds its own struts): one drawImage from the atlas
+      const e = ATLAS_IMG ? plateEntry(t.plate) : undefined;
+      if (e) {
+        this.enter(b, alpha);
+        ctx.drawImage(ATLAS_IMG!, e.sx, e.sy, e.sw, e.sh, -e.ox * e.scale, -e.oy * e.scale, e.sw * e.scale, e.sh * e.scale);
+        ctx.restore();
+        continue;
+      }
       const pal = PALETTE[PLATES[t.plate].material];
       if (!t.loose && t.m.alive) {
         const [hx, hy] = lerpBody(t.m.hull, alpha);

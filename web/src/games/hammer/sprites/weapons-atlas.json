@@ -1,0 +1,1698 @@
+{
+ "_atlas": {
+  "file": "weapons-atlas.png",
+  "w": 320,
+  "h": 440,
+  "frame": "part-local px: +x away from the machine, +y = screen-down when the part points right (sim ly > 0 = U side). Draw: translate(body) rotate(a + angle0) drawImage(atlas, sx, sy, sw, sh, -ox*scale, -oy*scale, sw*scale, sh*scale). flipY is baked into the pixels. shaft: the sprite already contains the handle/rod, so skip the drawn rod line.",
+  "cutL": "cutL: atlas px to skip at the shaft end so it stops 12 px past the machine centre (under the hull picture). drawImage(atlas, sx + cutL, sy, sw - cutL, sh, (cutL - ox) * scale, -oy * scale, (sw - cutL) * scale, sh * scale)."
+ },
+ "mallet": {
+  "head": {
+   "sx": 1,
+   "sy": 236,
+   "sw": 72,
+   "sh": 30,
+   "ox": 60,
+   "oy": 16,
+   "scale": 1,
+   "angle0": 0,
+   "src": "hammer_wood",
+   "shaft": true
+  }
+ },
+ "kolotun": {
+  "head": {
+   "sx": 195,
+   "sy": 50,
+   "sw": 73,
+   "sh": 39,
+   "ox": 63,
+   "oy": 20,
+   "scale": 1,
+   "angle0": 0,
+   "src": "hammer_kolotun",
+   "shaft": true
+  }
+ },
+ "hammer": {
+  "head": {
+   "sx": 180,
+   "sy": 204,
+   "sw": 75,
+   "sh": 30,
+   "ox": 65,
+   "oy": 15,
+   "scale": 1,
+   "angle0": 0,
+   "src": "hammer_iron",
+   "shaft": true
+  }
+ },
+ "klevec": {
+  "head": {
+   "sx": 227,
+   "sy": 1,
+   "sw": 76,
+   "sh": 41,
+   "ox": 65,
+   "oy": 20,
+   "scale": 1,
+   "angle0": 0,
+   "src": "hammer_klevec",
+   "shaft": true
+  }
+ },
+ "warhammer": {
+  "head": {
+   "sx": 83,
+   "sy": 92,
+   "sw": 74,
+   "sh": 38,
+   "ox": 65,
+   "oy": 19,
+   "scale": 1,
+   "angle0": 0,
+   "src": "hammer_war",
+   "shaft": true
+  }
+ },
+ "maul": {
+  "head": {
+   "sx": 180,
+   "sy": 204,
+   "sw": 75,
+   "sh": 30,
+   "ox": 65,
+   "oy": 15,
+   "scale": 1.25,
+   "angle0": 0,
+   "src": "hammer_iron",
+   "shaft": true
+  }
+ },
+ "krankhammer": {
+  "head": {
+   "sx": 147,
+   "sy": 1,
+   "sw": 78,
+   "sh": 41,
+   "ox": 66,
+   "oy": 21,
+   "scale": 1,
+   "angle0": 0,
+   "src": "hammer_krank",
+   "shaft": true
+  }
+ },
+ "goldhammer": {
+  "head": {
+   "sx": 140,
+   "sy": 170,
+   "sw": 79,
+   "sh": 31,
+   "ox": 67,
+   "oy": 16,
+   "scale": 1,
+   "angle0": 0,
+   "src": "hammer_gold",
+   "shaft": true
+  }
+ },
+ "bagor": {
+  "head": {
+   "sx": 1,
+   "sy": 92,
+   "sw": 80,
+   "sh": 38,
+   "ox": 66,
+   "oy": 15,
+   "scale": 1,
+   "angle0": 0,
+   "src": "axe_bagor (flipY)",
+   "shaft": true,
+   "cutL": 6
+  }
+ },
+ "axis": {
+  "head": {
+   "sx": 179,
+   "sy": 298,
+   "sw": 73,
+   "sh": 27,
+   "ox": 57,
+   "oy": 12,
+   "scale": 1,
+   "angle0": 0,
+   "src": "axe_axis",
+   "shaft": true
+  }
+ },
+ "mamba": {
+  "head": {
+   "sx": 95,
+   "sy": 50,
+   "sw": 98,
+   "sh": 39,
+   "ox": 80,
+   "oy": 18,
+   "scale": 1,
+   "angle0": 0,
+   "src": "axe_mamba",
+   "shaft": true,
+   "cutL": 16
+  }
+ },
+ "eclipse": {
+  "head": {
+   "sx": 177,
+   "sy": 132,
+   "sw": 73,
+   "sh": 35,
+   "ox": 56,
+   "oy": 18,
+   "scale": 1,
+   "angle0": 0,
+   "src": "axe_eclips",
+   "shaft": true
+  }
+ },
+ "axe": {
+  "head": {
+   "sx": 78,
+   "sy": 355,
+   "sw": 70,
+   "sh": 24,
+   "ox": 60,
+   "oy": 12,
+   "scale": 1,
+   "angle0": 0,
+   "src": "axe_iron",
+   "shaft": true
+  }
+ },
+ "pike": {
+  "head": {
+   "sx": 1,
+   "sy": 1,
+   "sw": 73,
+   "sh": 47,
+   "ox": 64,
+   "oy": 24,
+   "scale": 1,
+   "angle0": 0,
+   "src": "axe_pike",
+   "shaft": true
+  }
+ },
+ "berdish": {
+  "head": {
+   "sx": 150,
+   "sy": 327,
+   "sw": 90,
+   "sh": 24,
+   "ox": 73,
+   "oy": 15,
+   "scale": 1,
+   "angle0": 0,
+   "src": "axe_berdish",
+   "shaft": true,
+   "cutL": 1
+  }
+ },
+ "goldaxe": {
+  "head": {
+   "sx": 1,
+   "sy": 132,
+   "sw": 76,
+   "sh": 36,
+   "ox": 63,
+   "oy": 17,
+   "scale": 1,
+   "angle0": 0,
+   "src": "axe_gold",
+   "shaft": true
+  }
+ },
+ "flail": {
+  "link0": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link1": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link2": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link3": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link4": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link5": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "handle": {
+   "sx": 61,
+   "sy": 426,
+   "sw": 31,
+   "sh": 9,
+   "ox": 16,
+   "oy": 5,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_orb_hand"
+  },
+  "ball": {
+   "sx": 1,
+   "sy": 327,
+   "sw": 26,
+   "sh": 26,
+   "ox": 13,
+   "oy": 13,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_stone"
+  }
+ },
+ "chainball": {
+  "link0": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link1": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link2": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link3": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link4": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link5": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "handle": {
+   "sx": 61,
+   "sy": 426,
+   "sw": 31,
+   "sh": 9,
+   "ox": 16,
+   "oy": 5,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_orb_hand"
+  },
+  "ball": {
+   "sx": 1,
+   "sy": 327,
+   "sw": 26,
+   "sh": 26,
+   "ox": 13,
+   "oy": 13,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_stone"
+  }
+ },
+ "orbmace": {
+  "link0": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link1": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link2": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link3": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link4": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link5": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link6": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link7": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link8": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link9": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "handle": {
+   "sx": 61,
+   "sy": 426,
+   "sw": 31,
+   "sh": 9,
+   "ox": 16,
+   "oy": 5,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_orb_hand"
+  },
+  "ball": {
+   "sx": 123,
+   "sy": 327,
+   "sw": 25,
+   "sh": 25,
+   "ox": 13,
+   "oy": 13,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_orb"
+  }
+ },
+ "starmace": {
+  "hand": {
+   "sx": 181,
+   "sy": 405,
+   "sw": 35,
+   "sh": 13,
+   "ox": 17,
+   "oy": 7,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_hand"
+  },
+  "link0": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link1": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link2": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link3": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link4": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link5": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "ball": {
+   "sx": 117,
+   "sy": 132,
+   "sw": 34,
+   "sh": 36,
+   "ox": 17,
+   "oy": 18,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_star"
+  }
+ },
+ "stixmace": {
+  "hand": {
+   "sx": 181,
+   "sy": 405,
+   "sw": 35,
+   "sh": 13,
+   "ox": 17,
+   "oy": 7,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_hand"
+  },
+  "link0": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link1": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link2": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link3": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link4": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "ball": {
+   "sx": 134,
+   "sy": 381,
+   "sw": 48,
+   "sh": 21,
+   "ox": 31,
+   "oy": 10,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_stix2"
+  }
+ },
+ "shuriken": {
+  "link0": {
+   "sx": 41,
+   "sy": 426,
+   "sw": 18,
+   "sh": 10,
+   "ox": 9,
+   "oy": 5,
+   "scale": 0.66,
+   "angle0": 0,
+   "src": "chain_large"
+  },
+  "link1": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link2": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link3": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link4": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link5": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "handle": {
+   "sx": 61,
+   "sy": 426,
+   "sw": 31,
+   "sh": 9,
+   "ox": 16,
+   "oy": 5,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_orb_hand"
+  },
+  "ball": {
+   "sx": 29,
+   "sy": 327,
+   "sw": 24,
+   "sh": 26,
+   "ox": 12,
+   "oy": 13,
+   "scale": 1,
+   "angle0": 0,
+   "src": "suriken_large"
+  }
+ },
+ "silvermace": {
+  "handle": {
+   "sx": 268,
+   "sy": 405,
+   "sw": 40,
+   "sh": 11,
+   "ox": 23,
+   "oy": 5,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_hand_silver"
+  },
+  "link0": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link1": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link2": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link3": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "ball": {
+   "sx": 153,
+   "sy": 132,
+   "sw": 22,
+   "sh": 36,
+   "ox": 11,
+   "oy": 20,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_bich"
+  }
+ },
+ "bladeflail": {
+  "link0": {
+   "sx": 41,
+   "sy": 426,
+   "sw": 18,
+   "sh": 10,
+   "ox": 9,
+   "oy": 5,
+   "scale": 0.66,
+   "angle0": 0,
+   "src": "chain_large"
+  },
+  "link1": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link2": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link3": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link4": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link5": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link6": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link7": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "ball": {
+   "sx": 159,
+   "sy": 92,
+   "sw": 46,
+   "sh": 38,
+   "ox": 23,
+   "oy": 25,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_blade"
+  }
+ },
+ "spikedflail": {
+  "link0": {
+   "sx": 41,
+   "sy": 426,
+   "sw": 18,
+   "sh": 10,
+   "ox": 9,
+   "oy": 5,
+   "scale": 0.66,
+   "angle0": 0,
+   "src": "chain_large"
+  },
+  "link1": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link2": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link3": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "spike3": {
+   "sx": 205,
+   "sy": 355,
+   "sw": 17,
+   "sh": 24,
+   "ox": 8,
+   "oy": 12,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_sharp_chain_3"
+  },
+  "spike2": {
+   "sx": 264,
+   "sy": 268,
+   "sw": 19,
+   "sh": 28,
+   "ox": 9,
+   "oy": 14,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_sharp_chain_2"
+  },
+  "spike1": {
+   "sx": 116,
+   "sy": 170,
+   "sw": 22,
+   "sh": 32,
+   "ox": 11,
+   "oy": 16,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_sharp_chain_1"
+  },
+  "handle": {
+   "sx": 61,
+   "sy": 426,
+   "sw": 31,
+   "sh": 9,
+   "ox": 16,
+   "oy": 5,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_orb_hand"
+  },
+  "ball": {
+   "sx": 279,
+   "sy": 132,
+   "sw": 34,
+   "sh": 34,
+   "ox": 17,
+   "oy": 17,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_sharp"
+  }
+ },
+ "clawmace": {
+  "hand": {
+   "sx": 218,
+   "sy": 405,
+   "sw": 48,
+   "sh": 12,
+   "ox": 24,
+   "oy": 6,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_claw_hand"
+  },
+  "link0": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link1": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link2": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "jaw": {
+   "sx": 252,
+   "sy": 132,
+   "sw": 25,
+   "sh": 35,
+   "ox": 20,
+   "oy": 18,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_claw_01"
+  },
+  "ball": {
+   "sx": 116,
+   "sy": 1,
+   "sw": 29,
+   "sh": 42,
+   "ox": 21,
+   "oy": 22,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_claw_02"
+  }
+ },
+ "krankmace": {
+  "link0": {
+   "sx": 41,
+   "sy": 426,
+   "sw": 18,
+   "sh": 10,
+   "ox": 9,
+   "oy": 5,
+   "scale": 0.7,
+   "angle0": 0,
+   "src": "chain_large"
+  },
+  "link1": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link2": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link3": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "link4": {
+   "sx": 94,
+   "sy": 426,
+   "sw": 10,
+   "sh": 6,
+   "ox": 5,
+   "oy": 3,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small"
+  },
+  "link5": {
+   "sx": 106,
+   "sy": 426,
+   "sw": 9,
+   "sh": 3,
+   "ox": 5,
+   "oy": 2,
+   "scale": 1,
+   "angle0": 0,
+   "src": "chain_small2"
+  },
+  "handle": {
+   "sx": 1,
+   "sy": 426,
+   "sw": 38,
+   "sh": 10,
+   "ox": 19,
+   "oy": 5,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_krank_hold"
+  },
+  "ball": {
+   "sx": 79,
+   "sy": 132,
+   "sw": 36,
+   "sh": 36,
+   "ox": 18,
+   "oy": 18,
+   "scale": 1,
+   "angle0": 0,
+   "src": "mace_krank"
+  }
+ },
+ "kathib": {
+  "head": {
+   "sx": 97,
+   "sy": 405,
+   "sw": 82,
+   "sh": 19,
+   "ox": 60,
+   "oy": 7,
+   "scale": 1,
+   "angle0": 0,
+   "src": "kathib_blade",
+   "shaft": true,
+   "cutL": 1
+  }
+ },
+ "claw": {
+  "head": {
+   "sx": 55,
+   "sy": 327,
+   "sw": 66,
+   "sh": 25,
+   "ox": 47,
+   "oy": 10,
+   "scale": 1,
+   "angle0": 0,
+   "src": "claw_blade",
+   "shaft": true
+  }
+ },
+ "sword": {
+  "head": {
+   "sx": 242,
+   "sy": 327,
+   "sw": 75,
+   "sh": 24,
+   "ox": 50,
+   "oy": 10,
+   "scale": 1,
+   "angle0": 0,
+   "src": "katar_blade",
+   "shaft": true
+  }
+ },
+ "imperia": {
+  "head": {
+   "sx": 184,
+   "sy": 381,
+   "sw": 104,
+   "sh": 19,
+   "ox": 73,
+   "oy": 10,
+   "scale": 1,
+   "angle0": 0,
+   "src": "imperia_blade",
+   "shaft": true,
+   "cutL": 14
+  }
+ },
+ "cyclone": {
+  "head": {
+   "sx": 261,
+   "sy": 236,
+   "sw": 29,
+   "sh": 29,
+   "ox": 15,
+   "oy": 15,
+   "scale": 1,
+   "angle0": 0,
+   "src": "cyclon_blade"
+  },
+  "arm": {
+   "sx": 150,
+   "sy": 355,
+   "sw": 53,
+   "sh": 24,
+   "ox": 27,
+   "oy": 12,
+   "scale": 1,
+   "angle0": 0,
+   "src": "cyclon_arm"
+  }
+ },
+ "severn": {
+  "head": {
+   "sx": 1,
+   "sy": 298,
+   "sw": 94,
+   "sh": 27,
+   "ox": 63,
+   "oy": 14,
+   "scale": 1,
+   "angle0": 0,
+   "src": "severn_blade",
+   "shaft": true,
+   "cutL": 9
+  }
+ },
+ "innata": {
+  "head": {
+   "sx": 1,
+   "sy": 405,
+   "sw": 94,
+   "sh": 19,
+   "ox": 68,
+   "oy": 10,
+   "scale": 1,
+   "angle0": 0,
+   "src": "innata_blade",
+   "shaft": true,
+   "cutL": 10
+  }
+ },
+ "liberia": {
+  "head": {
+   "sx": 1,
+   "sy": 381,
+   "sw": 78,
+   "sh": 22,
+   "ox": 47,
+   "oy": 11,
+   "scale": 1,
+   "angle0": 0,
+   "src": "liberia_blade",
+   "shaft": true
+  }
+ },
+ "broadblade": {
+  "head": {
+   "sx": 178,
+   "sy": 268,
+   "sw": 84,
+   "sh": 28,
+   "ox": 61,
+   "oy": 14,
+   "scale": 1,
+   "angle0": 0,
+   "src": "broad_blade",
+   "shaft": true
+  }
+ },
+ "saian": {
+  "head": {
+   "sx": 97,
+   "sy": 298,
+   "sw": 80,
+   "sh": 27,
+   "ox": 56,
+   "oy": 13,
+   "scale": 1,
+   "angle0": 0,
+   "src": "saian_blade",
+   "shaft": true,
+   "cutL": 1
+  }
+ },
+ "silverblade": {
+  "head": {
+   "sx": 1,
+   "sy": 204,
+   "sw": 96,
+   "sh": 30,
+   "ox": 65,
+   "oy": 14,
+   "scale": 1,
+   "angle0": 0,
+   "src": "silver_blade",
+   "shaft": true,
+   "cutL": 5
+  }
+ },
+ "palash": {
+  "head": {
+   "sx": 91,
+   "sy": 268,
+   "sw": 85,
+   "sh": 28,
+   "ox": 56,
+   "oy": 13,
+   "scale": 1,
+   "angle0": 0,
+   "src": "palash_blade",
+   "shaft": true,
+   "cutL": 4
+  }
+ },
+ "hisaian": {
+  "head": {
+   "sx": 112,
+   "sy": 236,
+   "sw": 109,
+   "sh": 29,
+   "ox": 87,
+   "oy": 12,
+   "scale": 1,
+   "angle0": 0,
+   "src": "hisaian_blade",
+   "shaft": true,
+   "cutL": 6
+  }
+ },
+ "sunblade": {
+  "head": {
+   "sx": 207,
+   "sy": 92,
+   "sw": 95,
+   "sh": 37,
+   "ox": 70,
+   "oy": 18,
+   "scale": 1,
+   "angle0": 0,
+   "src": "sun_blade",
+   "shaft": true,
+   "cutL": 7
+  }
+ },
+ "goldblade": {
+  "head": {
+   "sx": 1,
+   "sy": 268,
+   "sw": 88,
+   "sh": 28,
+   "ox": 63,
+   "oy": 14,
+   "scale": 1,
+   "angle0": 0,
+   "src": "gold_blade",
+   "shaft": true,
+   "cutL": 2
+  }
+ },
+ "twin": {
+  "head": {
+   "sx": 91,
+   "sy": 268,
+   "sw": 85,
+   "sh": 28,
+   "ox": 56,
+   "oy": 13,
+   "scale": 1,
+   "angle0": 0,
+   "src": "palash_blade",
+   "shaft": true,
+   "cutL": 9
+  },
+  "back": {
+   "sx": 55,
+   "sy": 327,
+   "sw": 66,
+   "sh": 25,
+   "ox": 47,
+   "oy": 10,
+   "scale": 1,
+   "angle0": 0,
+   "src": "claw_blade",
+   "shaft": true
+  }
+ },
+ "tribune": {
+  "head": {
+   "sx": 1,
+   "sy": 50,
+   "sw": 92,
+   "sh": 40,
+   "ox": 83,
+   "oy": 20,
+   "scale": 1,
+   "angle0": 0,
+   "src": "axe_posolski (flipY)",
+   "shaft": true,
+   "cutL": 12
+  },
+  "back": {
+   "sx": 99,
+   "sy": 204,
+   "sw": 79,
+   "sh": 30,
+   "ox": 52,
+   "oy": 7,
+   "scale": 1,
+   "angle0": 0,
+   "src": "tribun",
+   "shaft": true,
+   "cutL": 15
+  }
+ },
+ "_guns": {
+  "arquebus": {
+   "gun": {
+    "sx": 1,
+    "sy": 355,
+    "sw": 75,
+    "sh": 24,
+    "ox": 55,
+    "oy": 9,
+    "scale": 1,
+    "angle0": 0,
+    "src": "gun_blade",
+    "shaft": true,
+    "cutL": 9
+   }
+  },
+  "mortar": {
+   "gun": {
+    "sx": 81,
+    "sy": 381,
+    "sw": 51,
+    "sh": 22,
+    "ox": 39,
+    "oy": 12,
+    "scale": 1,
+    "angle0": 0,
+    "src": "mortar",
+    "shaft": true,
+    "cutL": 9
+   }
+  },
+  "heavymortar": {
+   "gun": {
+    "sx": 224,
+    "sy": 355,
+    "sw": 49,
+    "sh": 23,
+    "ox": 39,
+    "oy": 10,
+    "scale": 1,
+    "angle0": 0,
+    "src": "mortar_heavy",
+    "shaft": true,
+    "cutL": 8
+   }
+  },
+  "launcher": {
+   "gun": {
+    "sx": 254,
+    "sy": 298,
+    "sw": 64,
+    "sh": 26,
+    "ox": 44,
+    "oy": 8,
+    "scale": 1,
+    "angle0": 0,
+    "src": "launcher",
+    "shaft": true,
+    "cutL": 15
+   }
+  }
+ },
+ "_plates": {
+  "woodlight": {
+   "plate": {
+    "sx": 75,
+    "sy": 236,
+    "sw": 35,
+    "sh": 30,
+    "ox": 27,
+    "oy": 15,
+    "scale": 1,
+    "angle0": 0,
+    "src": "plate_wood_light",
+    "shaft": true
+   }
+  },
+  "woodheavy": {
+   "plate": {
+    "sx": 42,
+    "sy": 170,
+    "sw": 37,
+    "sh": 32,
+    "ox": 29,
+    "oy": 16,
+    "scale": 1,
+    "angle0": 0,
+    "src": "plate_wood_heavy",
+    "shaft": true
+   }
+  },
+  "rusty": {
+   "plate": {
+    "sx": 221,
+    "sy": 170,
+    "sw": 37,
+    "sh": 31,
+    "ox": 31,
+    "oy": 16,
+    "scale": 1,
+    "angle0": 0,
+    "src": "plate_rusty",
+    "shaft": true
+   }
+  },
+  "iron": {
+   "plate": {
+    "sx": 260,
+    "sy": 170,
+    "sw": 37,
+    "sh": 31,
+    "ox": 29,
+    "oy": 16,
+    "scale": 1,
+    "angle0": 0,
+    "src": "plate_iron",
+    "shaft": true
+   }
+  },
+  "silver": {
+   "plate": {
+    "sx": 81,
+    "sy": 170,
+    "sw": 33,
+    "sh": 32,
+    "ox": 28,
+    "oy": 16,
+    "scale": 1,
+    "angle0": 0,
+    "src": "plate_silver",
+    "shaft": true
+   }
+  },
+  "imperia": {
+   "plate": {
+    "sx": 1,
+    "sy": 170,
+    "sw": 39,
+    "sh": 32,
+    "ox": 30,
+    "oy": 16,
+    "scale": 1,
+    "angle0": 0,
+    "src": "plate_imperia",
+    "shaft": true
+   }
+  },
+  "armor": {
+   "plate": {
+    "sx": 76,
+    "sy": 1,
+    "sw": 38,
+    "sh": 43,
+    "ox": 32,
+    "oy": 22,
+    "scale": 1,
+    "angle0": 0,
+    "src": "plate_armor",
+    "shaft": true
+   }
+  },
+  "heavyplate": {
+   "plate": {
+    "sx": 223,
+    "sy": 236,
+    "sw": 36,
+    "sh": 29,
+    "ox": 30,
+    "oy": 14,
+    "scale": 1,
+    "angle0": 0,
+    "src": "plate_heavy",
+    "shaft": true
+   }
+  }
+ }
+}
