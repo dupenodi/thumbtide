@@ -97,11 +97,19 @@ export const SLOMO_CUT = 3;
 const MONSTER_SHOT_BONUS = 3;
 /** A shot's `hit.push` is a speed on this mass (the bare hull, MACHINE.density × its mesh). */
 const PUSH_MASS = 66000;
+/**
+ * Recoil per shot = this share of the shot's push (OURS): arquebus 20 px/s on the bare hull, mortar 150, heavy mortar
+ * 160, launcher 0. The machine is more than the hull (weapon and gun), and a full share made the mortar a jet.
+ */
+const RECOIL_SHARE = 0.5;
+/** Seconds a shot flies through a teammate it touched (a bullet covers 80 px, a mortar ball 44). */
+const SHOT_GHOST = 0.04;
 /** A shot's push can't make a light part (a claw, a link) jump faster than this, px/s. */
 const PUSH_MAX_DV = 600;
 /**
- * Fragile guns (OURS, RE_GUNS.md §5): a sidearm takes the impact (impulse · 1e-5) of each enemy blow from
- * GUN_HIT_MIN up, at most GUN_HIT_MAX a blow (one huge blow is not enough), and of shots × GUN_SHOT_SHARE, and breaks
+ * Fragile guns (OURS; the exe's guns never break, RE_GUNS.md §6, §9): a sidearm takes the impact (impulse · 1e-5) of each enemy blow from
+ * GUN_HIT_MIN up, at most GUN_HIT_MAX a blow (one huge blow is not enough), and of every shot × GUN_SHOT_SHARE (a
+ * bullet 13, a mortar ball 20), one blow or shot per GUN_HIT_GAP, and breaks
  * off at GUN_HP: four hard blows. Measured in 2 v 2 bot rounds, blows on guns: impact p50 35, p90 107. With 120 and
  * no cap the guns broke after a median 1.1 s, in the opening clash.
  */
@@ -182,6 +190,8 @@ export interface Shot {
   /** Its velocity at the end of the last step (the contact has already bounced it when onContact runs). */
   vx: number;
   vy: number;
+  /** Passing through a teammate: not solid until this arena time (0 = solid). */
+  ghostUntil?: number;
   /** Rockets: the blast when it goes. */
   blast?: GunSpec["blast"];
 }
@@ -724,12 +734,14 @@ export class Arena {
       this.world.add(shot);
       this.shots.push(sh);
     }
-    // Recoil: the shooter is kicked back along the barrel (the exe kicks only the mortar, on the gun body). Most of
-    // it goes on the hull, so the whole machine feels it; the rest jerks the gun on its rod.
-    if (gs.kick > 0) {
+    // Recoil: the shooter is kicked back along the barrel by RECOIL_SHARE of the shot's momentum (its pellets' pushes;
+    // the exe: the mortars' full momentum on the gun body, none for the arquebus; a rocket pushes itself, so none).
+    // Most of it goes on the hull, so the whole machine feels it; the rest jerks the gun on its rod.
+    const kick = RECOIL_SHARE * gs.pellets * gs.hit.push;
+    if (kick > 0) {
       const ux = Math.cos(b.a);
       const uy = Math.sin(b.a);
-      const P = gs.kick * PUSH_MASS;
+      const P = kick * PUSH_MASS;
       const h = m.hull;
       h.setVelocity(h.vx - (ux * P * 0.7) / h.mass, h.vy - (uy * P * 0.7) / h.mass, h.w, dt);
       b.setVelocity(b.vx - (ux * P * 0.3) / b.mass, b.vy - (uy * P * 0.3) / b.mass, b.w, dt);
@@ -750,6 +762,10 @@ export class Arena {
       } else {
         sh.vx = b.vx;
         sh.vy = b.vy;
+        if (sh.ghostUntil && this.t >= sh.ghostUntil) {
+          sh.ghostUntil = 0;
+          b.solid = true;
+        }
       }
     }
     if (any) this.sweepShots();
@@ -1090,7 +1106,7 @@ export class Arena {
   }
 
   /**
-   * A shot meets another machine's body (OURS; RE_GUNS.md §1, §6). On a live machine it is spent at once: its hit's
+   * A shot meets another machine's body (OURS; the exe: RE_GUNS.md §2; the port: §9). On a live machine it is spent at once: its hit's
    * push goes into the body it struck along its flight; a hull takes its damage and stun; a sidearm wears down; a
    * plate may come off (its m_overkill); on a weapon it only pushes and sparks. Wrecks, loose weapons and debris just
    * deflect it (a contact like a wall's).
@@ -1099,8 +1115,16 @@ export class Arena {
     const sh = st.shot!;
     const v = ot.m;
     if (sh.contacts >= sh.maxContacts) return;
-    // (a teammate with friendly fire off: only a deflection, no push; with team collision off it doesn't touch at all)
-    if (!v.alive || ot.loose || ot.gibUntil !== undefined || !(ot.hull || ot.plate || v.armed) || !this.enemies(st.m, v)) {
+    // a teammate with friendly fire off: the shot flies on through (with team collision off they never touch; with
+    // it on, the engine has bounced it: give it back its speed and let it pass for SHOT_GHOST s; the ally's nudge from
+    // a 300 mass is nothing)
+    if (v.alive && !this.enemies(st.m, v)) {
+      sBody.setVelocity(sh.vx, sh.vy, sBody.w, STEP * this.timewarp);
+      sBody.solid = false;
+      sh.ghostUntil = this.t + SHOT_GHOST;
+      return;
+    }
+    if (!v.alive || ot.loose || ot.gibUntil !== undefined || !(ot.hull || ot.plate || v.armed)) {
       sh.contacts++;
       return;
     }
@@ -1135,7 +1159,7 @@ export class Arena {
     }
     this.events.push({ type: "ping", m: v, heavy: impact > 40, x: c.x, y: c.y });
     if (!foe) return;
-    if (ot.sidearm) this.gunHurt(v, ot.sidearm, impact * GUN_SHOT_SHARE, by, c.x, c.y);
+    if (ot.sidearm) this.gunHurt(v, ot.sidearm, impact * GUN_SHOT_SHARE, by, c.x, c.y, 0);
     else if (ot.plate && v.plates.some((p) => p.body === oBody)) {
       const need = PLATES[ot.plate].overkill * 100 * (v.hp <= MACHINE.healthLow ? 0.25 : 1);
       if (impact > need) {
@@ -1145,9 +1169,9 @@ export class Arena {
     }
   }
 
-  /** A sidearm takes a blow (GUN_HIT_MIN and up); at 0 it breaks off. */
-  private gunHurt(m: Machine, g: GunState, impact: number, by: Machine, x: number, y: number): void {
-    if (!m.alive || !m.armed || impact < GUN_HIT_MIN || this.tuning.damage <= 0 || !m.guns.includes(g)) return;
+  /** A sidearm takes a blow (from `min` up: GUN_HIT_MIN for blows, every shot counts); at 0 it breaks off. */
+  private gunHurt(m: Machine, g: GunState, impact: number, by: Machine, x: number, y: number, min = GUN_HIT_MIN): void {
+    if (!m.alive || !m.armed || impact < min || impact <= 0 || this.tuning.damage <= 0 || !m.guns.includes(g)) return;
     // a grind reports a contact every step: one blow per GUN_HIT_GAP
     if (this.t < g.hitAt + GUN_HIT_GAP) return;
     g.hitAt = this.t;

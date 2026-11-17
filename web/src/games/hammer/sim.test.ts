@@ -4,7 +4,7 @@ import { Body, joint, World } from "./engine.ts";
 import { stickPush } from "./arenas.ts";
 import { Arena, edgeAt, edgeOut, GUN_HP, VIEW_H, VIEW_W } from "./sim.ts";
 import { DEFAULT_TUNING } from "./tuning.ts";
-import { MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
+import { GUN_KINDS, MACHINE, WEAPON_KINDS, WEAPONS, type WeaponKind } from "./weapons.ts";
 
 const arena = () => new Arena({ ...DEFAULT_TUNING });
 
@@ -866,4 +866,58 @@ test("guns: a sidearm's body does no contact damage, takes blows, and breaks off
   a.respawn(m, 300, 300, "hammer", "arquebus");
   assert.equal(m.guns.length, 1);
   assert.equal(m.guns[0]!.hp, GUN_HP);
+});
+
+test("guns: in teams (collision on, friendly fire off) a shot flies through an ally and lands on the foe", () => {
+  const a = new Arena({ ...DEFAULT_TUNING, teamCollision: 1, teamDamage: 0 });
+  const m = a.add({ id: 1, team: 0, name: "A", color: "#f00", weapon: "axe", sidearm: "arquebus", x: 400, y: 400 });
+  const ally = a.add({ id: 2, team: 0, name: "B", color: "#f00", weapon: "hammer", x: 700, y: 100 });
+  const foe = a.add({ id: 3, team: 1, name: "C", color: "#00f", weapon: "hammer", x: 100, y: 100 });
+  const hidden = a as unknown as Hidden;
+  hidden.destroy(ally);
+  hidden.destroy(foe);
+  for (let i = 0; i < 10; i++) a.step();
+  const g = m.guns[0]!.body;
+  const ux = Math.cos(g.a);
+  const uy = Math.sin(g.a);
+  ally.hull.place(g.x + ux * 70, g.y + uy * 70);
+  foe.hull.place(g.x + ux * 200, g.y + uy * 200);
+  let foeHits = 0;
+  let allyHits = 0;
+  a.fire(m);
+  for (let i = 0; i < 10; i++) {
+    a.step();
+    for (const e of a.events) {
+      if (e.type === "hit" && e.victim === foe) foeHits++;
+      if ((e.type === "hit" && e.victim === ally) || (e.type === "ping" && e.m === ally)) allyHits++;
+    }
+    a.events.length = 0;
+  }
+  assert.equal(allyHits, 0);
+  assert.equal(foeHits, 1);
+});
+
+test("guns: every sidearm aims round with its weight (the mortars are heavier now) and fires near the aim", () => {
+  for (const gun of GUN_KINDS) {
+    const a = arena();
+    const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "hammer", sidearm: gun, x: 480, y: 270 });
+    const g = m.guns[0]!;
+    const off = () => Math.abs(Math.atan2(Math.sin(g.body.a), Math.cos(g.body.a)));
+    let shots = 0;
+    let offAtShot = 0;
+    for (let i = 0; i < 75; i++) {
+      a.fire(m);
+      a.aim(m, 1, 0);
+      stickPush(a, m, 1, 0);
+      a.step();
+      for (const e of a.events) {
+        if (e.type !== "shot") continue;
+        shots++;
+        offAtShot = Math.max(offAtShot, off());
+      }
+      a.events.length = 0;
+    }
+    assert.ok(shots >= 1, `${gun}: shots ${shots}`);
+    assert.ok(offAtShot < 0.4, `${gun}: fired ${offAtShot.toFixed(2)} rad off the aim`);
+  }
 });
