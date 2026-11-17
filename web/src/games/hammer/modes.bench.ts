@@ -1,6 +1,6 @@
 // Play test of every mode with computer players (run on request, not in `npm test`): free for all, teams, co-op vs
 // CPU and co-op vs monsters, in every arena. The "players" are the away-player autopilot (the pilot profile).
-//   node --import tsx --test src/games/hammer/modes.bench.ts     (ROUNDS=3 ARENAS=classic,eye MODES=ffa,pvm BOTS=4)
+//   node --import tsx --test src/games/hammer/modes.bench.ts     (ROUNDS=3 ARENAS=classic,eye MODES=ffa,pvm BOTS=4 MIX=1)
 import { test } from "node:test";
 import { type Entrant, modeTeams, type RoundResult, runRound, withSeed } from "./botmatch.ts";
 import { ARENAS } from "./arenas.ts";
@@ -12,6 +12,7 @@ const ARENA_LIST = (process.env.ARENAS ?? Object.keys(ARENAS).join(",")).split("
 const MODES = (process.env.MODES ?? "ffa,teams,pve,pvm").split(",") as ("ffa" | "teams" | "pve" | "pvm")[];
 /** Machines per round (the TV target is 4 bots; 8 seats at most). */
 const N = Number(process.env.BOTS) || 4;
+const MIX = process.env.MIX === "1";
 
 function entrant(name: string, seed: number, team: number): Entrant {
   const p = BENCH_PROFILES[name]!;
@@ -44,7 +45,9 @@ test("every mode in every arena", () => {
         // co-op: two "players" (the autopilot) with the bots against them (pve) or beside them (pvm)
         const humans = mode === "pve" || mode === "pvm" ? 2 : 0;
         const teams = modeTeams(mode, N, humans);
-        const es = teams.map((team, i) => entrant(i < humans ? "pilot" : ROSTER[(i + r) % ROSTER.length]!, seed + i, team));
+        // MIX=1: every other machine is a human-like pilot (chaser, spinner), which follows no crowd rule
+        const pick = (i: number) => (i < humans ? "pilot" : MIX && i % 2 === 1 ? (["chaser", "spinner"] as const)[(i >> 1) % 2]! : ROSTER[(i + r) % ROSTER.length]!);
+        const es = teams.map((team, i) => entrant(pick(i), seed + i, team));
         const worms = mode === "pvm" ? Math.min(4, 1 + Math.floor((r + 2) / 2)) : 0;
         rs.push(withSeed(seed, () => runRound({ arena, entrants: es, worms, armored: r >= 1 })));
       }

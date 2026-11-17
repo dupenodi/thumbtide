@@ -171,7 +171,9 @@ export const ARENAS: Record<string, ArenaDef> = {
     base: 1,
     theme: "pit-night",
     obstacles: [
-      ["pillar", 0.084, 0.16, 81, 62], ["pillar", 0.24, 0.098, 69, 23], ["pillar", 0.92, 0.16, 77, 62], ["pillar", 0.803, 0.115, 35, 32],
+      // the overhangs and stalactites reach up into the ceiling: zoomed out, their old tops left a slot under the
+      // ceiling where a hull jammed
+      ["pillar", 0.084, 0.14, 81, 76], ["pillar", 0.24, 0.07, 69, 38], ["pillar", 0.92, 0.14, 77, 76], ["pillar", 0.803, 0.088, 35, 47],
       ["pillar", 0.084, 0.92, 81, 43], ["pillar", 0.91, 0.92, 86, 43],
       ["wall", 0.15, 0.767, 10, 40, { hp: WALL_HP }], ["wall", 0.85, 0.767, 10, 40, { hp: WALL_HP }],
     ],
