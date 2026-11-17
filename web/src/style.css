@@ -109,16 +109,17 @@ body.phone #game:not([hidden]) { top: calc(45px + env(safe-area-inset-top)); pad
 .sh-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); animation: sh-fade 160ms ease-out; }
 .sh-panel {
   position: absolute; left: 0; right: 0; bottom: 0; max-height: 88%; overflow-y: auto; touch-action: pan-y;
-  background: var(--bg-2); border-radius: 22px 22px 0 0; padding: 6px 18px calc(18px + env(safe-area-inset-bottom));
+  background: var(--bg-2); border-radius: 22px 22px 0 0; padding: 0 18px calc(18px + env(safe-area-inset-bottom));
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5); animation: sh-up 220ms cubic-bezier(0.2, 1, 0.3, 1);
   -webkit-user-select: none; user-select: none;
 }
 @media (orientation: landscape) { .sh-panel { left: 10%; right: 10%; max-height: 94%; } }
+.sh-panel.has-foot { padding-bottom: 0; }
 @keyframes sh-up { from { transform: translateY(40%); opacity: 0; } }
 @keyframes sh-fade { from { opacity: 0; } }
-.sh-head { display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--bg-2); padding: 12px 0 8px; z-index: 1; }
-.sh-head h2 { margin: 0; font: 700 22px var(--font-display); }
-.sh-x { width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--bg-3); color: var(--fg); font-size: 16px; }
+.sh-head { display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--bg-2); padding: 18px 0 8px; gap: 12px; z-index: 1; }
+.sh-head h2 { margin: 0; font: 700 22px var(--font-display); min-width: 0; overflow-wrap: anywhere; }
+.sh-x { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--bg-3); color: var(--fg); font-size: 16px; }
 .sh-body { display: flex; flex-direction: column; gap: 18px; padding-bottom: 6px; font-size: 15px; }
 .sh-body section h3 { margin: 0 0 10px; font: 700 13px var(--font); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); }
 .sh-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -141,17 +142,60 @@ body.phone #game:not([hidden]) { top: calc(45px + env(safe-area-inset-top)); pad
 .sh-players .sh-empty { color: var(--muted); justify-content: center; padding: 12px; }
 .sh-kick { border: 0; border-radius: 10px; padding: 8px 12px; background: #3a1d26; color: #ff9aa8; font: 700 13px var(--font); }
 
-/* ------------------------------------------------------------ settings: a segmented control per setting */
-.st { display: flex; flex-direction: column; gap: 18px; }
-.st-row { display: flex; flex-direction: column; gap: 8px; }
-.st-label { font-weight: 600; font-size: 15px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.st-label small { font-weight: 500; font-size: 12px; color: var(--muted); }
+/* the host menu (join.ts): one column, big targets, Pause / Restart pinned to the bottom */
+.sh-host section h3 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sh-count { font-weight: 600; letter-spacing: 0; text-transform: none; font-size: 13px; }
+.sh-lock { width: 100%; min-height: 48px; padding: 0; border: 0; background: none; color: var(--fg); text-align: left; font: inherit; font-weight: 700; }
+.sh-lock .sh-switch { display: block; }
+.sh-lock.pressed .sh-switch { transform: scale(0.94); }
+.sh-host .sh-players li { min-height: 52px; gap: 10px; padding: 4px 4px 4px 14px; }
+.sh-host .sh-players li > span { min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
+.sh-host .sh-kick { flex: none; min-height: 44px; min-width: 84px; }
+.sh-end { width: 100%; flex: none; }
+.sh-foot {
+  position: sticky; bottom: 0; z-index: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin: 10px -18px 0; padding: 10px 18px calc(10px + env(safe-area-inset-bottom));
+  background: var(--bg-2); border-top: 1px solid var(--bg-3);
+}
+.sh-foot .sh-act { padding: 0 8px; }
+
+/* ------------------------------------------------------------ settings (settings-ui.ts picks the control for each) */
+.st, .st-adv { display: flex; flex-direction: column; gap: 16px; }
+.st-row { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.st-label { font-weight: 600; font-size: 15px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.st-label small { font-weight: 500; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .st-pills { display: flex; gap: 2px; padding: 3px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); }
 .st-pill {
-  flex: 1 1 0; min-width: 0; min-height: 40px; border: 0; border-radius: 9px; padding: 0 4px; background: transparent;
-  color: var(--muted); font: 600 14px var(--font); white-space: nowrap; transition: background 140ms, color 140ms;
+  flex: 1 1 0; min-width: 0; min-height: 44px; border: 0; border-radius: 9px; padding: 4px 6px; background: transparent;
+  color: var(--muted); font: 600 14px/1.2 var(--font); overflow-wrap: anywhere; transition: background 140ms, color 140ms;
 }
 .st-pill.on { background: var(--fg); color: var(--bg); }
+/* many short options (numbers): an even grid, one row when there's room */
+.st-grid { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
+@media (min-width: 600px) { .st-grid { grid-template-columns: repeat(auto-fit, minmax(48px, 1fr)); } }
+/* long options: two to a row on a phone, labels wrap */
+.st-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 3px; }
+.st-chips .st-pill { padding: 6px 10px; }
+/* On/Off: the whole row is the switch */
+.st-tog {
+  flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px;
+  padding: 0; border: 0; background: none; color: var(--fg); text-align: left; font: inherit;
+}
+.st-tog .st-label, .st-open .st-label { flex-direction: column; align-items: flex-start; gap: 2px; }
+.st-tog .sh-switch { display: block; }
+/* a long list: the current value, and the list in place when opened */
+.st-open, .st-more {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 6px 12px 6px 14px; border: 0;
+  border-radius: 12px; background: rgba(255, 255, 255, 0.06); color: var(--fg); text-align: left; font: inherit;
+}
+.st-open .st-label { flex: 1 1 auto; }
+.st-cur { font-weight: 700; font-size: 15px; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.st-chev { width: 18px; height: 18px; flex: none; color: var(--muted); transition: transform 150ms; }
+[aria-expanded="true"] > .st-chev { transform: rotate(180deg); }
+.st-more { justify-content: space-between; background: none; border: 2px solid rgba(255, 255, 255, 0.08); font-weight: 700; font-size: 15px; }
+.st-more small { margin-left: 8px; padding: 2px 8px; border-radius: 10px; background: var(--bg-3); color: var(--muted); font-size: 12px; }
+.st-adv { padding-top: 2px; }
+.st-tog.pressed .sh-switch, .st-open.pressed, .st-more.pressed { transform: scale(0.97); }
 
 /* ------------------------------------------------------------ TV pause menu */
 .pm {

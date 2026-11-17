@@ -54,6 +54,7 @@ const mount: ControllerMount = (ctx) => {
         <div class="lp-title"><h1>${esc(g.title)}</h1><span>${playersText(g)}</span></div>
         <p class="lp-tagline">${esc(g.tagline)}</p>
         ${g.settings?.length ? `<section class="lp-settings"><h2>Settings</h2>${settingsHtml(g, s?.settings ?? {})}</section>` : ""}
+        <section class="lp-players"><h2>Players</h2><ul class="lp-pl"></ul></section>
         <div class="lp-go"><button class="lp-start"></button></div>`;
       cleanups.push(
         button(el.querySelector(".lp-back") as HTMLElement, {
@@ -120,6 +121,17 @@ const mount: ControllerMount = (ctx) => {
     const g = open ? gameById(open) : undefined;
     if (!g) return;
     syncSettings(el, g, ctx.shell()?.settings ?? {});
+    // who's in (the host menu up top has Remove); a short list, so it's rebuilt each time
+    const list = el.querySelector(".lp-pl");
+    const all = ctx.shell()?.players ?? [];
+    if (list) {
+      list.innerHTML = all
+        .map((p) => {
+          const here = p.connected && !p.away;
+          return `<li class="${here ? "" : "away"}">${esc(p.name)}${p.id === ctl.me?.id ? " <small>(you)</small>" : here ? "" : " <small>(away)</small>"}</li>`;
+        })
+        .join("");
+    }
     const start = el.querySelector(".lp-start") as HTMLButtonElement | null;
     if (start) {
       const enough = players >= g.minPlayers;
