@@ -55,6 +55,10 @@ export class Body {
   /** Per-pass joint angle accumulation. */
   angSum = 0;
   angCnt = 0;
+  /** cos and sin of `a` for the joint pass numbered `trigPass` (the angles only change between passes). */
+  cosA = 1;
+  sinA = 0;
+  trigPass = -1;
   /** Marks a body already listed for this step's joint passes (World.step). */
   inPass = false;
 
@@ -263,10 +267,11 @@ export class World {
     }
     for (let pass = 0; pass < o.passes; pass++) {
       let any = false;
+      const id = ++trigPasses;
       for (const j of this.joints) {
         if (pass > j.necess) continue;
         any = true;
-        solveJoint(j);
+        solveJoint(j, id);
       }
       if (!any) break;
       for (const b of jointed) {
@@ -295,10 +300,24 @@ function signedAngle(ux: number, uy: number, tx: number, ty: number): number {
   return Math.atan2(ux * ty - uy * tx, ux * tx + uy * ty);
 }
 
-function solveJoint(j: Joint): void {
+/** Numbers the joint passes of every world, so a body's cos/sin is worked out once per pass (Body.trigPass). */
+let trigPasses = 0;
+
+function solveJoint(j: Joint, pass: number): void {
   const A = j.a;
   const B = j.b;
   if (A.invMass === 0 && B.invMass === 0) return;
+  // each body's cos/sin once per pass, not once per joint (a body is on up to 3 joints; this ran ~4 trig calls a joint)
+  if (A.trigPass !== pass) {
+    A.trigPass = pass;
+    A.cosA = Math.cos(A.a);
+    A.sinA = Math.sin(A.a);
+  }
+  if (B.trigPass !== pass) {
+    B.trigPass = pass;
+    B.cosA = Math.cos(B.a);
+    B.sinA = Math.sin(B.a);
+  }
   let wA: number;
   let wB: number;
   if (A.invMass === 0) {
@@ -312,12 +331,11 @@ function solveJoint(j: Joint): void {
     wB = A.mass / (A.mass + B.mass);
   }
 
-  // the anchors in world space, inline (worldPoint returns a new array; this runs up to 30 times a step per joint),
-  // and each body's cos/sin once for the anchors and the angle terms below (the angles don't change in here)
-  const cA = Math.cos(A.a);
-  const sA = Math.sin(A.a);
-  const cB = Math.cos(B.a);
-  const sB = Math.sin(B.a);
+  // the anchors in world space, inline (worldPoint returns a new array; this runs up to 30 times a step per joint)
+  const cA = A.cosA;
+  const sA = A.sinA;
+  const cB = B.cosA;
+  const sB = B.sinA;
   const ax = A.x + j.sax * cA - j.say * sA;
   const ay = A.y + j.sax * sA + j.say * cA;
   const bx = B.x + j.sbx * cB - j.sby * sB;
