@@ -106,6 +106,8 @@ const mount: HostMount = (ctx) => {
   const abPveBots = import.meta.env.VITE_PERF === "1" && startParam("pvebots") === "1";
   // fpsui=off: no on-screen frame-rate counter (what it costs)
   const abFpsOff = import.meta.env.VITE_PERF === "1" && startParam("fpsui") === "off";
+  // wavebar=off: no wave-timer strip during a Co-op vs monsters fight (what it costs)
+  const abWaveBarOff = import.meta.env.VITE_PERF === "1" && startParam("wavebar") === "off";
   const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
   // kos=burst (perf builds): every 6 s in a fight, wreck 3 machines at once (the worst moment for shards and coins)
   const abKoBurst = import.meta.env.VITE_PERF === "1" && startParam("kos") === "burst";
@@ -915,7 +917,7 @@ const mount: HostMount = (ctx) => {
         waiting ? "Warm-up · waiting for a second player (or add computer players in Settings)" : "Warm-up · pick your weapon on your phone",
         waiting ? null : left / pickTotal,
       );
-    } else if (phase === "fight" && mode === "pvm" && waveTotal > 0 && callAt < 0) {
+    } else if (phase === "fight" && mode === "pvm" && waveTotal > 0 && callAt < 0 && !abWaveBarOff) {
       // the wave timer: text and bar change once a second; red for the last 5 s
       hud.warmup(`Wave ${round} · next wave in ${waveWhole} s`, waveWhole / waveTotal, waveWhole <= 5);
     } else {
