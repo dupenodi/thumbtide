@@ -101,6 +101,8 @@ const mount: HostMount = (ctx) => {
   // perf A/B (perf builds only): passes=N joint passes, canvasw=W canvas width (min 320), hud=off, draw=off (the canvas keeps one picture)
   const abPasses = import.meta.env.VITE_PERF === "1" ? Number(startParam("passes")) || 0 : 0;
   const abHudOff = import.meta.env.VITE_PERF === "1" && startParam("hud") === "off";
+  // hud=frozen: the cards stop updating during a fight (they stay on screen): what the card updates cost
+  const abHudFrozen = import.meta.env.VITE_PERF === "1" && startParam("hud") === "frozen";
   const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
   // kos=burst (perf builds): every 6 s in a fight, wreck 3 machines at once (the worst moment for shards and coins)
   const abKoBurst = import.meta.env.VITE_PERF === "1" && startParam("kos") === "burst";
@@ -949,7 +951,7 @@ const mount: HostMount = (ctx) => {
     const d1 = tour ? performance.now() : 0;
     frameDrawn(now);
     profBegin("hud");
-    if (!abHudOff) maybeDrawHud();
+    if (!abHudOff && !(abHudFrozen && phase === "fight")) maybeDrawHud();
     profEnd("hud");
     if (tour) {
       const end = performance.now();

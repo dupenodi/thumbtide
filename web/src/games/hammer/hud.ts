@@ -28,6 +28,7 @@ interface Card {
   chip: HTMLElement;
   pips: HTMLElement;
   icon: HTMLElement;
+  stamp: HTMLElement;
   key: string;
   /** What the icon and the pips show now (rebuilt only when these change, not on every hit). */
   weapon: string;
@@ -97,6 +98,7 @@ export class Hud {
           chip: el.querySelector(".hm-chip")!,
           pips: el.querySelector(".hm-pips")!,
           icon: el.querySelector(".hm-ico")!,
+          stamp: el.querySelector(".hm-stamp")!,
           key: "",
           weapon: "",
           pipKey: "",
@@ -127,7 +129,9 @@ export class Hud {
         c.pipKey = pipKey;
         c.pips.innerHTML = Array.from({ length: winsToMatch }, (_, i) => `<i${i < s.wins ? ' class="on"' : ""}></i>`).join("");
       }
-      (c.el.querySelector(".hm-stamp") as HTMLElement).textContent = !s.alive ? "K.O." : s.stunned ? "STUNNED" : !s.armed ? "NO WEAPON" : "";
+      // only when it changes: a new text node (even the same text) means layout and a repaint of the HUD on the TV
+      const stamp = !s.alive ? "K.O." : s.stunned ? "STUNNED" : !s.armed ? "NO WEAPON" : "";
+      if (c.stamp.textContent !== stamp) c.stamp.textContent = stamp;
     }
   }
 
