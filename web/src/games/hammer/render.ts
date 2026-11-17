@@ -243,6 +243,37 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
     for (const m of arena.machines) this.offscreen(m, alpha);
+    if (this.fps !== null) {
+      // the frame-rate counter in the canvas's bottom-right corner (canvas pixels, no shake)
+      const t = this.fpsSprite(this.fps);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(t, this.canvas.width - t.width - Math.round(this.canvas.width * 0.006), this.canvas.height - t.height - 1);
+    }
+  }
+
+  /** perf A/B (`fpsui=canvas`): the frame rate drawn in the canvas instead of the HUD's counter; null: none. */
+  fps: number | null = null;
+  private fpsPics = new Map<number, HTMLCanvasElement>();
+  private fpsSprite(n: number): HTMLCanvasElement {
+    let c = this.fpsPics.get(n);
+    if (c) return c;
+    // the HUD counter's look: 1.1vh monospace, white at 40 %, at the canvas's share of the page height
+    const px = Math.max(6, Math.round((this.canvas.height / 1080) * 12));
+    const font = `${px}px ui-monospace, monospace`;
+    const text = `${n} fps`;
+    c = document.createElement("canvas");
+    const g0 = c.getContext("2d")!;
+    g0.font = font;
+    c.width = Math.ceil(g0.measureText(text).width) + 2;
+    c.height = px + 2;
+    const g = c.getContext("2d")!;
+    g.font = font;
+    g.textBaseline = "top";
+    g.fillStyle = "rgba(255,255,255,0.4)";
+    g.fillText(text, 1, 1);
+    if (this.fpsPics.size > 200) this.fpsPics.clear();
+    this.fpsPics.set(n, c);
+    return c;
   }
 
   /**

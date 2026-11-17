@@ -106,6 +106,8 @@ const mount: HostMount = (ctx) => {
   const abPveBots = import.meta.env.VITE_PERF === "1" && startParam("pvebots") === "1";
   // fpsui=off: no on-screen frame-rate counter (what it costs)
   const abFpsOff = import.meta.env.VITE_PERF === "1" && startParam("fpsui") === "off";
+  // fpsui=canvas: the counter drawn in the game canvas instead of the HUD (the HUD's corner text widens its layer)
+  const abFpsCanvas = import.meta.env.VITE_PERF === "1" && startParam("fpsui") === "canvas";
   // wavebar=off: no wave-timer strip during a Co-op vs monsters fight (what it costs)
   const abWaveBarOff = import.meta.env.VITE_PERF === "1" && startParam("wavebar") === "off";
   const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
@@ -1032,7 +1034,9 @@ const mount: HostMount = (ctx) => {
     // the on-screen counter: frames drawn over the last half second (the text changes at most twice a second)
     fpsFrames++;
     if (now - fpsFrom >= 500) {
-      if (!abFpsOff) hud.setFps(Math.round((fpsFrames * 1000) / (now - fpsFrom)));
+      const fpsNow = Math.round((fpsFrames * 1000) / (now - fpsFrom));
+      if (abFpsCanvas) renderer.fps = fpsNow;
+      else if (!abFpsOff) hud.setFps(fpsNow);
       fpsFrames = 0;
       fpsFrom = now;
     }
