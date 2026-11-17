@@ -374,7 +374,7 @@ export const GAMES: GameDef[] = [
     id: "inkling",
     title: "Inkling",
     tagline: "Draw the secret word on your phone. Everyone else guesses.",
-    minPlayers: 2,
+    minPlayers: 1,
     maxPlayers: 8,
     colors: ["#ffe46b", "#2f3a3f"],
     glyph: "eye",

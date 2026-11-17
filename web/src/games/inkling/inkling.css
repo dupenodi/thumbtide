@@ -101,8 +101,8 @@
 .ink-final { width: 100%; height: 100%; box-sizing: border-box; padding: 70px 54px 40px; }
 .ink-final small { font: 700 22px/1 var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: #7d8a90; }
 .ink-final h2 { margin: 16px 0 0; font: 400 96px/1.05 var(--hand); }
-.ink-final h2 span { border-bottom: 9px solid var(--c); }
-.ink-final > p { margin: 10px 0 34px; font: 400 48px/1 var(--hand); color: #4a565c; }
+.ink-final h2 span { display: inline-block; padding-bottom: 6px; border-bottom: 9px solid var(--c); }
+.ink-final > p { margin: 18px 0 34px; font: 400 48px/1 var(--hand); color: #4a565c; }
 .ink-final ol { margin: 0; padding: 0; list-style: none; }
 .ink-final li { display: flex; align-items: center; gap: 18px; height: 66px; border-top: 2px solid var(--grid); }
 .ink-final li em { width: 30px; font: 700 26px/1 var(--sans); font-style: normal; color: #7d8a90; }
@@ -190,10 +190,10 @@
 
 /* guessing */
 .ikp-guess { padding: 14px 14px 12px; gap: 14px; }
-.ikp-blanks { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; min-height: 40px; }
-.ikp-blanks span { display: flex; gap: 5px; }
+.ikp-blanks { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 22px; min-height: 48px; padding: 6px 0 4px; }
+.ikp-blanks span { display: flex; gap: 7px; }
 .ikp-blanks i {
-  width: 20px; height: 34px; border-bottom: 3px solid rgba(238, 241, 242, 0.85); text-align: center; font: 700 24px/34px Inter, system-ui, sans-serif;
+  width: 24px; height: 40px; border-bottom: 4px solid rgba(238, 241, 242, 0.85); text-align: center; font: 700 28px/40px Inter, system-ui, sans-serif;
   font-style: normal; text-transform: uppercase;
 }
 .ikp-blanks i.mark { border-bottom-color: transparent; width: 10px; }

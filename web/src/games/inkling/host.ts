@@ -193,6 +193,7 @@ const mount: HostMount = (ctx) => {
         tell(e.artist, { type: "buzz", kind: "turn" });
         break;
       case "phase":
+        if (e.phase === "match") board.clearFeed();
         if (e.phase === "match") for (const p of host.players.values()) tell(p.id, { type: "buzz", kind: "end" });
         if (e.phase !== "draw") restore = null;
         publish();
