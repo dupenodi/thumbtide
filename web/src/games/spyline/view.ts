@@ -124,7 +124,7 @@ export function createView(root: HTMLElement) {
         r.classList.toggle("keyed", keyed && !c.revealed);
         r.dataset.owner = c.owner ?? "";
         if (c.revealed && c.owner) {
-          ce.back.innerHTML = `<b>${esc(c.word)}</b><span class="spy-stamp">${STAMP[c.owner]}</span>`;
+          ce.back.innerHTML = `<b style="font-size:${Math.min(38, wordSize(c.word))}px">${esc(c.word)}</b><span class="spy-stamp">${STAMP[c.owner]}</span>`;
           r.classList.toggle("now", flips.has(i));
           flips.delete(i);
         }
@@ -133,6 +133,7 @@ export function createView(root: HTMLElement) {
       const pk = c.revealed ? "" : c.picks.join();
       if (pk !== ce.pickKey) {
         ce.pickKey = pk;
+        ce.picks.classList.toggle("many", c.picks.length > 3);
         ce.picks.innerHTML = c.revealed ? "" : c.picks.map((p) => `<i>${initial(s.seats[p]?.name ?? "?")}</i>`).join("");
         ce.root.classList.toggle("hot", !c.revealed && c.picks.length > 0);
         ce.root.dataset.turn = s.turn;
@@ -146,8 +147,9 @@ export function createView(root: HTMLElement) {
     const team = s.seats.map((x, i) => ({ ...x, i })).filter((x) => x.team === t);
     const handler = team.find((x) => x.role === "handler");
     const agents = team.filter((x) => x.role === "agent");
+    // the latest clues, as many as fit under the roster
+    const clues = s.history.filter((c) => c.team === t).slice(-Math.max(2, Math.min(4, 8 - agents.length)));
     const on = (s.phase === "clue" || s.phase === "guess" || s.phase === "reveal") && s.turn === t;
-    const clues = s.history.filter((c) => c.team === t).slice(-4);
     const pips = Array.from({ length: s.target }, (_, k) => `<i class="${k < s.wins[t] ? "on" : ""}"></i>`).join("");
     const person = (x: (typeof team)[number]) =>
       `<li class="${x.away ? "away" : ""}"><span>${esc(x.name)}</span>${x.bot ? "<em>bot</em>" : ""}</li>`;

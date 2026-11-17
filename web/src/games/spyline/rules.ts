@@ -108,7 +108,9 @@ export function checkClue(raw: string, board: readonly string[]): string | null 
   for (const raw of board) {
     const b = raw.toLowerCase();
     if (c === b || fold(c) === fold(b)) return `${b.toUpperCase()} is on the board`;
-    const near = (c.length >= 3 && (b.startsWith(c) || b.endsWith(c))) || (b.length >= 3 && (c.startsWith(b) || c.endsWith(b)));
+    // a part of a board word (PLACE for FIREPLACE), or a board word inside the clue (FIREPLACE for FIRE; short board
+    // words like NET only count as themselves, so PLANET stays fair)
+    const near = (c.length >= 3 && (b.startsWith(c) || b.endsWith(c))) || (b.length >= 4 && (c.startsWith(b) || c.endsWith(b)));
     if (near) return `Too close to ${b.toUpperCase()}`;
   }
   return null;
@@ -230,8 +232,9 @@ export class Spyline {
     const s = this.seat(id);
     if (!s) return;
     this.dropSeat(id);
-    while (this.team(s.team).length < 2) this.addBot(s.team);
+    // the next person on the team takes over first, so a computer that steps in joins as an agent
     if (this.handler[s.team] === null) this.promote(s.team);
+    while (this.team(s.team).length < 2) this.addBot(s.team);
     this.settle();
   }
 

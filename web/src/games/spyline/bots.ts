@@ -188,7 +188,7 @@ export interface BotTiming {
 }
 
 /** Plays every computer seat; call step(ms) along with the game's own step. */
-export function createBots(g: Spyline, rng: Rng = g.rng, timing: BotTiming = { think: 2600, look: 1300 }) {
+export function createBots(g: Spyline, rng: Rng = g.rng, timing: BotTiming = { think: 2600, look: 1000 }) {
   const minds = new Map<string, Mind>();
   const mind = (id: string): Mind => {
     let m = minds.get(id);

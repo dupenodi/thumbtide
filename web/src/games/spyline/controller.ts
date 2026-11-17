@@ -32,7 +32,7 @@ const mount: ControllerMount = (ctx) => {
   const root = document.createElement("div");
   root.className = "spp";
   root.innerHTML = `
-    <header class="spp-head"><span class="spp-dot"></span><span class="spp-name"></span><span class="spp-chip"></span></header>
+    <header class="spp-head"><span class="spp-dot"></span><span class="spp-name"></span><span class="spp-chip"></span><span class="spp-clock" hidden></span></header>
     <section class="spp-clue" hidden></section>
     <section class="spp-grid"></section>
     <section class="spp-panel"></section>`;
@@ -112,6 +112,7 @@ const mount: ControllerMount = (ctx) => {
     optimistic = { i: next, at: performance.now() };
     ctl.send({ type: "pick", i: next });
     render();
+    setTimeout(render, 1600); // if the TV refused it, the outline goes back
   }
 
   // ------------------------------------------------------------------ the panel
@@ -363,8 +364,29 @@ const mount: ControllerMount = (ctx) => {
     refresh();
   }
 
+  // the clock: the TV sends what's left when the beat starts, the phone counts down
+  let deadline = 0;
+  let clockFor: unknown = null;
+  const clockEl = $(".spp-clock");
+  const drawClock = () => {
+    const s = ctl.shared;
+    const on = !!s && deadline > 0 && (s.phase === "clue" || s.phase === "guess");
+    clockEl.hidden = !on;
+    if (!on) return;
+    const sec = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
+    clockEl.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+    clockEl.classList.toggle("low", sec <= 10);
+  };
+  const clockTimer = setInterval(drawClock, 500);
+  offs.push(() => clearInterval(clockTimer));
+
   offs.push(
     ctl.on("state", () => {
+      if (ctl.shared !== clockFor) {
+        clockFor = ctl.shared;
+        deadline = ctl.shared && ctl.shared.left > 0 ? performance.now() + ctl.shared.left : 0;
+        drawClock();
+      }
       // the TV has answered: drop the guess we were showing
       if (optimistic && ctl.shared) {
         const s = ctl.shared;

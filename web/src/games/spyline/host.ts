@@ -26,7 +26,7 @@ const mount: HostMount = (ctx) => {
   const tune = gameById("spyline")?.controls?.tune ?? {};
 
   const game = new Spyline(optionsOf(ctx.settings()));
-  const bots = createBots(game, Math.random, { think: tune["bot-think"] ?? 2600, look: tune["bot-look"] ?? 1300 });
+  const bots = createBots(game, Math.random, { think: tune["bot-think"] ?? 2600, look: tune["bot-look"] ?? 1000 });
   const view = createView(ctx.root);
   let paused = false;
   let ended: { team: Team; why: TurnEnd } | null = null;

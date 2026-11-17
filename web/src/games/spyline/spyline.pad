@@ -33,4 +33,4 @@ buzz                         # ms on, off, on…
 
 tune                         # the computer players' pace, in ms
   bot-think    2600          # a handler bot thinks this long (plus up to half again)
-  bot-look     1300          # an agent bot looks this long (plus up to the same again)
+  bot-look     1000          # an agent bot looks this long (plus up to the same again)

@@ -92,6 +92,8 @@ test("clue check: one word of letters, not on the board and not part of a board 
   assert.match(checkClue("place", board)!, /Too close/);
   assert.match(checkClue("shipwreck", board)!, /Too close/);
   assert.equal(checkClue("tea", ["steak"]), null);
+  assert.equal(checkClue("planet", ["net"]), null);
+  assert.match(checkClue("netting", ["nett"]) ?? "", /Too close/);
 });
 
 test("only the handler on turn can give a clue, and a bad clue is refused", () => {
@@ -267,6 +269,17 @@ test("a handler who leaves hands over to the next person on the team", () => {
   assert.equal(g.phase, "clue");
   assert.equal(g.giveClue(g.handler[t]!, fair(g), 1), null);
   assert.ok(of(g.drainEvents(), "handler").some((e) => e.team === t));
+});
+
+test("in two-a-side, a handler who leaves hands over to their teammate; a computer joins as an agent", () => {
+  const g = dealt(["a", "b", "c", "d"]);
+  const t = g.turn;
+  const h = handlerOf(g);
+  const mate = g.team(t).find((x) => x.id !== h)!.id;
+  g.removeSeat(h);
+  assert.equal(g.handler[t], mate);
+  assert.equal(g.team(t).length, 2);
+  assert.ok(g.agents(t).every((x) => x.bot));
 });
 
 test("a team never drops below two seats: a computer player steps in", () => {
