@@ -185,7 +185,7 @@ export interface WeaponSpec {
 // ---------------------------------------------------------------- guns
 // Bullets are 7 px balls of sharpness 7 at 2000 px/s. Their density (200 in the exe) is OURS: with this port's
 // damage formula a 200-density bullet does about 100 damage, so we use 8 (about 5 a hit) and 10 for mortar balls.
-const BULLET = { interval: 0.1, pellets: 1, spread: 0.01, speed: 2000, shotR: 3.5, shotDensity: 8, shotSharpness: 7, recoil: 0, look: "bullet" } as const;
+const BULLET = { interval: 0.1, pellets: 1, spread: 0.01, speed: 2000, shotR: 3.5, shotDensity: 8, shotSharpness: 4, recoil: 0, look: "bullet" } as const;
 
 export type GunKind = "arquebus" | "mortar" | "heavymortar" | "launcher";
 export const GUN_KINDS: GunKind[] = ["arquebus", "mortar", "heavymortar", "launcher"];

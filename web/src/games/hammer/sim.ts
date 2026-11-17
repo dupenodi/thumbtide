@@ -105,6 +105,8 @@ export interface Tag {
   bladeableU: number;
   /** m_sharpness_u side (equal to sharpness when the weapon is the same on both sides). */
   sharpnessU: number;
+  /** A gun pulled round by its aim this step (OURS): it pushes but does no damage, so the pull can't make a club of it. */
+  aiming?: boolean;
   /** m_jaws: a bite adds 0.3–3 × jaws damage (monster jaws). */
   jaws?: number;
   /** A bullet or mortar ball (its owner is `m`). */
@@ -629,6 +631,7 @@ export class Arena {
       const aimThis = aiming && aimable(g);
       // the tie that holds a gun across from its weapon gives way while it aims
       for (const j of m.joints) if (j.type === 0 && (j.a === b || j.b === b)) j.strength = aimThis ? 0 : 1;
+      (b.data as Tag).aiming = aimThis;
       let aligned = true;
       if (aimThis) {
         const ux = m.aimX / al;
@@ -1025,8 +1028,8 @@ export class Arena {
   /** Damage (0x410340) and shock. */
   private hurt(victim: Machine, vBody: Body, by: Tag, byBody: Body, impact: number, c: ContactReport): void {
     if (!victim.alive) return;
-    // Damage off (the warm-up): no damage and no stun either.
-    if (this.tuning.damage <= 0) return;
+    // Damage off (the warm-up): no damage and no stun either. An aiming gun only pushes.
+    if (this.tuning.damage <= 0 || by.aiming) return;
     // Friendly fire off: teammates' hits only push.
     if (by.m !== victim && by.m.team === victim.team && this.tuning.teamDamage < 1) return;
     const tn = this.tuning;
