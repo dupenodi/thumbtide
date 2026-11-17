@@ -1,5 +1,6 @@
 import { parsePad } from "./kit/pad.ts";
 import type { GameDef } from "./types.ts";
+import boomtownPad from "./boomtown/boomtown.pad?raw";
 import bridgePad from "./bridge/bridge.pad?raw";
 import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
@@ -532,6 +533,47 @@ export const GAMES: GameDef[] = [
     ],
     host: () => import("./bridge/host.ts"),
     controller: () => import("./bridge/controller.ts"),
+  },
+  {
+    id: "boomtown",
+    title: "Boomtown",
+    tagline: "Buy up the harbour city, build, trade and bankrupt your friends.",
+    minPlayers: 1,
+    maxPlayers: 6,
+    colors: ["#14716f", "#e9a93a"],
+    glyph: "special",
+    controls: parsePad(boomtownPad, "boomtown.pad"),
+    settings: [
+      {
+        key: "minutes",
+        label: "Time limit",
+        options: [
+          { value: 20, label: "20 min" },
+          { value: 30, label: "30 min" },
+          { value: 45, label: "45 min" },
+        ],
+        default: 30,
+        applies: "now",
+      },
+      {
+        key: "cash",
+        label: "Starting cash",
+        options: [
+          { value: "low", label: "Low" },
+          { value: "normal", label: "Normal" },
+          { value: "high", label: "High" },
+        ],
+        default: "normal",
+      },
+      {
+        key: "bots",
+        label: "Computer players",
+        options: [0, 1, 2, 3, 4, 5].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+      },
+    ],
+    host: () => import("./boomtown/host.ts"),
+    controller: () => import("./boomtown/controller.ts"),
   },
   {
     id: "sandbox",
