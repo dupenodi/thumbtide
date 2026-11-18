@@ -12,6 +12,13 @@ These come from playtesting and the owner's feedback. Follow them unless you've 
 - Every game is original: its own name, theme and art. Borrowing a mechanic is fine; copying an existing game's name,
   characters, art or look is not. Cult is an original hidden-role game; Cascade is an original take on chain-reaction
   board games.
+  - Exception: **Blast Party** is being rebuilt (2026-11-18) as a 3D adaptation of BombSquad. Ballistica's code
+    (github efroemling/ballistica, engine and game scripts) is MIT; BombSquad's characters, models, textures, sounds
+    and music are used with the consent of BombSquad's author, as the owner confirmed. (Rotor Brawl, the licensed
+    Hammerfight port, is the other exception.)
+- **Paused games (2026-11-18):** Trails, Stack Attack, Shove, Lift-off, Spyline, Bridge Panic and Boomtown are
+  `hidden` in the registry (not in the lobby; `?game=<id>` still opens them). Active: Inkling, Punchline, Blast Party
+  and the older games.
 - Each game has its **own visual identity**. Don't reuse another game's style, or the lobby's, inside a game.
 - Don't explain the rules on screen. Label the controls; the **?** help sheet comes from the `.pad` file.
 - Motion is understated: something animates once, when it happens (a card slams down with a thud, a stamp, a dealt
