@@ -62,6 +62,8 @@ export interface Seat {
   id: string;
   name: string;
   bot: boolean;
+  /** A human whose phone dropped for a while: a computer player plays the seat until they are back. */
+  away: boolean;
   slot: number;
   panel: string[];
   order: Order | null;
@@ -165,7 +167,7 @@ export class Bridge {
     const used = new Set([...this.seats.values()].map((s) => s.slot));
     let sl = slot !== undefined && slot >= 0 && slot < MAX_SEATS && !used.has(slot) ? slot : -1;
     for (let i = 0; sl < 0 && i < MAX_SEATS; i++) if (!used.has(i)) sl = i;
-    const seat: Seat = { id, name, bot, slot: sl, panel: [], order: null, done: 0 };
+    const seat: Seat = { id, name, bot, away: false, slot: sl, panel: [], order: null, done: 0 };
     this.seats.set(id, seat);
     if (this.phase === "play" || this.phase === "intro") {
       this.dealSeat(seat, this.shuffledNames());
@@ -191,6 +193,12 @@ export class Bridge {
       for (const s of this.seats.values()) if (s.order && !this.controls.has(s.order.ctl)) this.issue(s);
       this.events.push({ type: "orders" });
     }
+  }
+
+  /** Marks a human's seat as taken over by a computer player (or handed back). */
+  setAway(id: string, away: boolean) {
+    const s = this.seats.get(id);
+    if (s && !s.bot) s.away = away;
   }
 
   /** The seat starts the voyage when it waited for a crew. */

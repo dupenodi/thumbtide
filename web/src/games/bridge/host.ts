@@ -30,6 +30,19 @@ const mount: HostMount = (ctx) => {
   const offPerf = setPerfExtras(() => ({ phase: game.phase, sector: game.sector, seats: game.seats.size }));
   let paused = false;
   let botSerial = 0;
+  /** How long each human's phone has been off (ms). After AWAY_AFTER a computer player plays the seat. */
+  const AWAY_AFTER = 8000;
+  const offFor = new Map<string, number>();
+  function watchPhones(dt: number) {
+    for (const s of game.list()) {
+      if (s.bot) continue;
+      if (host.players.get(s.id)?.connected === false) {
+        const t = (offFor.get(s.id) ?? 0) + dt;
+        offFor.set(s.id, t);
+        game.setAway(s.id, t >= AWAY_AFTER);
+      } else if (offFor.delete(s.id) || s.away) game.setAway(s.id, false);
+    }
+  }
 
   // ------------------------------------------------------------ seats
   const humans = () => game.list().filter((s) => !isBot(s.id)).length;
@@ -47,7 +60,7 @@ const mount: HostMount = (ctx) => {
   }
 
   /** Seats everyone in the room, then brings the bots to the wanted count. Bots leave only between sectors. */
-  function seatAll() {
+  function seatAll(trim = between()) {
     for (const p of host.players.values()) {
       if (game.seats.has(p.id)) continue;
       if (!game.addSeat(p.id, p.name, false, p.index % MAX_SEATS)) {
@@ -61,7 +74,7 @@ const mount: HostMount = (ctx) => {
     const want = wantedBots();
     let have = botSeats();
     while (have.length < want && game.seats.size < MAX_SEATS && addBot()) have = botSeats();
-    if (between()) while (have.length > want) game.removeSeat(have.pop()!.id);
+    if (trim) while (have.length > want) game.removeSeat(have.pop()!.id);
   }
 
   // ------------------------------------------------------------ what phones see
@@ -178,7 +191,7 @@ const mount: HostMount = (ctx) => {
     }),
     ctx.onSettings((s) => {
       game.configure(optionsOf(s));
-      if (between()) seatAll();
+      seatAll(true); // the computer crew changes at once; extra bots leave, missing ones sit down
       drain();
       publish();
     }),
@@ -194,6 +207,7 @@ const mount: HostMount = (ctx) => {
     last = now;
     frameDrawn(now);
     if (paused) return;
+    watchPhones(dt);
     game.advance(dt);
     bots.step(dt);
     drain();
