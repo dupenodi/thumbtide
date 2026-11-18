@@ -113,6 +113,8 @@ export interface ViewOpts {
   /** Drawn pixels per CSS pixel of the 1920×1080 page. */
   res: number;
   lite: boolean;
+  /** A close camera on the middle of the deck, to look at the models (start option cam=close). */
+  close?: boolean;
 }
 
 export class View {
@@ -210,8 +212,13 @@ export class View {
     this.scene.add(this.fx.mesh);
     this.gpuBytes += MARKS * 32 + this.fx.cap * 64;
 
-    this.camera.position.set(0, 15, 17.4);
-    this.camera.lookAt(0, 0.3, 1.05);
+    if (o.close) {
+      this.camera.position.set(0, 6.5, 12.5);
+      this.camera.lookAt(0, 0.9, 1.5);
+    } else {
+      this.camera.position.set(0, 15, 17.4);
+      this.camera.lookAt(0, 0.3, 1.05);
+    }
     this.camera.updateMatrixWorld(true);
     this.camera.matrixAutoUpdate = false;
     this.camera.matrixWorldAutoUpdate = false;

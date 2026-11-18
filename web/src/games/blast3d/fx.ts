@@ -21,26 +21,26 @@ function tone(c: [number, number, number], k = 1) {
 }
 const FIRE = rgb("#ff8a1f"), HOT = rgb("#fff1b0"), SMOKE = rgb("#8f8a9c"), SPARK = rgb("#ffd45e"), CHUNK = rgb("#4a3626"), DUST = rgb("#e8d9b8"), CLOUD = rgb("#f4fbff"), GOO = rgb("#8be06f");
 
-/** A blast: a flash, fire, smoke puffs, sparks and debris. 47 particles for a normal bomb (24 in lite mode). */
+/** A blast: a flash, fire, smoke puffs, sparks and debris. 43 particles for a normal bomb (22 in lite mode), 63 for TNT. */
 export function explosion(fx: Particles, x: number, y: number, z: number, radius: number, big: boolean) {
   const s = radius / 2;
   Object.assign(p, base, { x, y: y + 0.2, z });
   // the flash: one big soft sprite
   tone(HOT, 0.9);
-  Object.assign(p, { vx: 0, vy: 0, vz: 0, life: 0.16, add: 1, size0: radius * 1.6, size1: radius * 2.4, gravity: 0, drag: 0 });
+  Object.assign(p, { vx: 0, vy: 0, vz: 0, life: 0.14, add: 1, size0: radius * 1.2, size1: radius * 1.8, gravity: 0, drag: 0 });
   fx.spawn(p);
   // fire balls
-  for (let i = fx.count(big ? 18 : 12); i > 0; i--) {
+  for (let i = fx.count(big ? 15 : 10); i > 0; i--) {
     dir((1.5 + R() * 3.5) * s, 1);
     tone(R() < 0.4 ? HOT : FIRE, 0.85);
     Object.assign(p, { life: 0.35 + R() * 0.3, add: 0.9, size0: (1.0 + R() * 0.7) * s, size1: 0.25 * s, gravity: 2, drag: 3 });
     fx.spawn(p);
   }
   // smoke that rises and swells
-  for (let i = fx.count(big ? 12 : 8); i > 0; i--) {
+  for (let i = fx.count(big ? 9 : 6); i > 0; i--) {
     dir((0.8 + R() * 1.8) * s, 1);
     tone(SMOKE, 0.75 + R() * 0.3);
-    Object.assign(p, { life: 0.7 + R() * 0.5, add: 0.45, size0: 0.7 * s, size1: (1.5 + R() * 0.7) * s, gravity: 1.6, drag: 1.5 });
+    Object.assign(p, { life: 0.7 + R() * 0.5, add: 0.45, size0: 0.6 * s, size1: (1.3 + R() * 0.5) * s, gravity: 1.6, drag: 1.5 });
     fx.spawn(p);
   }
   // sparks that arc and fall

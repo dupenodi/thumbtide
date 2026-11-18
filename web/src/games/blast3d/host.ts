@@ -6,6 +6,7 @@
 //   stress=heavy   the same, with a blast every third of a second somewhere on the deck
 //   res=0.66       the drawing buffer's scale (given: it stays; not given: 0.66, dropping to 0.5 if frames run long)
 //   lite=1         half the particles
+//   cam=close      a close camera, to look at the models
 import type { Host, HostPlayer } from "@thumbtide/sdk";
 import { shell } from "../../shell/host-state.ts";
 import { frameDrawn, setPerfExtras } from "../../shell/perf.ts";
@@ -40,7 +41,7 @@ const mount: HostMount = (ctx) => {
   const over = wrap.querySelector(".b3d-over") as HTMLElement;
   const game = new Game({ ...optionsOf(ctx.settings()), endless: !!stress });
   const bots = createBots(game);
-  const view = new View(stage, { res: Math.max(0.3, Math.min(2, fixedRes ?? 0.66)), lite: !!startParam("lite") });
+  const view = new View(stage, { res: Math.max(0.3, Math.min(2, fixedRes ?? 0.66)), lite: !!startParam("lite"), close: startParam("cam") === "close" });
   stage.appendChild(over); // the cards sit over the canvas
   const hud = createHud(wrap.querySelector(".b3d-bar") as HTMLElement, over, isBot);
   void loadFonts();
@@ -265,12 +266,12 @@ const mount: HostMount = (ctx) => {
         if (game.t < 50) hud.go(game.round);
         else hud.clear();
       } else if (game.phase === "match" && humans() === 0 && game.t > 60 * 12) restart(); // a demo loop
-      // the drawing buffer's scale: after the start, if a quarter of 4 s of frames ran over 20 ms, drop it once
+      // the drawing buffer's scale: after the start, if a tenth of 4 s of frames ran over 24 ms, drop it once
       if (fixedRes === null && view.res > 0.5 && now - startedAt > 6000) {
         judged++;
-        if (dt > 0.02) slow++;
+        if (dt > 0.024) slow++;
         if (judged >= 240) {
-          if (slow > 60) {
+          if (slow > 24) {
             view.setScale(0.5);
             view.fx.lite = true;
           }
