@@ -37,6 +37,18 @@ export interface EntrantStats {
   edge: number;
   /** Of `dealt`, the damage done by shots and rocket blasts. */
   shotDealt: number;
+  /** Hull speed while alive and not stunned: histogram in 25 px/s bins (0…600+), and the stick input (share of the 420-unit cap) summed. */
+  speedHist: number[];
+  inputSum: number;
+  /** Frames counted in speedHist (alive, not stunned). */
+  frames: number;
+  /** Same frames: hull distance to the nearest enemy in 50 px bins (0…600+), frames closing on it or opening from it (over 60 px/s). */
+  distHist: number[];
+  closing: number;
+  opening: number;
+  /** Same frames: summed turn of the input direction (rad/s), frames with saturated input (≥ 98 % of the cap). */
+  turnSum: number;
+  saturated: number;
 }
 
 export interface RoundResult {
@@ -127,7 +139,8 @@ export function runRound(o: RoundOptions): RoundResult {
   let waveTimerFired = 0;
   let waveLeft = wave > 0 ? waveSeconds(worms.length) : 0;
   const drivers = o.entrants.map((e, i) => e.driver(ar, ms[i]!));
-  const st: EntrantStats[] = o.entrants.map((e) => ({ name: e.name, weapon: e.weapon, dealt: 0, hits: 0, bigHit: 0, kos: 0, slammed: 0, stunned: 0, minHp: 100, hpEnd: 0, alive: true, edge: 0, shotDealt: 0 }));
+  const st: EntrantStats[] = o.entrants.map((e) => ({ name: e.name, weapon: e.weapon, dealt: 0, hits: 0, bigHit: 0, kos: 0, slammed: 0, stunned: 0, minHp: 100, hpEnd: 0, alive: true, edge: 0, shotDealt: 0, speedHist: new Array(25).fill(0), inputSum: 0, frames: 0, distHist: new Array(13).fill(0), closing: 0, opening: 0, turnSum: 0, saturated: 0 }));
+  const inAng = ms.map(() => Number.NaN);
   const idx = new Map(ms.map((m, i) => [m, i]));
   let spreadSum = 0;
   let spreadN = 0;
@@ -158,7 +171,41 @@ export function runRound(o: RoundOptions): RoundResult {
   let comebackRisk = new Set<number>();
   const teams = () => new Set([...ms, ...worms].filter((m) => m.alive).map((m) => m.team));
   while (t < limit) {
-    for (let i = 0; i < ms.length; i++) if (ms[i]!.alive) drivers[i]!(ar, ms[i]!);
+    for (let i = 0; i < ms.length; i++) {
+      const m = ms[i]!;
+      if (!m.alive) continue;
+      drivers[i]!(ar, m);
+      if (m.stun > 0) continue;
+      const s = st[i]!;
+      s.frames++;
+      s.speedHist[Math.min(24, Math.floor(Math.hypot(m.hull.vx, m.hull.vy) / 25))]!++;
+      const il = Math.hypot(m.inx, m.iny);
+      s.inputSum += Math.min(1, il / 420);
+      if (il >= 0.98 * 420) s.saturated++;
+      if (il > 20) {
+        const a = Math.atan2(m.iny, m.inx);
+        if (!Number.isNaN(inAng[i]!)) s.turnSum += Math.abs(Math.atan2(Math.sin(a - inAng[i]!), Math.cos(a - inAng[i]!))) / STEP;
+        inAng[i] = a;
+      }
+      let near: Machine | null = null;
+      let nd = Infinity;
+      for (const o of ms) {
+        if (o === m || !o.alive || o.team === m.team) continue;
+        const d = Math.hypot(o.hull.x - m.hull.x, o.hull.y - m.hull.y);
+        if (d < nd) [nd, near] = [d, o];
+      }
+      for (const o of worms) {
+        if (!o.alive) continue;
+        const d = Math.hypot(o.hull.x - m.hull.x, o.hull.y - m.hull.y);
+        if (d < nd) [nd, near] = [d, o];
+      }
+      if (near) {
+        s.distHist[Math.min(12, Math.floor(nd / 50))]!++;
+        const rv = ((m.hull.x - near.hull.x) * (m.hull.vx - near.hull.vx) + (m.hull.y - near.hull.y) * (m.hull.vy - near.hull.vy)) / (nd || 1);
+        if (rv < -60) s.closing++;
+        else if (rv > 60) s.opening++;
+      }
+    }
     ar.step();
     if (wave > 0 && callAt < 0) {
       waveLeft -= STEP;
