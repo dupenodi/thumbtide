@@ -122,15 +122,17 @@ frame, and by a second dt while engage runs inside the far range, 0x4adb9b):
 | 3 | **engage** (0x4ada00) | Main logic, below. **When the 4–6 s timer runs out (2–3 s of real time while inside the far range), or engage fails → 1 with timer 2–3 s**, whether the attack worked or not. |
 | 2 | **charge** | Steer straight at the target, gain **3 · rage**. Ends when the target is within 500 px or the timer ends → 3. |
 | 4 | **whirl** (0x4adf20, gain 5) | Swing hard in place (no pull). May **throw** (2.7). Rage ≥ 1.5 or timer end → 3. Fails → 1. |
-| 1 | **back off** (0x4ad780) | Keep distance, same 250 px ring logic as 3.2 state 1 (gain 5 when the target has class flags 0x7f, else 3; INFERRED: 0x7f = machine). Rage ≥ 1.5 → 3 at once. Timer end: weapon → 3, **no weapon → 7** (5 s). |
+| 1 | **back off** (0x4ad780) | Keep distance, same 250 px ring logic as 3.2 state 1 (gain 5 when the target has class flags 0x7f, else 3; INFERRED: 0x7f = machine). Rage ≥ 1.5 → 3 at once. **Target stunned (stun +0x484 ≠ 0, 0x4ad7ca) → 3 at once with a new 4–6 s timer** (checked 2026-11-18). Timer end: weapon → 3, **no weapon → 7** (5 s). |
 | 7 | **retreat** | Task-5 handler: go to the level object id 100. |
 | 9 | **special** (0x4adf90) | Uses the item from the second list +0x8c0 (0x4ad700, 0x422aa0; INFERRED: bomb/gun) at ~1 % per frame within 200 px; cooldown **10 s** (+0xa28). |
 
 Engage (0x4ada00), per frame:
-1. **Threat check** 0x4ac210: predicts the enemy's main weapon 3 frames ahead and reacts when it comes close
-   (≈ 50 px; INFERRED combination with 0.35 · weapon speed). Reaction: steer **straight at the enemy weapon**
-   (literal reading; INFERRED intent: get inside the arc, so the head passes behind) and set +0x8a0.
-   When the threat has just passed, the next push is doubled (counter-lunge).
+1. **Threat check** 0x4ac210 (decoded 2026-11-18): `r = max(1, 0.35 · enemy weapon speed)`. (a) If the enemy's main
+   weapon, predicted 3 frames ahead, is within **50 px** of the hull's edge (and +0x430 > 1), it sets +0x428 and
+   +0xa08 = 0.3 s and returns true (meaning of the two fields not decoded). (b) Else, if the weapon is within `r` px,
+   it steers **away from the enemy weapon**: `steer = −(weapon − hull)/d · 3 · clamp(1 − d/r, 0, 1) · gain`, and sets
+   +0x8a0. (Corrects the earlier "straight at the weapon": 0x55d738 is written at 0x4369ec as weapon − own hull, and
+   0x4ac393 negates it.) When the threat has just passed, the next push is doubled (counter-lunge).
 2. No weapon → state 1, return false.
 3. Ranges from the gap `d = distance − target radius`: far = **500** / near = **100**; for weapons with the lock
    bits 0x20a00 (+0x6e8) or 0x2 (+0x6ec) (INFERRED: long weapons) far = **550** / near = **150**.
@@ -340,6 +342,8 @@ other's autopilot.
   not searched.
 
 ## 8. Ideas for our bots (`bots.ts`)
+
+What was built from this (the attack rhythm, a thumb's tilt, before/after numbers): `BOT_AI.md`.
 
 Our bots already give pad-like input through `seek()` → `arena.pushRaw` (≤ 100 units). Keep that limit (fair), and
 change the decision layer:
