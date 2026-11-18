@@ -5,19 +5,19 @@
 //    only when the crew changes) with a two-frame flame under each firing thruster. A crash breaks the rocket into
 //    five baked parts once.
 import { isWebOS } from "../../shell/tv.ts";
-import { HALF_W, pendBob, rectX, type Obstacle } from "./course.ts";
+import { HALF_W, hazardPose, type Hazard, type Rect } from "./course.ts";
 import { CREW, DISPLAY, LOOK } from "./look.ts";
 import { PAD_Y, STEP, type Liftoff, type Thruster } from "./rules.ts";
 
 /** Metres of tunnel visible top to bottom. */
-const VIEW_M = 26;
+const VIEW_M = 37;
 const WALL = 1.1;
-const RULER = 2.9;
+const RULER = 3.9;
 /** Canvas left edge to the tunnel's middle, m. */
 const OX = HALF_W + WALL + RULER;
 const RIGHT = HALF_W + WALL + 0.2;
 /** The rocket sits this far above the bottom of the view. */
-const ROCKET_AT = 9.6;
+const ROCKET_AT = 13.2;
 /** Sprite box around the rocket's centre, m. */
 const SX0 = -1.7;
 const SX1 = 1.7;
@@ -78,6 +78,10 @@ export class TunnelView {
   private flashX = 0;
   private flashY = 0;
   private lastNow = 0;
+  /** Recent bumps (a spark burst each) and the last one's shake. */
+  private bumps: { x: number; y: number; nx: number; ny: number; power: number; at: number }[] = [];
+  private bumpAt = 0;
+  private bumpPower = 0;
 
   constructor(parent: HTMLElement) {
     this.el = document.createElement("div");
@@ -272,6 +276,16 @@ export class TunnelView {
   clear() {
     this.flying = [];
     this.crashAt = 0;
+    this.bumps = [];
+    this.bumpAt = 0;
+  }
+
+  /** The rocket bumped a wall or a slab: a burst of sparks at the contact and a small knock. */
+  bump(e: { x: number; y: number; nx: number; ny: number; power: number }, now: number) {
+    this.bumps.push({ ...e, at: now });
+    if (this.bumps.length > 4) this.bumps.shift();
+    this.bumpAt = now;
+    this.bumpPower = e.power;
   }
 
   crash(game: Liftoff, e: { x: number; y: number; a: number; vx: number; vy: number; w: number }, now: number) {
@@ -333,6 +347,11 @@ export class TunnelView {
     if (this.crashAt && since < 260) {
       const k = (1 - since / 260) * 5 * (H / 1080);
       ctx.translate(Math.sin(since * 0.09) * k, Math.cos(since * 0.11) * k * 0.6);
+    } else if (this.bumpAt && now - this.bumpAt < 170) {
+      // a bump: a short, small knock
+      const b = now - this.bumpAt;
+      const k = (1 - b / 170) * (1.5 + 3 * this.bumpPower) * (H / 1080);
+      ctx.translate(Math.sin(b * 0.12) * k, Math.cos(b * 0.15) * k * 0.7);
     }
     ctx.clearRect(-20, -20, this.cw + 40, H + 40);
 
@@ -351,11 +370,13 @@ export class TunnelView {
     ctx.beginPath();
     ctx.rect(x0, 0, inner, H);
     ctx.clip();
-    for (const o of game.course.obstacles) {
-      if (o.k === "rect") {
-        if (o.y1 < cam - 1 || o.y0 > top) continue;
-      } else if (o.py + 1 < cam - 1 || o.py - o.len - o.r > top) continue;
-      this.drawObstacle(ctx, o, t, sx, sy);
+    for (const o of game.course.rects) {
+      if (o.y1 < cam - 1 || o.y0 > top) continue;
+      this.drawRect(ctx, o, sx, sy);
+    }
+    for (const h of game.course.hazards) {
+      if (h.box[3] < cam - 1 || h.box[1] > top) continue;
+      this.drawHazard(ctx, h, t, sx, sy);
     }
     // the drop line
     const fy = sy(game.floor);
@@ -367,6 +388,7 @@ export class TunnelView {
     }
     ctx.restore();
     this.drawWalls(ctx, sx, sy, cam, ry, game);
+    this.drawBumps(ctx, sx, sy, now);
 
     // the rocket, or its parts
     this.bakeRocket(game.thrusters);
@@ -407,48 +429,213 @@ export class TunnelView {
     }
   }
 
-  private drawObstacle(ctx: CanvasRenderingContext2D, o: Obstacle, t: number, sx: (x: number) => number, sy: (y: number) => number) {
+  /** A slab: slate with a lit top edge (the rocket bumps off it). */
+  private drawRect(ctx: CanvasRenderingContext2D, o: Rect, sx: (x: number) => number, sy: (y: number) => number) {
     const P = this.ppm;
     const u = this.H / 1080;
-    if (o.k === "rect") {
-      const dx = rectX(o, t);
-      const x = sx(o.x0 + dx);
-      const y = sy(o.y1);
-      const w = (o.x1 - o.x0) * P;
-      const h = (o.y1 - o.y0) * P;
-      ctx.fillStyle = LOOK.slate;
-      ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = LOOK.slateHi;
-      ctx.fillRect(x, y, w, 4 * u);
-      ctx.fillStyle = "rgba(7, 14, 34, 0.55)";
-      ctx.fillRect(x, y + h - 3 * u, w, 3 * u);
-      if (o.ax) {
-        // a sliding slab: teal caps on its ends
-        ctx.fillStyle = LOOK.teal;
-        ctx.fillRect(x, y, 6 * u, h);
-        ctx.fillRect(x + w - 6 * u, y, 6 * u, h);
-      }
-      return;
-    }
-    const b = pendBob(o, t);
-    ctx.strokeStyle = "rgba(238, 242, 247, 0.75)";
-    ctx.lineWidth = 3 * u;
-    ctx.beginPath();
-    ctx.moveTo(sx(o.px), sy(o.py));
-    ctx.lineTo(sx(b.x), sy(b.y));
-    ctx.stroke();
-    ctx.fillStyle = LOOK.teal;
-    ctx.beginPath();
-    ctx.arc(sx(b.x), sy(b.y), o.r * P, 0, Math.PI * 2);
-    ctx.fill();
+    const x = sx(o.x0);
+    const y = sy(o.y1);
+    const w = (o.x1 - o.x0) * P;
+    const h = (o.y1 - o.y0) * P;
     ctx.fillStyle = LOOK.slate;
-    ctx.beginPath();
-    ctx.arc(sx(b.x), sy(b.y), o.r * P - 7 * u, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = LOOK.chalk;
-    ctx.beginPath();
-    ctx.arc(sx(b.x), sy(b.y), 5 * u, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = LOOK.slateHi;
+    ctx.fillRect(x, y, w, 4 * u);
+    ctx.fillStyle = "rgba(7, 14, 34, 0.55)";
+    ctx.fillRect(x, y + h - 3 * u, w, 3 * u);
+  }
+
+  /** Hazards share one language: dark body, chalk spikes or beam, signal orange. */
+  private drawHazard(ctx: CanvasRenderingContext2D, h: Hazard, t: number, sx: (x: number) => number, sy: (y: number) => number) {
+    const P = this.ppm;
+    const u = this.H / 1080;
+    const p = hazardPose(h, t);
+    const X = sx(p.x);
+    const Y = sy(p.y);
+    switch (h.k) {
+      case "mine": {
+        const R = h.r * P;
+        ctx.fillStyle = LOOK.chalk;
+        for (let i = 0; i < 8; i++) {
+          const a = (i * Math.PI) / 4 + Math.PI / 8;
+          const c = Math.cos(a);
+          const s = Math.sin(a);
+          ctx.beginPath();
+          ctx.moveTo(X + (c * R * 0.78 - s * R * 0.2), Y + (s * R * 0.78 + c * R * 0.2));
+          ctx.lineTo(X + c * R * 1.38, Y + s * R * 1.38);
+          ctx.lineTo(X + (c * R * 0.78 + s * R * 0.2), Y + (s * R * 0.78 - c * R * 0.2));
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.fillStyle = "#1b2540";
+        ctx.beginPath();
+        ctx.arc(X, Y, R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = LOOK.orange;
+        ctx.lineWidth = 3 * u;
+        ctx.stroke();
+        // the blinking light
+        const on = Math.sin(t * 6.5 + h.seed * 1.7) > 0;
+        if (on) {
+          ctx.fillStyle = "rgba(255, 106, 43, 0.3)";
+          ctx.beginPath();
+          ctx.arc(X, Y, R * 0.66, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = on ? "#ffb08a" : "#7a3a22";
+        ctx.beginPath();
+        ctx.arc(X, Y, R * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+      case "meteor": {
+        const R = h.r * P;
+        // a streak behind it, along its sideways motion
+        const vx = h.ax * h.om * Math.cos(h.om * t + h.ph);
+        if (Math.abs(vx) > 0.4) {
+          const dir = vx > 0 ? -1 : 1;
+          const g = ctx.createLinearGradient(X, Y, X + dir * R * 3.4, Y);
+          g.addColorStop(0, "rgba(255, 106, 43, 0.42)");
+          g.addColorStop(1, "rgba(255, 106, 43, 0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.moveTo(X, Y - R * 0.85);
+          ctx.lineTo(X + dir * R * 3.4, Y);
+          ctx.lineTo(X, Y + R * 0.85);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.save();
+        ctx.translate(X, Y);
+        ctx.rotate(t * 0.8 * (h.seed % 2 ? 1 : -1) + h.seed);
+        ctx.fillStyle = LOOK.slate;
+        ctx.beginPath();
+        for (let i = 0; i < 9; i++) {
+          const a = (i * Math.PI * 2) / 9;
+          const rr = R * (0.8 + 0.22 * hash(h.seed + i * 3.1));
+          const px = Math.cos(a) * rr;
+          const py = Math.sin(a) * rr;
+          if (i) ctx.lineTo(px, py);
+          else ctx.moveTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = LOOK.orange;
+        ctx.lineWidth = 3 * u;
+        ctx.stroke();
+        ctx.fillStyle = LOOK.slateHi;
+        ctx.beginPath();
+        ctx.arc(-R * 0.28, -R * 0.2, R * 0.26, 0, Math.PI * 2);
+        ctx.arc(R * 0.3, R * 0.28, R * 0.17, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        return;
+      }
+      case "bar": {
+        const L = h.len * P;
+        const w = h.r * P;
+        ctx.save();
+        ctx.translate(X, Y);
+        ctx.rotate(-p.a);
+        // spikes along both edges
+        ctx.fillStyle = LOOK.chalk;
+        for (let m = -h.len + 0.5; m < h.len - 0.2; m += 0.9) {
+          const x = m * P;
+          for (const s of [-1, 1]) {
+            ctx.beginPath();
+            ctx.moveTo(x - 0.22 * P, s * w);
+            ctx.lineTo(x, s * (w + 0.62 * P));
+            ctx.lineTo(x + 0.22 * P, s * w);
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
+        ctx.fillStyle = "#1b2540";
+        ctx.fillRect(-L, -w, L * 2, w * 2);
+        ctx.fillStyle = LOOK.orange;
+        for (let m = -h.len; m < h.len - 0.5; m += 1.2) ctx.fillRect(m * P, -w * 0.45, 0.6 * P, w * 0.9);
+        for (const s of [-1, 1]) {
+          ctx.beginPath();
+          ctx.arc(s * L, 0, w * 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = LOOK.slate;
+        ctx.beginPath();
+        ctx.arc(0, 0, w * 2.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = LOOK.chalk;
+        ctx.beginPath();
+        ctx.arc(0, 0, w * 0.9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        return;
+      }
+      case "laser": {
+        const x0 = sx(h.x - h.len - h.r);
+        const x1 = sx(h.x + h.len + h.r);
+        // the rails the beam rides on
+        ctx.strokeStyle = "rgba(77, 91, 128, 0.7)";
+        ctx.lineWidth = 2 * u;
+        for (const x of [x0, x1]) {
+          ctx.beginPath();
+          ctx.moveTo(x, sy(h.y - h.ay) + 10 * u);
+          ctx.lineTo(x, sy(h.y + h.ay) - 10 * u);
+          ctx.stroke();
+        }
+        ctx.lineCap = "round";
+        ctx.strokeStyle = "rgba(255, 106, 43, 0.28)";
+        ctx.lineWidth = 15 * u;
+        ctx.beginPath();
+        ctx.moveTo(x0, Y);
+        ctx.lineTo(x1, Y);
+        ctx.stroke();
+        ctx.strokeStyle = LOOK.orange;
+        ctx.lineWidth = 6 * u;
+        ctx.stroke();
+        ctx.strokeStyle = "#fff1e6";
+        ctx.lineWidth = 2 * u;
+        ctx.stroke();
+        ctx.lineCap = "butt";
+        // the two emitters
+        for (const x of [x0, x1]) {
+          ctx.fillStyle = LOOK.slateHi;
+          ctx.fillRect(x - 7 * u, Y - 14 * u, 14 * u, 28 * u);
+          ctx.fillStyle = LOOK.orange;
+          ctx.beginPath();
+          ctx.arc(x, Y, 7 * u, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        return;
+      }
+    }
+  }
+
+  /** The sparks of a bump: a ring and a few lines thrown off the surface. */
+  private drawBumps(ctx: CanvasRenderingContext2D, sx: (x: number) => number, sy: (y: number) => number, now: number) {
+    const u = this.H / 1080;
+    const P = this.ppm;
+    this.bumps = this.bumps.filter((b) => now - b.at < 300);
+    for (const b of this.bumps) {
+      const p = (now - b.at) / 300;
+      const X = sx(b.x);
+      const Y = sy(b.y);
+      ctx.strokeStyle = `rgba(238, 242, 247, ${0.9 * (1 - p)})`;
+      ctx.lineWidth = 3 * u;
+      ctx.beginPath();
+      ctx.arc(X, Y, (0.25 + p * 0.9) * P, 0, Math.PI * 2);
+      ctx.stroke();
+      // sparks fan out along the surface's normal (screen y is flipped)
+      const base = Math.atan2(-b.ny, b.nx);
+      ctx.strokeStyle = `rgba(255, 183, 130, ${1 - p})`;
+      for (let i = -2; i <= 2; i++) {
+        const a = base + i * 0.5;
+        const len = (0.8 + p * 1.7) * (0.6 + b.power * 0.4);
+        ctx.beginPath();
+        ctx.moveTo(X + Math.cos(a) * (0.4 + p) * P, Y + Math.sin(a) * (0.4 + p) * P);
+        ctx.lineTo(X + Math.cos(a) * len * P, Y + Math.sin(a) * len * P);
+        ctx.stroke();
+      }
+    }
   }
 
   private drawWalls(ctx: CanvasRenderingContext2D, sx: (x: number) => number, sy: (y: number) => number, cam: number, ry: number, game: Liftoff) {

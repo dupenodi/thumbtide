@@ -6,6 +6,8 @@ import type { Liftoff } from "./rules.ts";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const DIFF_LABEL: Record<string, string> = { easy: "Easy", normal: "Normal", hard: "Hard" };
+/** How a run ended, for the result card. */
+const CAUSE: Record<string, string> = { drop: "dropped", mine: "hit a mine", meteor: "hit a meteor", bar: "hit a spiked bar", laser: "hit a laser" };
 
 export function createHud(root: HTMLElement) {
   const left = document.createElement("aside");
@@ -102,7 +104,7 @@ export function createHud(root: HTMLElement) {
       over.innerHTML = `<div class="lft-count"><span>Run ${run} of ${runs}</span><b>${n}</b></div>`;
     },
 
-    result(game: Liftoff, height: number, best: boolean, lost: boolean) {
+    result(game: Liftoff, height: number, best: boolean, cause: string) {
       shown = `result${game.run}`;
       over.classList.add("high");
       const tag = best
@@ -110,7 +112,7 @@ export function createHud(root: HTMLElement) {
         : `<em>Crew best <b>${game.record} m</b></em>`;
       over.innerHTML = `
         <div class="lft-card">
-          <span>Run ${game.run} of ${game.opts.runs} · ${lost ? "dropped" : "crashed"}</span>
+          <span>Run ${game.run} of ${game.opts.runs} · ${CAUSE[cause] ?? "crashed"}</span>
           <b>${height}<i> m</i></b>
           ${tag}
         </div>`;
