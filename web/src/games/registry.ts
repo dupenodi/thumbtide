@@ -228,6 +228,8 @@ export const GAMES: GameDef[] = applyThumbs([
   },
   {
     id: "trails",
+    // development paused (2026-11-18): not in the lobby; ?game=trails still opens it
+    hidden: true,
     title: "Trails",
     tagline: "Never stop. Never touch a line. Outlast everyone.",
     minPlayers: 1,
@@ -271,6 +273,8 @@ export const GAMES: GameDef[] = applyThumbs([
   },
   {
     id: "stack",
+    // development paused (2026-11-18): not in the lobby; ?game=stack still opens it
+    hidden: true,
     title: "Stack Attack",
     tagline: "Clear rows, paper your friends, be the last well standing.",
     minPlayers: 1,
@@ -309,6 +313,8 @@ export const GAMES: GameDef[] = applyThumbs([
   },
   {
     id: "shove",
+    // development paused (2026-11-18): not in the lobby; ?game=shove still opens it
+    hidden: true,
     title: "Shove",
     tagline: "Heavy wrestlers, one small ring. Last one inside wins.",
     minPlayers: 1,
@@ -347,6 +353,8 @@ export const GAMES: GameDef[] = applyThumbs([
   },
   {
     id: "liftoff",
+    // development paused (2026-11-18): not in the lobby; ?game=liftoff still opens it
+    hidden: true,
     title: "Lift-off",
     tagline: "One rocket, one thruster each. Climb together.",
     minPlayers: 1,
@@ -426,6 +434,8 @@ export const GAMES: GameDef[] = applyThumbs([
   },
   {
     id: "spyline",
+    // development paused (2026-11-18): not in the lobby; ?game=spyline still opens it
+    hidden: true,
     title: "Spyline",
     tagline: "One word from your handler. Find your agents, never the burn card.",
     minPlayers: 1,
@@ -522,6 +532,8 @@ export const GAMES: GameDef[] = applyThumbs([
   },
   {
     id: "bridge",
+    // development paused (2026-11-18): not in the lobby; ?game=bridge still opens it
+    hidden: true,
     title: "Bridge Panic",
     tagline: "Your orders are on your crew's panels. Shout them out.",
     minPlayers: 1,
@@ -555,6 +567,8 @@ export const GAMES: GameDef[] = applyThumbs([
   },
   {
     id: "boomtown",
+    // development paused (2026-11-18): not in the lobby; ?game=boomtown still opens it
+    hidden: true,
     title: "Boomtown",
     tagline: "Buy up the harbour city, build, trade and bankrupt your friends.",
     minPlayers: 1,

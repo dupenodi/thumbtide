@@ -14,6 +14,12 @@ These come from playtesting and the owner's feedback. Follow them unless you've 
   board games.
   - The one exception is **Rotor Brawl**, a prototype of an official, licensed port of Hammerfight. It may use
     Hammerfight's sounds, music, weapons and physics.
+  - The second exception is **Blast Party**, being rebuilt (2026-11-18) as a 3D adaptation of BombSquad. Ballistica's
+    code (github efroemling/ballistica, engine and game scripts) is MIT; BombSquad's characters, models, textures,
+    sounds and music are used with the consent of BombSquad's author, as the owner confirmed.
+- **Paused games (2026-11-18):** Trails, Stack Attack, Shove, Lift-off, Spyline, Bridge Panic and Boomtown are
+  `hidden` in the registry (not in the lobby; `?game=<id>` still opens them). Active: Inkling, Punchline, Blast Party
+  and the older games.
 - Each game has its **own visual identity**. Don't reuse another game's style, or the lobby's, inside a game.
 - Don't explain the rules on screen. Label the controls; the **?** help sheet comes from the `.pad` file.
 - Motion is understated: something animates once, when it happens (a card slams down with a thud, a stamp, a dealt
