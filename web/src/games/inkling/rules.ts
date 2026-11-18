@@ -282,6 +282,8 @@ export class Inkling {
   private go(phase: Phase) {
     this.phase = phase;
     this.t = 0;
+    // the guess spam check counts in this phase's steps: a guess time from an earlier turn must not block new guesses
+    for (const s of this.seats.values()) s.lastGuess = -1e9;
     this.emit({ type: "phase", phase });
   }
 

@@ -398,3 +398,17 @@ test("setting the bot count adds and removes bots, never the one drawing", () =>
   assert.equal(bots.count, 1);
   assert.ok(g.seats.has(artist));
 });
+
+test("a guess late in one turn never blocks guesses early in the next turn (the turn clock restarts)", () => {
+  const g = drawing(["a", "b", "c"], {}, 4);
+  const late = others(g)[0]!;
+  run(g, 30 * 60);
+  assert.equal(g.guess(late, "zzzz not it"), "wrong");
+  // play out this turn and the reveal, then the next artist picks
+  for (let i = 0; i < 200 * 60 && g.phase !== "pick"; i++) g.step();
+  assert.equal(g.phase, "pick");
+  assert.ok(g.pick(g.artist!, 0));
+  const guesser = g.artist === late ? others(g)[0]! : late;
+  run(g, 60); // one second into the new turn
+  assert.equal(g.guess(guesser, g.word!.w.toUpperCase()), "right");
+});
