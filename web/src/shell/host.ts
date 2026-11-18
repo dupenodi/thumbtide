@@ -52,7 +52,7 @@ function settingsFor(game: string): Settings {
 const settingsListeners = new Set<(s: Settings) => void>();
 
 // ------------------------------------------------------------------ state every phone sees
-const state: ShellState = { vip: null, game: "lobby", paused: false, canPause: false, settings: {}, locked: false, selected: null, players: [] };
+const state: ShellState = { vip: null, game: "lobby", paused: false, pausedBy: null, canPause: false, settings: {}, locked: false, selected: null, players: [] };
 shell.state = state;
 
 function publish() {
@@ -83,7 +83,7 @@ async function mount(id: string) {
   // Clear the previous game's sticky state so phones don't render stale screens.
   host.setShared(null);
   for (const p of host.players.values()) host.setOwn(p.id, null);
-  Object.assign(state, { game: def.id, paused: false, canPause: false, selected: null, locked: def.id === "lobby" ? false : state.locked });
+  Object.assign(state, { game: def.id, paused: false, pausedBy: null, canPause: false, selected: null, locked: def.id === "lobby" ? false : state.locked });
   pauseMenu.close();
   publish();
 
@@ -106,16 +106,18 @@ async function mount(id: string) {
 shell.mount = mount;
 
 // ------------------------------------------------------------------ host commands
-function pause() {
+function pause(by: string | null = null) {
   if (!handle?.pause || state.paused) return;
   handle.pause();
   state.paused = true;
+  state.pausedBy = by;
   publish();
 }
 function resume() {
   if (!handle?.resume || !state.paused) return;
   handle.resume();
   state.paused = false;
+  state.pausedBy = null;
   publish();
 }
 function restart() {
@@ -123,6 +125,7 @@ function restart() {
     handle.restart();
     if (state.paused) handle.resume?.();
     state.paused = false;
+    state.pausedBy = null;
     publish();
   } else void mount(mounted);
 }
@@ -164,7 +167,7 @@ host.on("message", (p, data) => {
       void mount("lobby");
       break;
     case "pause":
-      pause();
+      pause(p.id);
       break;
     case "resume":
       resume();

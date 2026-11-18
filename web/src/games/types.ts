@@ -38,6 +38,8 @@ export interface ShellState {
   vip: string | null;
   game: string;
   paused: boolean;
+  /** Who paused (a player's id), or null when the TV did or nobody is known. */
+  pausedBy: string | null;
   /** The current game supports pause/restart. */
   canPause: boolean;
   /** Settings of the current game, or of the game the VIP is looking at in the lobby. */
