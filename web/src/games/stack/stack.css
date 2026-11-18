@@ -187,4 +187,7 @@
   .sta-status { font-size: 22px; }
   .sta-top { grid-template: "info next again" auto / 1fr auto auto; align-items: center; }
   .sta-again { padding: 0 22px; }
+  /* Left / Right with Down under them, then Turn and Drop side by side: each button stays tall enough for icon and label */
+  .sta-pad .gp-btns { grid-template: "l r rot drop" 1fr "dn dn rot drop" 0.42fr / 1fr 1fr 0.9fr 0.9fr; }
+  .sta-pad.gp-swap .gp-btns { grid-template: "drop rot l r" 1fr "drop rot dn dn" 0.42fr / 0.9fr 0.9fr 1fr 1fr; }
 }
