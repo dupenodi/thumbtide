@@ -799,13 +799,18 @@ const mount: HostMount = (ctx) => {
         fx.burst(e.x, e.y, 14, 300, "#cfd6e4", 2);
         fx.text(e.x, e.y - 16, "SHIELD BROKEN", "#cfd6e4", 16);
       } else if (e.type === "blast") {
-        sound?.shot(true);
+        sound?.shot("blast");
         fx.burst(e.x, e.y, lite ? 18 : 36, 380, "#ffb347", 3);
         fx.burst(e.x, e.y, lite ? 8 : 16, 200, "#fff3c4", 2);
         fx.shake = Math.min(12, fx.shake + 7);
       } else if (e.type === "shot") {
-        sound?.shot(e.ball);
-        if (e.ball) fx.shake = Math.min(12, fx.shake + 3);
+        sound?.shot(e.kind);
+        // a bullet stays as it was (no shake, no flash); the heavier guns shake with their kick (mortar 300 → 3,
+        // heavy mortar 320 → 3.2; a rocket pushes nothing but gets a small one) and flash at the muzzle
+        if (e.kind !== "bullet") {
+          fx.shake = Math.min(12, fx.shake + Math.max(1.5, e.kick / 100));
+          fx.burst(e.x, e.y, lite ? 4 : 8, e.kind === "rocket" ? 160 : 260, e.kind === "rocket" ? "#ffb347" : "#fff3c4", 2);
+        }
       } else if (e.type === "ping") {
         // a shot spent on a weapon, plate or gun: a spark (and a clank for a heavy one); the bullets of a burst
         // share the clash cooldown, so a stream of them stays cheap

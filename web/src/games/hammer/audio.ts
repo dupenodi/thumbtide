@@ -10,6 +10,7 @@
 // The synth groove plays if the file fails.
 // Slow motion closes a low-pass filter over the effects, so big hits sound heavy and muffled.
 
+import type { ShotKind } from "./sim.ts";
 import type { Material } from "./weapons.ts";
 
 const SOUND_URLS = import.meta.glob("./sounds/*.ogg", { query: "?url", import: "default", eager: true }) as Record<string, string>;
@@ -41,8 +42,8 @@ export interface GameAudio {
   pickup(): void;
   /** Coins: a spill on a hard hit (n coins) or one picked up (n 0). */
   coin(n: number): void;
-  /** A gunshot (bullet) or a mortar blast (ball). */
-  shot(ball: boolean): void;
+  /** A gun firing (sim.ts ShotKind), or a rocket's blast. */
+  shot(kind: ShotKind | "blast"): void;
   ko(): void;
   sting(kind: Sting, n?: number): void;
   /** Per frame: average machine speed and fastest weapon speed (0–1 each), and the time warp (1 normal, 0.3 slow). */
@@ -411,17 +412,28 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
       // a short jingle: a few bright pings
       for (let i = 0; i < Math.min(5, 1 + Math.floor(n / 4)); i++) tone("triangle", 1500 + Math.random() * 1500, 1400 + Math.random() * 1400, t + i * 0.035, 0.08, 0.05);
     },
-    shot(ball) {
+    shot(kind) {
       // an arquebus fires 10 a second: at most one crack per 60 ms
       if (!allow(0.06)) return;
       const t = now();
-      if (play(ball ? "explo_02" : "shoot_03", ball ? 0.8 : 0.45, ball ? 1 : 0.95 + Math.random() * 0.15, t)) return;
-      if (ball) {
-        burst(t, "lowpass", 900, 0.7, 0.8, 0.45, sfx, 150);
-        tone("sine", 110, 40, t, 0.7, 0.35);
-      } else {
+      // each gun its own voice (before 2026-11-18 the mortars fired with the rocket's blast and a rocket launched
+      // with the arquebus crack): bullet the crack; scatter a deep bang; cannon a low boom; rocket a soft pop and a
+      // rush; blast the explosion
+      if (kind === "bullet") {
+        if (play("shoot_03", 0.45, 0.95 + Math.random() * 0.15, t)) return;
         burst(t, "bandpass", 2600, 0.9, 0.35, 0.07);
         tone("square", 300, 90, t, 0.06, 0.05);
+      } else if (kind === "scatter") {
+        if (play("shoot_03", 0.85, 0.68 + Math.random() * 0.06, t)) return;
+        burst(t, "lowpass", 1800, 0.7, 0.7, 0.18, sfx, 400);
+        tone("square", 180, 60, t, 0.12, 0.08);
+      } else if (kind === "rocket") {
+        play("shoot_03", 0.3, 0.5, t);
+        burst(t, "bandpass", 700, 1.2, 0.35, 0.35, sfx, 2400);
+      } else {
+        if (play("explo_02", kind === "cannon" ? 0.9 : 0.8, kind === "cannon" ? 0.72 : 1, t)) return;
+        burst(t, "lowpass", 900, 0.7, 0.8, 0.45, sfx, 150);
+        tone("sine", 110, 40, t, 0.7, 0.35);
       }
     },
     ko() {

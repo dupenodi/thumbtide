@@ -847,13 +847,14 @@ test("guns: mortar balls land with a push, damage and stun on a machine, then th
     for (const e of a.events) if (e.type === "hit" && e.victim === foe) (dmg += e.dmg), hits++;
     a.events.length = 0;
   }
-  assert.ok(hits >= 2, `balls that hit: ${hits}`);
+  // the balls of a blast that land together are one hit (one number, one sound)
+  assert.ok(hits >= 1 && hits <= 2, `hits: ${hits}`);
   assert.ok(dmg >= 8, `damage ${dmg}`);
   // the foe is knocked away along the barrel
   assert.ok(pushed > 100, `push ${pushed.toFixed(0)} px/s`);
   assert.ok(stun > 0.1, `a close blast stuns: ${stun.toFixed(2)}`);
   // the balls that hit are gone (they don't bounce around the foe)
-  assert.ok(a.shots.length <= 5 - hits, `shots left ${a.shots.length}`);
+  assert.ok(a.shots.length <= 3, `shots left ${a.shots.length}`);
 });
 
 test("guns: a shot on a weapon pushes it and is spent; it does no damage to the machine", () => {
@@ -1030,7 +1031,7 @@ test("guns: at health_low a shot is the lethal hit (the exe's bullet does about 
   assert.ok(f2.hp < MACHINE.healthLow, `hp after the blast ${f2.hp}`);
 });
 
-test("guns: a rocket bounces off a held weapon (no blast; the exe's rocket takes no damage from it) and flies on", () => {
+test("guns: a rocket bounces off a held weapon (no blast; the exe's rocket takes no damage from it) and drives in again along its heading", () => {
   const a = arena();
   const m = a.add({ id: 1, name: "A", color: "#f00", weapon: "axe", sidearm: "launcher", x: 400, y: 330 });
   const foe = a.add({ id: 2, name: "B", color: "#00f", weapon: "hammer", x: 700, y: 100 });
@@ -1054,12 +1055,12 @@ test("guns: a rocket bounces off a held weapon (no blast; the exe's rocket takes
       if (e.type === "blast" && blastAt < 0) blastAt = i;
     }
     a.events.length = 0;
-    // two steps after the bounce: still flying, and back up to speed (it may then hit the hull and go off)
-    if (pingAt >= 0 && i === pingAt + 2 && a.shots.length) after = Math.hypot(a.shots[0]!.body.vx, a.shots[0]!.body.vy);
+    // after the bounce its thrust drives it along its launch heading again (the exe: thrust along the body's heading)
+    if (pingAt >= 0 && i > pingAt && i <= pingAt + 15 && a.shots.length) after = Math.max(after, a.shots[0]!.body.vx * ux + a.shots[0]!.body.vy * uy);
   }
   assert.ok(pingAt >= 0, "the rocket met the head");
   assert.ok(blastAt < 0 || blastAt > pingAt + 2, `it went off on the weapon (ping ${pingAt}, blast ${blastAt})`);
-  assert.ok(after > 300, `speed after the bounce ${after.toFixed(0)}`);
+  assert.ok(after > 300, `speed along the heading after the bounce ${after.toFixed(0)}`);
 });
 
 // ---------------------------------------------------------------- weapon faces (WEAPON_SHAPES.md)
