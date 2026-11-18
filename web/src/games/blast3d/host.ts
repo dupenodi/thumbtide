@@ -51,7 +51,7 @@ const mount: HostMount = (ctx) => {
   // ------------------------------------------------------------ seats
   const humans = () => [...game.seats.values()].filter((s) => !s.bot).length;
   const wantedBots = () => Math.min(MAX_SEATS - humans(), Math.max(Number(ctx.settings().bots) || 0, 2 - humans(), (num("fighters") ?? 0) - humans()));
-  // during a round bots are only added: taking one away mid-round could end it. Extras go at the round result.
+  // during a round bots are only added: taking one away mid-round could end it. Extras go when the next round counts in.
   const fillBots = () => bots.setCount(game.phase === "count" || game.phase === "play" ? Math.max(wantedBots(), bots.count) : wantedBots());
   const join = (p: HostPlayer<B3dGame>) => {
     if (game.seats.has(p.id)) return;
@@ -156,6 +156,8 @@ const mount: HostMount = (ctx) => {
     switch (e.type) {
       case "phase":
         if (e.phase === "count") {
+          // extra bots leave here, not at the round result: the result still needs the winner's seat
+          bots.setCount(wantedBots());
           view.clear();
           for (const p of host.players.values()) if (game.seats.get(p.id)?.inRound) tell(p.id, "go");
         }
@@ -176,7 +178,6 @@ const mount: HostMount = (ctx) => {
         dirty = true;
         break;
       case "round":
-        fillBots();
         hud.roundResult(game, e.winner ? game.seats.get(e.winner) ?? null : null);
         dirty = true;
         break;
@@ -267,7 +268,7 @@ const mount: HostMount = (ctx) => {
         else hud.clear();
       } else if (game.phase === "match" && humans() === 0 && game.t > 60 * 12) restart(); // a demo loop
       // the drawing buffer's scale: after the start, if a tenth of 4 s of frames ran over 24 ms, drop it once
-      if (fixedRes === null && view.res > 0.5 && now - startedAt > 6000) {
+      if (fixedRes === null && view.res > 0.5 && now - startedAt > 6000 && game.phase === "play") {
         judged++;
         if (dt > 0.024) slow++;
         if (judged >= 240) {
