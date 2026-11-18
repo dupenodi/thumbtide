@@ -152,6 +152,12 @@ export interface Face {
    * side test reads the normal (0x512ff0), so the two default faces use it: a curved edge stays one side all along.
    */
   side?: 1 | -1;
+  /**
+   * Only when the contact normal (from the part out) points along the part's local +x at least this much (its local
+   * x component): a point that meets the other body tip-first, along the blade (a sword's stab). A blow across the
+   * blade that happens to touch with the tip corner first is not one.
+   */
+  nx0?: number;
   /** m_sharpness of this face (× the side value). */
   sharp: number;
   /** m_bladeable of this edge (blade; also a spike's edge when it hits side-on). */
@@ -528,6 +534,41 @@ const SEGMENT_FACES: Face[] = [
 ];
 /** A grip or hand that collides (the morning star's hand, layer 8 in the exe): it only pushes. */
 const GRIP_FACES: Face[] = [{ kind: "shaft", sharp: 1 }];
+
+/** A sword's stab face reaches this far in from its point (px), and the contact must be within about 37° of the blade's axis. */
+const STAB_REACH = 6;
+const STAB_ON = 0.8;
+/**
+ * A sword's faces (OURS; the user, 2026-11-18: "swords can stab or slice, slicing should work better from edged side
+ * and 'spine' does blunt damage instead"). In order:
+ * - the point, met along the blade (STAB_ON): a stab, a spike with no hook (pierce: sharpness × tuning.pierce, no cut);
+ *   met at a glance it still cuts;
+ * - the edge, on +y (where Hammerfight's sprites draw it, see edgeAt): a slice, the cut grows with the slide;
+ * - the back: a one-edged blade's spine is blunt (`spine`: its sharpness; it knocks back and doesn't cut), a
+ *   two-edged blade cuts there too (`edge`: the exe's bladeable_u, at `sharp`).
+ * The exe's side values stay on the part (sharpness, bladeable, *_u); these faces are what the hit uses.
+ */
+function swordFaces(mesh: number[], sharp: number, back: { spine: number } | { edge: number; sharp?: number }): Face[] {
+  let tip = -Infinity;
+  for (let i = 0; i < mesh.length; i += 2) tip = Math.max(tip, mesh[i]!);
+  return [
+    { kind: "spike", x0: tip - STAB_REACH, nx0: STAB_ON, sharp, blade: 1 },
+    { kind: "blade", side: 1, sharp, blade: 1 },
+    "spine" in back ? { kind: "blunt", sharp: back.spine } : { kind: "blade", sharp: back.sharp ?? sharp, blade: back.edge },
+  ];
+}
+/** A sword's part with its faces (swordFaces at the part's own sharpness). */
+const sword = <P extends { mesh: number[]; sharpness: number }>(p: P, back: { spine: number } | { edge: number; sharp?: number }): P & { faces: Face[] } => ({
+  ...p,
+  faces: swordFaces(p.mesh, p.sharpness, back),
+});
+// Sword meshes used twice (the twin set has a palash and a claw).
+const PALASH = hull([-25.08, 12.54, -5.13, 11.97, 13.11, 6.27, 26.22, -5.13, 18.24, -12.54, -26.22, 2.85]);
+const CLAW = hull([-18.564, 2.757, 18.564, -7.772, 10.964, 2.551, -17.685, 7.772]);
+/** palash: one edge; the exe's back is sharpness × 0.5 (1.5). */
+const PALASH_FACES = swordFaces(PALASH, 3, { spine: 1.5 });
+/** claw: one edge (+y, the outer curve); the exe's back still cuts at 0.6, here a spine of sharpness × 0.5. */
+const CLAW_FACES = swordFaces(CLAW, 6, { spine: 3 });
 /** cyclon_arm: the wide braced frame with a point at +x (the box was 50 × 10). */
 const CYCLONE_ARM = [-27, -7.5, -19.5, -12, 8.5, -12, 25, -2.5, 25, 2.5, 8.5, 12, -19.5, 12, -27, 7.5];
 
@@ -716,7 +757,8 @@ const list: WeaponSpec[] = [
     blurb: "Light bodyguard's sword. Quick.",
     rod: 47,
     sby: 2,
-    part: { mesh: hull([-20.1, 7.8, 5.1, 7.2, 18.9, 1.8, 20.7, -7.8, -20.7, -1.8]), density: 40, sharpness: 3.4, bladeable: 1, bladeableU: 0.6, look: "blade", material: "steel" },
+    // one edge (+y); the clipped point sits on the back. The exe's back cuts at 0.6: here a spine (sharpness × 0.5)
+    part: sword({ mesh: hull([-20.1, 7.8, 5.1, 7.2, 18.9, 1.8, 20.7, -7.8, -20.7, -1.8]), density: 40, sharpness: 3.4, bladeable: 1, bladeableU: 0.6, look: "blade", material: "steel" }, { spine: 1.7 }),
   }),
   // katar.seria: rod 38 (shiftB_y 1), density 40, sharpness 3.4, bladeable_u 0.6
   rodWeapon("sword", "sword", {
@@ -725,15 +767,19 @@ const list: WeaponSpec[] = [
     blurb: "Fast. Slashes cut deep.",
     rod: 38,
     sby: 1,
-    part: {
-      mesh: [23.8303, 2.22223, 4.53768, 7.79758, -19.1727, 9.89369, -18.8112, -3.08128, 13.3968, -10.4543],
-      density: 40,
-      sharpness: 3.4,
-      bladeable: 1,
-      bladeableU: 0.6,
-      look: "blade",
-      material: "steel",
-    },
+    // a katar is two-edged: the back edge cuts at the exe's 0.6
+    part: sword(
+      {
+        mesh: [23.8303, 2.22223, 4.53768, 7.79758, -19.1727, 9.89369, -18.8112, -3.08128, 13.3968, -10.4543],
+        density: 40,
+        sharpness: 3.4,
+        bladeable: 1,
+        bladeableU: 0.6,
+        look: "blade",
+        material: "steel",
+      },
+      { edge: 0.6 },
+    ),
   }),
   // hisayan.seria: rod 69 (shiftB_y 4, necess 3), density 45, sharpness 3.2 (back 0.5), bladeable_u 0.5
   rodWeapon("hisaian", "sword", {
@@ -743,16 +789,20 @@ const list: WeaponSpec[] = [
     rod: 69,
     sby: 4,
     necess: 3,
-    part: {
-      mesh: hull([-20.7, 12.3, -0.9, 10.5, 12.9, 4.5, 20.7, -5.1, 11.7, -12.3, -19.5, 4.5]),
-      density: 45,
-      sharpness: 3.2,
-      sharpnessU: 1.6,
-      bladeable: 1,
-      bladeableU: 0.5,
-      look: "blade",
-      material: "steel",
-    },
+    // one edge, on the outer (+y) curve; the back is a spine at the exe's back sharpness
+    part: sword(
+      {
+        mesh: hull([-20.7, 12.3, -0.9, 10.5, 12.9, 4.5, 20.7, -5.1, 11.7, -12.3, -19.5, 4.5]),
+        density: 45,
+        sharpness: 3.2,
+        sharpnessU: 1.6,
+        bladeable: 1,
+        bladeableU: 0.5,
+        look: "blade",
+        material: "steel",
+      },
+      { spine: 1.6 },
+    ),
   }),
   // ---- more swords from Objects/Weapons (blade only: the item factory sets their rods and side values,
   // RE_WEAPONS.md §1)
@@ -764,7 +814,7 @@ const list: WeaponSpec[] = [
     blurb: "Tiny hooked blade. Sharpest edge.",
     rod: 42,
     sby: 3,
-    part: { mesh: hull([-18.564, 2.757, 18.564, -7.772, 10.964, 2.551, -17.685, 7.772]), density: 35, sharpness: 6, bladeable: 1, bladeableU: 0.6, look: "blade", material: "steel" },
+    part: { mesh: CLAW, density: 35, sharpness: 6, bladeable: 1, bladeableU: 0.6, look: "blade", material: "steel", faces: CLAW_FACES },
   }),
   // blade_severn.seria: 55 × 13, density 30; factory (id 232) sharpness 3.5 (back 0.3), bladeable_u 0, rod 42
   rodWeapon("severn", "sword", {
@@ -772,7 +822,8 @@ const list: WeaponSpec[] = [
     label: "Severn",
     blurb: "Long, thin and light.",
     rod: 42,
-    part: { mesh: hull([-27.429, 6.658, -26.361, -6.658, 27.429, -6.488, 15.865, 5.002]), density: 30, sharpness: 3.5, sharpnessU: 1.05, bladeable: 1, bladeableU: 0, look: "blade", material: "steel" },
+    // one edge; the engraved back is a spine (the exe: back sharpness × 0.3, no edge)
+    part: sword({ mesh: hull([-27.429, 6.658, -26.361, -6.658, 27.429, -6.488, 15.865, 5.002]), density: 30, sharpness: 3.5, sharpnessU: 1.05, bladeable: 1, bladeableU: 0, look: "blade", material: "steel" }, { spine: 1.05 }),
   }),
   // blade_innata.seria: 60 × 13, density 30; factory (id 237) sharpness 4.5, bladeable_u 0.7, rod 46
   rodWeapon("innata", "sword", {
@@ -780,7 +831,8 @@ const list: WeaponSpec[] = [
     label: "Innata",
     blurb: "The longest blade. Very sharp.",
     rod: 46,
-    part: { mesh: hull([-29.841, 6.314, 5.79, 5.547, 22.692, 0.322, 29.841, -6.314, -29.154, 0.628]), density: 30, sharpness: 4.5, bladeable: 1, bladeableU: 0.7, look: "blade", material: "steel" },
+    // one edge; the engraved back is a spine (the exe's back cuts at 0.7; here sharpness × 0.5)
+    part: sword({ mesh: hull([-29.841, 6.314, 5.79, 5.547, 22.692, 0.322, 29.841, -6.314, -29.154, 0.628]), density: 30, sharpness: 4.5, bladeable: 1, bladeableU: 0.7, look: "blade", material: "steel" }, { spine: 2.25 }),
   }),
   // broad_blade (id 229): 44 × 17, density 42, sharpness 2.7, rod 49 (RE_WEAPONS.md §1; pishal.seria has 43.2)
   rodWeapon("broadblade", "sword", {
@@ -788,7 +840,8 @@ const list: WeaponSpec[] = [
     label: "Broad blade",
     blurb: "Straight and heavy. Cuts both ways.",
     rod: 49,
-    part: { mesh: box(21.997, 8.499), density: 42, sharpness: 2.7, bladeable: 1, look: "blade", material: "steel" },
+    // two-edged, round point (it still stabs)
+    part: sword({ mesh: box(21.997, 8.499), density: 42, sharpness: 2.7, bladeable: 1, look: "blade", material: "steel" }, { edge: 1 }),
   }),
   // blade_saian.seria: m_fDensity 0 with m_fDensity2 40 (we use 40); factory (id 230) sharpness 5 (back 0.5),
   // bladeable_u 0.5, rod 43, m_jrad_y 2
@@ -798,7 +851,8 @@ const list: WeaponSpec[] = [
     blurb: "Curved and keen.",
     rod: 43,
     sby: 2,
-    part: { mesh: hull([-21.997, 8.483, -6.36, 7.952, 7.488, 2.186, 23.323, -7.424, 11.263, -12.723, -21.534, 1.791]), density: 40, sharpness: 5, sharpnessU: 2.5, bladeable: 1, bladeableU: 0.5, look: "blade", material: "steel" },
+    // one edge, on the outer (+y) curve; the back is a spine
+    part: sword({ mesh: hull([-21.997, 8.483, -6.36, 7.952, 7.488, 2.186, 23.323, -7.424, 11.263, -12.723, -21.534, 1.791]), density: 40, sharpness: 5, sharpnessU: 2.5, bladeable: 1, bladeableU: 0.5, look: "blade", material: "steel" }, { spine: 2.5 }),
   }),
   // blade_silver.seria: 57 × 21, density 45; factory (id 234) sharpness 3.5 (back 0.5), bladeable_u 0.5, rod 48,
   // m_jrad_y 3
@@ -808,7 +862,8 @@ const list: WeaponSpec[] = [
     blurb: "A noble's sword. Long and heavy.",
     rod: 48,
     sby: 3,
-    part: { mesh: hull([-26.878, -0.3, -26.975, 8.339, -6.806, 7.605, 15.369, -0.788, 29.887, -11.186, 9.739, -12.372]), density: 45, sharpness: 3.5, sharpnessU: 1.75, bladeable: 1, bladeableU: 0.5, look: "blade", material: "silver" },
+    // one edge, on the outer (+y) curve; the back is a spine
+    part: sword({ mesh: hull([-26.878, -0.3, -26.975, 8.339, -6.806, 7.605, 15.369, -0.788, 29.887, -11.186, 9.739, -12.372]), density: 45, sharpness: 3.5, sharpnessU: 1.75, bladeable: 1, bladeableU: 0.5, look: "blade", material: "silver" }, { spine: 1.75 }),
   }),
   // blade_palash.seria (mesh ×0.95, as the factory scales it; area ≈ 713): density 45, sharpness 3 (back 0.5),
   // bladeable_u 0.5; factory (id 233) rod 40, m_jrad_y 3
@@ -819,7 +874,7 @@ const list: WeaponSpec[] = [
     rod: 40,
     sby: 3,
     part: {
-      mesh: hull([-25.08, 12.54, -5.13, 11.97, 13.11, 6.27, 26.22, -5.13, 18.24, -12.54, -26.22, 2.85]),
+      mesh: PALASH,
       density: 45,
       sharpness: 3,
       sharpnessU: 1.5,
@@ -827,6 +882,7 @@ const list: WeaponSpec[] = [
       bladeableU: 0.5,
       look: "blade",
       material: "steel",
+      faces: PALASH_FACES,
     },
   }),
 
@@ -843,7 +899,7 @@ const list: WeaponSpec[] = [
     parts: [
       {
         key: "head",
-        mesh: hull([-25.08, 12.54, -5.13, 11.97, 13.11, 6.27, 26.22, -5.13, 18.24, -12.54, -26.22, 2.85]),
+        mesh: PALASH,
         density: 45,
         sharpness: 3,
         sharpnessU: 1.5,
@@ -853,8 +909,9 @@ const list: WeaponSpec[] = [
         look: "blade",
         material: "steel",
         rod: true,
+        faces: PALASH_FACES,
       },
-      { key: "back", mesh: hull([-18.564, 2.757, 18.564, -7.772, 10.964, 2.551, -17.685, 7.772]), density: 15.3818, sharpness: 6, bladeable: 1, bladeableU: 0.6, hang: -36.953, angle: -Math.PI / 2, look: "blade", material: "steel", rod: true },
+      { key: "back", mesh: CLAW, density: 15.3818, sharpness: 6, bladeable: 1, bladeableU: 0.6, hang: -36.953, angle: -Math.PI / 2, look: "blade", material: "steel", rod: true, faces: CLAW_FACES },
     ],
     joints: [
       { a: "hull", b: "head", type: 2, radius: 35, sby: 3, necess: 5 },
@@ -969,7 +1026,8 @@ const list: WeaponSpec[] = [
     label: "Arjuna sword",
     blurb: "A champion's gold sword.",
     rod: 49,
-    part: { mesh: box(22, 7), density: 35, sharpness: 3.5, bladeable: 1, look: "blade", material: "gold" },
+    // two-edged, pointed
+    part: sword({ mesh: box(22, 7), density: 35, sharpness: 3.5, bladeable: 1, look: "blade", material: "gold" }, { edge: 1 }),
   }),
   // mace_sharp (id 216): 4 chain_large links (the first 12 × 6.6), 3 spiked links (15 × 20, 16 × 21, 17 × 22,
   // sharpness 3 = Body default 1 + 2, bladeable 1; RE_WEAPONS.md §1), handle 31 × 9, ball an octagon 30 × 30,
@@ -1158,7 +1216,8 @@ const list: WeaponSpec[] = [
     label: "Imperia blade",
     blurb: "Long and thin. One keen edge.",
     rod: 47,
-    part: { mesh: box(28.5, 5), density: 35, sharpness: 4.2, sharpnessU: 1.26, bladeable: 1, bladeableU: 0, look: "blade", material: "steel" },
+    // one edge; the engraved back is a spine
+    part: sword({ mesh: box(28.5, 5), density: 35, sharpness: 4.2, sharpnessU: 1.26, bladeable: 1, bladeableU: 0, look: "blade", material: "steel" }, { spine: 1.26 }),
   }),
   // liberia_blade (235): box 51 × 15, density 30, sharpness 3.5, bladeable 1, rod 43
   rodWeapon("liberia", "sword", {
@@ -1167,7 +1226,8 @@ const list: WeaponSpec[] = [
     blurb: "A broad, even sword.",
     rod: 43,
     // the drawn point reaches x 30.5 (LIBERIA, same mass)
-    part: { mesh: LIBERIA, density: sameMass(LIBERIA, box(25.5, 7.5), 30), sharpness: 3.5, bladeable: 1, look: "blade", material: "steel" },
+    // two-edged, pointed
+    part: sword({ mesh: LIBERIA, density: sameMass(LIBERIA, box(25.5, 7.5), 30), sharpness: 3.5, bladeable: 1, look: "blade", material: "steel" }, { edge: 1 }),
   }),
   // sun_blade (239): box 48 × 20, density 30, sharpness 3.5, bladeable 1, rod 51
   rodWeapon("sunblade", "sword", {
@@ -1175,7 +1235,8 @@ const list: WeaponSpec[] = [
     label: "Sun blade",
     blurb: "A wide blade on a long rod.",
     rod: 51,
-    part: { mesh: box(24, 10), density: 30, sharpness: 3.5, bladeable: 1, look: "blade", material: "gold" },
+    // two-edged, round point (it still stabs)
+    part: sword({ mesh: box(24, 10), density: 30, sharpness: 3.5, bladeable: 1, look: "blade", material: "gold" }, { edge: 1 }),
   }),
   // cyclon_blade (245): a 10-gon disc 29 × 29 (density 20, sharpness 3) on a short rod (12), and cyclon_arm (box
   // 50 × 10, density 20, sharpness 1: a Body-class part keeps the default; RE_WEAPONS.md §1) hung from the disc by a

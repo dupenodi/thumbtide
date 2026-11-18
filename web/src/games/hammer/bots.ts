@@ -12,7 +12,7 @@
 import { STICK_DEFAULTS, type StickTune, stickPush } from "./arenas.ts";
 import type { Body } from "./engine.ts";
 import { aimable, type Arena, EDGE_M, edgeTop, type Machine, STEP } from "./sim.ts";
-import { type GunKind, type PlateKind, WEAPON_KINDS, type WeaponKind } from "./weapons.ts";
+import { type Face, type GunKind, type PlateKind, WEAPON_KINDS, type WeaponKind } from "./weapons.ts";
 
 export type BotMode = "idle" | "wander" | "fight";
 
@@ -235,6 +235,18 @@ function headSpin(m: Machine): { w: number; phase: number; r: number } {
   const ry = s.y - h.y;
   const r2 = rx * rx + ry * ry || 1;
   return { w: (rx * (s.vy - h.vy) - ry * (s.vx - h.vx)) / r2, phase: Math.atan2(ry, rx), r: Math.sqrt(r2) };
+}
+
+/**
+ * A striker with one cutting edge and a blunt back (the axes, the one-edged swords, WEAPON_SHAPES.md): 1, the spin
+ * that leads with the edge (its +y face: a part on its rod turning the positive way moves along its local +y);
+ * otherwise 0 (either way will do).
+ */
+function edgeSpin(m: Machine): number {
+  const f = (m.striker.data as { faces?: readonly Face[] } | null)?.faces;
+  if (!f || f[f.length - 1]!.kind !== "blunt") return 0;
+  for (const x of f) if (x.kind === "blade" && x.side === 1) return 1;
+  return 0;
 }
 
 /** Angle from a to b going in the direction of `sign` (0…2π). */
@@ -563,8 +575,10 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
   const head = headSpin(m);
   const s = c.striker;
   const vh = Math.hypot(s.vx, s.vy);
-  // keep the spin's sign unless the head is nearly still
+  // keep the spin's sign unless the head is nearly still; from rest, a one-edged weapon winds up edge first (its
+  // back is blunt)
   if (Math.abs(head.w) > 1.5) bot.spin = Math.sign(head.w);
+  else if (edgeSpin(m)) bot.spin = edgeSpin(m);
 
   // ---- threat: the soonest enemy sweep over my hull
   let threat: Machine | null = null;

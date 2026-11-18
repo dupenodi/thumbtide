@@ -96,7 +96,7 @@ export function faceAt(faces: readonly Face[], b: Body, nx: number, ny: number):
   featureOut.y = fy;
   const side = lny >= 0 ? 1 : -1;
   for (const f of faces) {
-    if ((f.side === undefined || f.side === side) && (f.x0 === undefined || fx >= f.x0) && (f.x1 === undefined || fx <= f.x1) && (f.y0 === undefined || fy >= f.y0) && (f.y1 === undefined || fy <= f.y1)) return f;
+    if ((f.side === undefined || f.side === side) && (f.nx0 === undefined || lnx >= f.nx0) && (f.x0 === undefined || fx >= f.x0) && (f.x1 === undefined || fx <= f.x1) && (f.y0 === undefined || fy >= f.y0) && (f.y1 === undefined || fy <= f.y1)) return f;
   }
   return faces[faces.length - 1]!;
 }

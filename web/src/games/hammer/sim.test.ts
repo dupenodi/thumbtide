@@ -1122,7 +1122,10 @@ test("faces: meshes redrawn to the art keep each part's mass; every face list en
       const f = facesOf(p);
       const last = f[f.length - 1]!;
       assert.ok(last.x0 === undefined && last.x1 === undefined && last.y0 === undefined && last.y1 === undefined, `${k}.${p.key}: no catch-all face`);
-      for (const x of f) if (x.kind === "spike") assert.ok((x.spike ?? 0) > 0, `${k}.${p.key}: a spike face with no spike value`);
+      // a point that hooks needs its pierce power (a sword's stab has none: it never hooks)
+      for (const x of f) if (x.kind === "spike" && x.hook) assert.ok((x.spike ?? 0) > 0, `${k}.${p.key}: a hooking spike face with no spike value`);
+      // every sword stabs, cuts with its edge, and has a spine or a second edge
+      if (WEAPONS[k].cls === "sword" && p.look === "blade") assert.deepEqual(f.map((x) => x.kind).slice(0, 2), ["spike", "blade"], `${k}.${p.key}: not a sword's faces`);
     }
   }
 });
@@ -1258,6 +1261,105 @@ test("blades: an edge cuts more the faster it slides across; head-on or with no 
   const f = facesOf(WEAPONS.axe.parts[0]!);
   assert.equal(faceAt(f, b, 0, -1).blade, 0);
   assert.equal(faceAt(f, b, 0, 1).blade, 1);
+});
+
+test("swords: the point met along the blade stabs; the edge slices; a one-edged blade's back is a blunt spine", () => {
+  const at = (k: WeaponKind, nx: number, ny: number, a: number) => {
+    const p = WEAPONS[k].parts[0]!;
+    const b = new Body(p.mesh, p.density).place(50, 20, a);
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    return faceAt(facesOf(p), b, nx * c - ny * s, nx * s + ny * c).kind;
+  };
+  for (const a of [0, 1, Math.PI / 2, -2.5]) {
+    for (const k of ["severn", "kathib", "palash", "imperia"] as const) {
+      // tip-first along the blade, and up to about 37° off it: a stab
+      assert.equal(at(k, 1, 0, a), "spike", `${k}: along the blade`);
+      assert.equal(at(k, Math.cos(0.5), -Math.sin(0.5), a), "spike", `${k}: 29° off the blade`);
+      // the edge (+y) and the back (−y)
+      assert.equal(at(k, 0, 1, a), "blade", `${k}: edge`);
+      assert.equal(at(k, 0, -1, a), "blunt", `${k}: spine`);
+      // a chop across the blade with the back leads with the clipped point's corner: not a stab
+      assert.equal(at(k, 0.3, -0.95, a), "blunt", `${k}: a chop by the point's corner`);
+    }
+    // two-edged: both edges cut, the point stabs
+    for (const k of ["broadblade", "liberia", "sword"] as const) {
+      assert.equal(at(k, 1, 0, a), "spike", `${k}: along the blade`);
+      assert.equal(at(k, 0, 1, a), "blade", `${k}: edge`);
+      assert.equal(at(k, 0, -1, a), "blade", `${k}: second edge`);
+    }
+  }
+});
+
+/**
+ * `weapon`'s blade (pointing +x) thrown at b's hull at velocity (vx, vy), placed by `where`: "point" (tip first, from
+ * the left), "edge" (from above, +y edge down), "spine" (from below, the back up). Steps until it lands.
+ */
+function swordHit(weapon: WeaponKind, where: "point" | "edge" | "spine", vx: number, vy: number, tune?: (t: Tuning) => void) {
+  const ar = arena();
+  ar.tuning.slomo = 0;
+  tune?.(ar.tuning);
+  const a = ar.add({ id: 0, name: "a", color: "#f00", weapon, x: 200, y: 300 });
+  const b = ar.add({ id: 1, name: "b", color: "#00f", weapon: "hammer", x: 500, y: 300 });
+  (ar as unknown as Hidden).destroy(b);
+  const head = a.striker;
+  const p = WEAPONS[weapon].parts[0]!;
+  const rod = WEAPONS[weapon].joints[0]!.radius;
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (let i = 0; i < p.mesh.length; i += 2) {
+    x0 = Math.min(x0, p.mesh[i]!);
+    x1 = Math.max(x1, p.mesh[i]!);
+    y0 = Math.min(y0, p.mesh[i + 1]!);
+    y1 = Math.max(y1, p.mesh[i + 1]!);
+  }
+  // b's hull is 25 × 33
+  const hx = where === "point" ? 500 - 12.5 - 3 - x1 : 500 - (x0 + x1) / 2;
+  const hy = where === "point" ? 300 : where === "edge" ? 300 - 16.5 - 3 - y1 : 300 + 16.5 + 3 - y0;
+  head.place(hx, hy, 0);
+  a.hull.place(hx - rod, hy, 0);
+  head.setVelocity(vx, vy, 0, STEP);
+  a.hull.setVelocity(vx, vy, 0, STEP);
+  b.hull.setVelocity(0, 0, 0, STEP);
+  let hit: Extract<(typeof ar.events)[number], { type: "hit" }> | null = null;
+  let hooked = false;
+  for (let i = 0; i < 8 && !hit; i++) {
+    ar.events.length = 0;
+    ar.step();
+    for (const e of ar.events) {
+      if (e.type === "hit" && e.victim === b) hit = e;
+      if (e.type === "hook") hooked = true;
+    }
+  }
+  return { ar, b, hit, hooked };
+}
+
+test("swords: a stab pierces (no hook), an edge slice cuts deepest, the spine knocks back and does less", () => {
+  for (const weapon of ["severn", "imperia"] as const) {
+    const sharp = WEAPONS[weapon].parts[0]!.sharpness;
+    // a thrust along the blade: a pierce at the sword's sharpness × tuning.pierce, no cut, no hook
+    const stab = swordHit(weapon, "point", 700, 0);
+    assert.ok(stab.hit, `${weapon}: the stab missed`);
+    assert.equal(stab.hit.cut, 1, `${weapon}: a stab doesn't cut`);
+    assert.equal(stab.hit.dmg, Math.floor(0.1 * sharp * DEFAULT_TUNING.pierce * stab.hit.impact), `${weapon}: stab damage`);
+    assert.equal(stab.hooked, false);
+    assert.equal(stab.ar.hooked(), 0);
+    // the same swing, edge down and spine up, sliding across b's hull (leftward: a's own hull trails away from b)
+    const edge = swordHit(weapon, "edge", -600, 300);
+    const spine = swordHit(weapon, "spine", -600, -300);
+    assert.ok(edge.hit && spine.hit, `${weapon}: missed (edge ${!!edge.hit}, spine ${!!spine.hit})`);
+    assert.ok(edge.hit.cut > 1, `${weapon}: the edge didn't cut (${edge.hit.cut})`);
+    assert.equal(spine.hit.cut, 1, `${weapon}: the spine cut`);
+    assert.ok(spine.hit.dmg < edge.hit.dmg, `${weapon}: spine ${spine.hit.dmg} v edge ${edge.hit.dmg}`);
+    // the spine is blunt: it knocks b away (upward here), as a hammer's face does
+    const plain = swordHit(weapon, "spine", -600, -300, (t) => (t.kick = 0)).b.hull.vy;
+    assert.ok(spine.b.hull.vy < plain - 20, `${weapon}: spine knockback ${plain.toFixed(0)} -> ${spine.b.hull.vy.toFixed(0)} px/s`);
+  }
+  // a two-edged sword cuts with its back edge too
+  const back = swordHit("broadblade", "spine", -600, -300);
+  assert.ok(back.hit && back.hit.cut > 1, `broadblade's second edge: cut ${back.hit?.cut}`);
 });
 
 test("saws: the cyclone's disc grinds a machine sliding along it, in small bites, even too slowly for a blow", () => {
