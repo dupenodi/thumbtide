@@ -92,7 +92,7 @@
 .pl-grid { margin: 22px 0 0; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 10px 24px; }
 .pl-col { display: flex; flex-direction: column; align-items: center; }
 .pl-card {
-  position: relative; width: 100%; height: 224px; box-sizing: border-box; padding: 12px 18px 48px; border-radius: 10px;
+  position: relative; width: 100%; min-height: 224px; box-sizing: border-box; padding: 28px 18px 56px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center; text-align: center;
   background: linear-gradient(180deg, #fbf8f1 0%, #efe9dc 100%);
   box-shadow: 0 2px 0 #d8d0bf, 0 22px 40px rgba(0, 0, 0, 0.5);
@@ -261,4 +261,32 @@
   .plp-write .plp-prompt { flex: 1 1 45%; min-width: 0; overflow-y: auto; }
   .plp-write .plp-entry { flex: 1 1 55%; min-width: 0; align-self: center; }
   .plp-text { height: 64px; }
+}
+
+/* a short phone, voting: compact cards so at least three show, the confirm button stays in reach */
+@media (max-height: 520px) {
+  .plp { gap: 8px; padding-top: 8px; }
+  .plp-final { gap: 8px; }
+  .plp-final .plp-step { display: none; }
+  .plp-final .plp-prompt { min-height: 0; padding: 0 6px; }
+  .plp-final .plp-q.small { margin: 0; font-size: 15px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .plp-list { gap: 6px; padding: 3px; }
+  .plp-list .plp-ans { min-height: 48px; padding: 8px 12px; border-radius: 12px; font-size: 16px; line-height: 1.25; }
+  .plp-list .plp-ans em { display: none !important; }
+  .plp-final .plp-panel { padding: 8px; border-radius: 16px; }
+  .plp-final .plp-btn { height: 52px; font-size: 18px; }
+}
+/* landscape: the prompt and the confirm button on the left, the answers in a scrolling column on the right */
+@media (max-height: 500px) and (orientation: landscape) {
+  .plp-final { display: grid; grid-template-columns: 38% 1fr; grid-template-rows: 1fr auto; column-gap: 14px; row-gap: 8px; }
+  .plp-final .plp-prompt { grid-column: 1; grid-row: 1; align-self: start; overflow-y: auto; }
+  .plp-final .plp-q.small { display: block; -webkit-line-clamp: unset; font-size: 17px; }
+  .plp-final .plp-panel { grid-column: 1; grid-row: 2; }
+  .plp-final .plp-list { grid-column: 2; grid-row: 1 / span 2; }
+  .plp-info { padding-bottom: 0; }
+  .plp-info h2 { font-size: 24px; }
+  .plp-info p { font-size: 16px; }
+  .plp-write { gap: 10px; }
+  .plp-entry { padding: 10px 12px; }
+  .plp-btn { height: 52px; }
 }
