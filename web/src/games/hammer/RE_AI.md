@@ -128,7 +128,7 @@ frame, and by a second dt while engage runs inside the far range, 0x4adb9b):
 
 Engage (0x4ada00), per frame:
 1. **Threat check** 0x4ac210 (decoded 2026-11-18): `r = max(1, 0.35 · enemy weapon speed)`. (a) If the enemy's main
-   weapon, predicted 3 frames ahead, is within **50 px** of the hull's edge (and +0x430 ≤ 1), it sets +0x428 and
+   weapon, predicted 3 frames ahead, is within **50 px** of the hull's edge (and +0x430 > 1), it sets +0x428 and
    +0xa08 = 0.3 s and returns true (meaning of the two fields not decoded). (b) Else, if the weapon is within `r` px,
    it steers **away from the enemy weapon**: `steer = −(weapon − hull)/d · 3 · clamp(1 − d/r, 0, 1) · gain`, and sets
    +0x8a0. (Corrects the earlier "straight at the weapon": 0x55d738 is written at 0x4369ec as weapon − own hull, and

@@ -72,9 +72,10 @@ export interface Profile {
  * round the target, then engage again. From far away, a charge (straight in) or a whirl (wind up in place).
  */
 export interface Rhythm {
-  /** Engage window, s (random in the range). It runs twice as fast inside the far range, as in the original (4–6 s → 2–3 s). */
+  /** Engage window, s (random in the range). It runs twice as fast inside the far range, as in the original (whose
+   * 4–6 s gives 2–3 s close in). Ours are 1.5× the original (6–9 s nominal): the back-offs cost round time. */
   engage: [number, number];
-  /** Back-off time, s (the original: 2–3 s). */
+  /** Back-off time, s (the original: 2–3 s; ours 0.8–2.4 s, shorter for the same reason). */
   back: [number, number];
   /** Back-off ring radius, × the weapon's reach (the original: 250 px, about 2.2 reaches). */
   ring: number;
@@ -96,7 +97,7 @@ export const TUNABLE = ["standoff", "gap", "gate", "pumpMove", "dodge", "commit"
 export type ProfileId = "dervish" | "lance" | "razor" | "thump" | "krank" | "bulwark" | "flak" | "jackal" | "pilot";
 
 type Tunable = "wNear" | "wLeader" | "wGrudge" | "lead" | "window" | "pull" | "stepV";
-/** The original's rhythm with a thumb's tilt (BOT_AI.md). */
+/** The default rhythm: the original's, with longer engage windows, shorter back-offs and a thumb's tilt (BOT_AI.md). */
 const RHYTHM: Rhythm = { engage: [6, 9], back: [1.2, 2], ring: 2.8, tilt: 0.8, backTilt: 0.5, whirl: 0.1, hitRun: 0.14, mirror: 0.35 };
 const P = (p: Omit<Profile, Tunable | "rhythm"> & Partial<Pick<Profile, Tunable>> & { rhythm?: Partial<Rhythm> }): Profile => ({
   wNear: 1,
@@ -831,7 +832,7 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
   const finishing = T.hp <= 12 && !sudden;
   const stunned = T.stun > 0.15 && stunTime(T) > 0.25;
   let alive = 0;
-  for (const x of arena.machines) if (x.alive && !x.monster) alive++;
+  for (const x of arena.machines) if (x.alive) alive++;
   // showdown: the last two machines drop their caution (no third party is left to profit)
   const showdown = foes.length === 1 && alive === 2;
   // the original's far range is 500 px (about 4 reaches); ring: 250 px (about 2.2)

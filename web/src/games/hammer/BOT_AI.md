@@ -65,6 +65,11 @@ from it, what is different and why, and the numbers before and after. The RE det
 - Kept: crowd rule (no third attacker), spacing and flanks, team modes, co-op vs CPU and vs worms, gun aiming,
   edge-first spin, the away-player autopilot. driveBot allocates nothing new per step (scratch vectors; the stick and
   flank helpers write into them; grudges fade every 5th step).
+- **Different from the original, and why:** the engage windows are 1.5× the original's (6–9 s nominal, 3–4.5 s close
+  in) and the back-offs shorter (0.8–2.4 s, the original 2–3 s): with the original's split, rounds got 30–50 % longer.
+  The ring is in weapon reaches (2.6–3.6, at least 250 px), not a fixed 250 px.
+- **Not copied:** rage (no taunt on the phone), the weapon throw, the tumble gate (|ω| > 6 rad/s), weaker below half
+  health, voice lines, the 7 s lost-target timeout (all targets are in view).
 
 ## 4. Numbers (benches in `web`, seeded)
 
@@ -80,11 +85,12 @@ synthetic human-like pilots (full stick at the nearest enemy; whirl and drift), 
 | chaser / spinner (reference) | 311 / 317 | 488 / 513 | 18 / 21 % | 98 / 92 % |
 | the original NPC (RE) | 250–500 engaged, about half backing off (its px; our clip is 550 vs its 350) | | | |
 
-Bots no longer out-fly the human-like pilots on any of these.
+Bots no longer out-fly the human-like pilots on these. One number is still higher: the turn rate of the stick
+(Razor 13.2 rad/s, Thump 11.1, the others 6–10; chaser and spinner about 9): the pump turns the stick with the head.
 
 Rhythm (after): share of armed time in back-off: Lance 35 %, Jackal 27 %, Krank 25 %, Razor 23 %, Flak 23 %,
-Dervish 17 %, Bulwark 12 %, Thump 11 %; mean distance to the target 190–250 px backing off, 150–215 px engaged. Time
-within 150 px of the nearest enemy: before 59–71 % (Lance 45 %), after 39–65 %.
+Dervish 17 %, Bulwark 12 %, Thump 11 %, autopilot 7 %; mean distance to the target 190–250 px backing off, 150–215 px
+engaged. Time within 150 px of the nearest enemy: before 59–71 % (Lance 45 %), after 39–65 %.
 
 Rounds (`playtest.bench.ts`, `ROUNDS=6`: 10 arenas, 60 rounds per mode, 4 machines):
 
@@ -95,15 +101,27 @@ Rounds (`playtest.bench.ts`, `ROUNDS=6`: 10 arenas, 60 rounds per mode, 4 machin
 | pve | 16.3 → 21.5 | 187 → 149 | 12 → 6 % | 0 | |
 | pvm | 9.6 → 9.7 | 716 → 660 | 2 → 2 % | 0 | worms killed 3.0/3.0, lost 0 % |
 
-Rounds are 20–30 % longer: the back-off time is the price (no other factor moved it by more than about 1–2 s; each of
-the event fix, the tilt, the wind-up gap and the charge costs a little). Time up stays at 0 %.
+Rounds are 20–33 % longer, more than "not much longer": the back-off time is the price (each of the event fix, the
+tilt, the wind-up gap and the charge costs about 1–2 s more). Time up stays at 0 %. 8-machine free-for-all
+(`bots.bench.ts`): 30.3 → 33.9 s.
 
-Balance (`bots.bench.ts`, duels in 4 arenas, both sides): win share before → after: Dervish 50 → 51 %, Thump 51 → 64,
-Razor 48 → 53, Krank 72 → 63, Lance 78 → 81, Bulwark 68 → 65, Flak 65 → 58, Jackal 73 → 78, autopilot 44 → 47;
-chaser and spinner win as often as before (34 and 34 of 216 duels against the bots, before 32 and 39).
+Balance:
+- Duels (`bots.bench.ts`, 4 arenas, both sides), win share before → after: Dervish 50 → 51 %, Thump 51 → 65, Razor
+  48 → 52, Krank 72 → 63, Lance 78 → 80, Bulwark 68 → 66, Flak 65 → 58, Jackal 73 → 77, autopilot 44 → 46. Chaser
+  and spinner win 35 and 34 of 216 duels against the bots (before 32 and 39).
+- 4-machine rounds (`speed.bench.ts`, ffa, mix, teams, pve; 112 rounds each), wins before → after: Jackal 50 → 64,
+  Lance 51 → 58, Thump 37 → 43, Bulwark 39 → 40, Flak 36 → 39, Krank 47 → 38, Razor 49 → 36, Dervish 34 → 23. The
+  spread grew (1.5× → 2.8×). A sweep of Dervish's and Razor's rhythm (no hit and run, less standoff and whirl) did not
+  move their wins; open.
+- `modes.bench.ts` (24 rounds each), the first side's wins before → after: lance+jackal v thump+krank 58 → 88 %,
+  flak+jackal v lance+razor 33 → 33 %, bulwark+thump v krank+dervish 71 → 75 %, CPU (lance, jackal) v two chasers
+  58 → 79 % (CPU side), worms 100 → 100 % cleared.
+
+Performance: bench wall time per simulated second (physics and bots, this PC) 6.2 → 5.2 ms. Not measured on the TV.
 
 ## 5. To check on the TV
 
 - Does the back-off read as "hang back and wind up", and the standoffs as circling, not as fleeing?
 - Speed: if bots still look fast, lower `tilt` / `backTilt` in `PROFILES` (`rhythm`); the force is unchanged.
 - Rounds are longer by about 5 s; if that drags, shorten `back` or lower `mirror` in `RHYTHM`.
+- Co-op vs CPU: the CPU beats the synthetic chasers more often (79 %, before 58 %); check it against real players.
