@@ -6,13 +6,13 @@ controller
 
 button send
   label        "Send"
-  hint         "Type your answer to the prompt, then send it. Two prompts a round; the last round has one."
+  hint         "Type your answer to the prompt, then send it. You can change it until time is up."
   style        primary
   haptic       16ms
 
 choices vote
   label        "Vote"
-  hint         "Tap the funnier answer. You can change it until the vote closes. No voting for your own."
+  hint         "Tap the answer you like best, then confirm. You can change it until the vote closes. No voting for your own."
   haptic       14ms
 
 buzz

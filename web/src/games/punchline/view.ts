@@ -4,7 +4,7 @@
 // the clock). Reveals are CSS animations that run once: chalk tally marks one by one, then the names, then the
 // winning card bounces.
 import { LOOK, SEAT_COLORS } from "./look.ts";
-import { FINAL_ROUND, MAX_SEATS, type Punchline, type Seat } from "./rules.ts";
+import { MAX_SEATS, type Punchline, type Seat } from "./rules.ts";
 
 const W = 1920;
 const H = 1080;
@@ -216,6 +216,13 @@ export interface View {
   dispose(): void;
 }
 
+/** Answer text size (px) for n cards on the vote screen: bigger for fewer cards, shrinking for long answers. Never under 36. */
+export function answerSize(len: number, n: number): number {
+  if (n <= 3) return len < 30 ? 56 : len < 55 ? 48 : 42;
+  if (n <= 6) return len < 30 ? 48 : len < 55 ? 42 : 38;
+  return len < 22 ? 46 : len < 45 ? 40 : 36;
+}
+
 export function createView(root: HTMLElement): View {
   root.innerHTML = `<div class="pl"><div class="pl-stage">
     <canvas class="pl-bg"></canvas><canvas class="pl-mic"></canvas>
@@ -241,91 +248,60 @@ export function createView(root: HTMLElement): View {
   resize();
 
   const color = (s: Seat | undefined) => (s ? SEAT_COLORS[s.slot % MAX_SEATS]! : LOOK.mic);
-  const nameTag = (s: Seat | undefined, extra = "") =>
-    `<span class="pl-name" style="--c:${color(s)}"><i></i>${esc(s?.name ?? "Someone")}${extra}</span>`;
-  const sign = (text: string, cls = "") => `<div class="pl-sign ${cls}"><div class="pl-sign-in"><p>${esc(text)}</p></div></div>`;
+  const nameTag = (s: Seat | undefined) => `<span class="pl-name" style="--c:${color(s)}"><i></i>${esc(s?.name ?? "Someone")}</span>`;
+  /** The prompt text, with each blank drawn as a chalk line. */
+  const promptHtml = (t: string) => esc(t).replace(/_{3,}([^ ]*)/g, `<span class="pl-nb"><span class="pl-blank"></span>$1</span>`);
+  const sign = (text: string, cls = "") => `<div class="pl-sign ${cls}"><div class="pl-sign-in"><p>${promptHtml(text)}</p></div></div>`;
   const signTitle = (title: string, sub = "") =>
     `<div class="pl-sign pl-sign-title"><div class="pl-sign-in"><h1>${esc(title)}</h1>${sub ? `<p class="pl-sub">${esc(sub)}</p>` : ""}</div></div>`;
   const pts = (n: number) => (n > 0 ? `+${n}` : "0");
-  const roundName = (g: Punchline) => (g.round === FINAL_ROUND ? "The last laugh" : `Round ${g.round + 1}`);
+  const roundName = (g: Punchline) => `Round ${g.round + 1} of ${g.opts.rounds}`;
 
   function writeScreen(g: Punchline): string {
-    const final = g.round === FINAL_ROUND;
     const tags = g.players()
       .map((s) => `<li data-id="${esc(s.id)}" class="${g.doneWriting(s.id) ? "done" : ""}">${nameTag(s)}<em>Sent</em></li>`)
       .join("");
-    return `${final ? sign(g.final!.prompt.text, "pl-sign-big") : signTitle(roundName(g), "Answer on your phone")}
-      ${final ? `<p class="pl-cue">Everyone answers this one</p>` : ""}
+    return `${sign(g.prompt!.text, "pl-sign-big")}
+      <p class="pl-cue">Everyone answers this one, on their phone</p>
       <ul class="pl-tags">${tags}</ul>`;
   }
 
-  function pairScreen(g: Punchline, reveal: boolean): string {
-    const p = g.current()!;
-    const r = p.result;
-    // tally marks: in the order the votes came in, alternating between the cards as they did
-    const delays: [number[], number[]] = [[], []];
+  function cardsScreen(g: Punchline, reveal: boolean): string {
+    const r = g.result;
+    const n = g.shown.length;
+    const cols = n <= 3 ? n : n <= 4 ? 4 : n <= 6 ? 3 : 4;
+    const width = n <= 3 ? 470 : n <= 4 ? 366 : n <= 6 ? 480 : 366;
+    const gap = 24;
+    // tally marks: in the order the votes came in
+    const delays = g.shown.map(() => [] as number[]);
     if (reveal) {
-      let n = 0;
-      for (const side of p.votes.values()) delays[side].push(TALLY_START + TALLY_EVERY * n++);
+      let c = 0;
+      for (const v of g.votes.values()) delays[v]!.push(TALLY_START + TALLY_EVERY * c++);
     }
-    const after = TALLY_START + TALLY_EVERY * p.votes.size + 350;
-    const cards = [0, 1]
-      .map((i) => {
-        const a = p.answers[i]!;
-        const author = g.seats.get(p.authors[i]!);
-        const win = reveal && r && r.winner === i;
-        const lost = reveal && r && r.winner === 1 - i;
-        const foot = reveal
-          ? `<div class="pl-foot" style="animation-delay:${after}ms">${nameTag(author)}<b class="pl-pts">${pts(r!.points[i]!)}</b></div>`
-          : "";
-        return `<div class="pl-col">
-          <div class="pl-card c${i}${a.missing ? " missing" : ""}${win ? " win" : ""}${lost ? " lost" : ""}" style="${win || lost ? `animation-delay:${after}ms` : ""}">
-            ${win ? `<i class="pl-ring" style="animation-delay:${after}ms"></i>` : ""}<p>${esc(a.text)}</p>
-            ${reveal && r!.sweep === i ? `<span class="pl-sweep" style="animation-delay:${after + 250}ms">Clean sweep</span>` : ""}
+    const after = TALLY_START + TALLY_EVERY * g.votes.size + 350;
+    const d = `animation-delay:${after}ms`;
+    const cards = g.shown
+      .map((ei, k) => {
+        const text = g.entries[ei]!.text!;
+        const author = g.seats.get(g.authorOf(k));
+        const top = reveal && !!r && r.top.includes(k);
+        const lost = reveal && !!r && !top && r.top.length > 0;
+        return `<div class="pl-col" style="width:${width}px">
+          <div class="pl-card${top ? " win" : ""}${lost ? " lost" : ""}" style="${top || lost ? d : ""}">
+            ${top ? `<i class="pl-ring" style="${d}"></i>` : ""}<p style="font-size:${answerSize(Array.from(text).length, n)}px">${esc(text)}</p>
+            ${reveal ? `<div class="pl-byline" style="${d}">${nameTag(author)}</div>` : ""}
+            ${reveal && r!.sweep === k ? `<span class="pl-sweep" style="animation-delay:${after + 250}ms">Clean sweep</span>` : ""}
           </div>
-          <div class="pl-under">${reveal ? tally(delays[i as 0 | 1], i * 31 + g.idx * 7) : ""}</div>
-          ${foot}
+          <div class="pl-score-row">${reveal ? `${tally(delays[k]!, k * 13 + g.round)}<b class="pl-pts" style="${d}">${pts(r!.points[k]!)}</b>` : ""}</div>
         </div>`;
       })
       .join("");
     const status = reveal
-      ? r && r.votes[0] + r.votes[1] === 0
+      ? r && r.top.length === 0
         ? `<p class="pl-cue">No votes</p>`
         : ""
-      : `<p class="pl-cue pl-count">Vote on your phone <span class="pl-in"></span></p>`;
-    return `${sign(p.prompt.text)}<div class="pl-pair">${cards}</div>${status}`;
-  }
-
-  function finalScreen(g: Punchline, reveal: boolean): string {
-    const f = g.final!;
-    const r = f.result;
-    const shown = f.entries.map((e, i) => ({ e, i })).filter(({ e }) => reveal || !e.answer!.missing);
-    const delays = f.entries.map(() => [] as number[]);
-    if (reveal) {
-      let n = 0;
-      for (const v of f.votes.values()) delays[v]!.push(TALLY_START + TALLY_EVERY * n++);
-    }
-    const after = TALLY_START + TALLY_EVERY * f.votes.size + 350;
-    const many = shown.length > 4;
-    const cols = many ? Math.ceil(shown.length / 2) : shown.length;
-    const cards = shown
-      .map(({ e, i }) => {
-        const author = g.seats.get(e.author);
-        const top = reveal && r!.top.includes(i);
-        const lost = reveal && !top && r!.top.length > 0;
-        const d = `animation-delay:${after}ms`;
-        return `<div class="pl-col">
-          <div class="pl-card small${e.answer!.missing ? " missing" : ""}${top ? " win" : ""}${lost ? " lost" : ""}" style="${top || lost ? d : ""}">
-            ${top ? `<i class="pl-ring" style="${d}"></i>` : ""}<p>${esc(e.answer!.text)}</p>
-            ${reveal ? `<div class="pl-byline" style="${d}">${nameTag(author)}</div>` : ""}
-            ${reveal && r!.sweep === i ? `<span class="pl-sweep" style="animation-delay:${after + 250}ms">Clean sweep</span>` : ""}
-          </div>
-          ${reveal ? `<div class="pl-score-row">${tally(delays[i]!, i * 13)}<b class="pl-pts" style="${d}">${pts(r!.points[i]!)}</b></div>` : ""}
-        </div>`;
-      })
-      .join("");
-    return `${sign(f.prompt.text, "pl-sign-slim")}<div class="pl-grid${many ? " many" : ""}" style="width:${many ? cols * 382 + (cols - 1) * 24 : cols * 360 + (cols - 1) * 30}px">${cards}</div>
-      ${reveal ? "" : `<p class="pl-cue pl-count">Vote for your favourite <span class="pl-in"></span></p>`}`;
+      : `<p class="pl-cue pl-count">Vote for your favourite, on your phone <span class="pl-in"></span></p>`;
+    return `${sign(g.prompt!.text, "pl-sign-slim")}<div class="pl-grid" style="width:${cols * width + (cols - 1) * gap}px">${cards}</div>${status}`;
   }
 
   function board(g: Punchline, end: boolean): string {
@@ -348,38 +324,34 @@ export function createView(root: HTMLElement): View {
   }
 
   function render(g: Punchline) {
-    const k = `${g.match}:${g.phase}:${g.round}:${g.idx}`;
+    const k = `${g.match}:${g.phase}:${g.round}`;
     if (k === key) return;
     key = k;
-    roundEl.textContent = g.phase === "wait" || g.phase === "end" ? "" : g.round === 1 ? `${roundName(g)} · double points` : roundName(g);
+    roundEl.textContent = g.phase === "wait" || g.phase === "end" ? "" : roundName(g);
     let html = "";
     switch (g.phase) {
       case "wait":
         html = `${signTitle("Punchline", "Waiting for players")}<p class="pl-cue">Three or more to start</p>`;
         break;
       case "intro":
-        html =
-          g.round === FINAL_ROUND
-            ? signTitle("The last laugh", "One prompt for everyone")
-            : signTitle(roundName(g), g.round === 1 ? "Double points" : "Two prompts each");
-        html = `<div class="pl-intro">${html}</div>`;
+        html = `<div class="pl-intro">${signTitle(roundName(g), g.round + 1 === g.opts.rounds ? "The last round" : "Fill in the blank")}</div>`;
         break;
       case "write":
         html = writeScreen(g);
         break;
       case "vote":
       case "reveal":
-        html = g.final ? finalScreen(g, g.phase === "reveal") : pairScreen(g, g.phase === "reveal");
+        html = cardsScreen(g, g.phase === "reveal");
         break;
       case "scores":
-        html = `<div class="pl-scores">${signTitle("Standings", g.round === 0 ? "Round 2 counts double" : "One prompt left")}${board(g, false)}</div>`;
+        html = `<div class="pl-scores">${signTitle("Standings", `${g.opts.rounds - g.round - 1} to go`)}${board(g, false)}</div>`;
         break;
       case "end":
         html = endScreen(g);
         break;
     }
-    main.className = `pl-main ph-${g.phase}${g.final ? " is-final" : ""}`;
-    stage.classList.toggle("mic", (g.phase === "write" && !g.final) || g.phase === "intro" || g.phase === "wait");
+    main.className = `pl-main ph-${g.phase}`;
+    stage.classList.toggle("mic", g.phase === "write" || g.phase === "intro" || g.phase === "wait");
     main.innerHTML = html;
     shownSecs = -1;
     progress(g);

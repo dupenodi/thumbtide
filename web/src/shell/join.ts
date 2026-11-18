@@ -359,10 +359,13 @@ function join(room: string, name: string) {
     const paused = !!state?.paused && (ctl.config?.game ?? "lobby") !== "lobby";
     pausedEl.hidden = !paused;
     if (!paused) return;
-    const vipName = state?.players.find((p) => p.id === state?.vip)?.name ?? "The host";
+    // name who paused; if that player has left (the host moved on), say only that the game is paused
+    const by = state?.pausedBy ?? null;
+    const byName = by ? state?.players.find((p) => p.id === by)?.name : undefined;
+    const line = by && ctl.me?.id === by ? "You paused the game." : byName ? `${esc(byName)} paused the game.` : "The game is paused.";
     pausedEl.innerHTML = `
       <div class="pz-title">${juicy("Paused", "candy")}</div>
-      <p>${isVip() ? "You paused the game." : `${esc(vipName)} paused the game.`}</p>
+      <p>${line}</p>
       ${isVip() ? `<button class="big pz-resume">▶ Resume</button>` : ""}`;
     const r = pausedEl.querySelector(".pz-resume") as HTMLButtonElement | null;
     if (r) button(r, { mode: "tap", onPress: () => sys({ $sys: "resume" }) });

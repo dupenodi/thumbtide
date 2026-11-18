@@ -369,3 +369,38 @@ test("bots only: every match ends with a winner", () => {
     assert.ok(g.matchWinner);
   }
 });
+
+test("a handler whose phone dropped: a bot gives the clue, and the person keeps the role", () => {
+  const g = dealt(["a", "b", "c", "d"], 5);
+  const bots = createBots(g, seeded(8), { think: 100, look: 100 });
+  const h = handlerOf(g);
+  for (let i = 0; i < 50; i++) {
+    bots.step(100);
+    g.step(100);
+  }
+  assert.equal(g.phase, "clue", "a present person is waited for");
+  g.setAway(h, true);
+  for (let i = 0; i < 60 && g.phase === "clue"; i++) {
+    bots.step(100);
+    g.step(100);
+  }
+  assert.equal(g.phase, "guess", "the bot gave the clue");
+  assert.equal(g.history.length, 1);
+  assert.equal(g.handler[g.history[0]!.team], h, "the person is still the handler");
+  g.setAway(h, false);
+  assert.equal(g.away.size, 0);
+});
+
+test("with every person away, the bots play on through a round", () => {
+  const g = dealt(["a", "b", "c", "d"], 6);
+  for (const s of g.humans()) g.setAway(s.id, true);
+  const bots = createBots(g, seeded(9), { think: 100, look: 100 });
+  let rounds = 0;
+  for (let i = 0; i < 20000 && g.phase !== "round" && g.phase !== "match"; i++) {
+    bots.step(100);
+    g.step(100);
+    rounds += g.drainEvents().filter((e) => e.type === "clue").length;
+  }
+  assert.ok(g.phase === "round" || g.phase === "match");
+  assert.ok(rounds > 1);
+});

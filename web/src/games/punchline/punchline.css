@@ -84,32 +84,27 @@
 .pl-intro { animation: pl-drop 700ms cubic-bezier(0.2, 1.3, 0.4, 1) both; }
 @keyframes pl-drop { 0% { transform: translateY(-120px); opacity: 0; } 100% { transform: none; opacity: 1; } }
 
-/* cue cards */
-.pl-pair { margin-top: 40px; display: flex; gap: 70px; justify-content: center; }
+/* the blank in a prompt: a chalk line */
+.pl-blank { display: inline-block; width: 2.4em; height: 0.12em; margin: 0 0.1em; vertical-align: baseline; border-radius: 3px; background: var(--spot); box-shadow: 0 0 12px rgba(255, 231, 163, 0.5); }
+
+/* cue cards: every answer of the round, in a grid */
+.pl-nb { white-space: nowrap; }
+.pl-grid { margin: 22px 0 0; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 10px 24px; }
 .pl-col { display: flex; flex-direction: column; align-items: center; }
 .pl-card {
-  position: relative; width: 640px; min-height: 280px; box-sizing: border-box; padding: 34px 40px; border-radius: 10px;
+  position: relative; width: 100%; height: 224px; box-sizing: border-box; padding: 12px 18px 48px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center; text-align: center;
-  background: linear-gradient(180deg, #fbf8f1 0%, var(--chalk) 100%);
-  background-image: linear-gradient(180deg, transparent 72px, rgba(214, 96, 96, 0.4) 72px, rgba(214, 96, 96, 0.4) 75px, transparent 75px),
-    repeating-linear-gradient(180deg, transparent 0, transparent 51px, rgba(108, 152, 196, 0.22) 51px, rgba(108, 152, 196, 0.22) 53px),
-    linear-gradient(180deg, #fbf8f1 0%, #efe9dc 100%);
+  background: linear-gradient(180deg, #fbf8f1 0%, #efe9dc 100%);
   box-shadow: 0 2px 0 #d8d0bf, 0 22px 40px rgba(0, 0, 0, 0.5);
   color: var(--ink);
 }
-.pl-card.c0 { transform: rotate(-1.6deg); }
-.pl-card.c1 { transform: rotate(1.3deg); }
-.pl-card p { margin: 0; font: 700 48px/1.2 var(--sans); letter-spacing: -0.01em; overflow-wrap: break-word; word-break: break-word; max-width: 100%; }
-.pl-card.missing { background: #cfc8bb; box-shadow: 0 18px 30px rgba(0, 0, 0, 0.4); }
-.pl-card.missing p { font-style: italic; font-weight: 500; color: rgba(36, 19, 15, 0.55); }
-.pl-card.win { animation: pl-bounce 620ms cubic-bezier(0.3, 1.6, 0.5, 1) both; }
-.pl-card.c0.win { animation-name: pl-bounce0; }
-.pl-card.c1.win { animation-name: pl-bounce1; }
-@keyframes pl-bounce0 { 0%, 100% { transform: rotate(-1.6deg); } 40% { transform: translateY(-34px) rotate(-1.6deg) scale(1.04); } }
-@keyframes pl-bounce1 { 0%, 100% { transform: rotate(1.3deg); } 40% { transform: translateY(-34px) rotate(1.3deg) scale(1.04); } }
+.pl-grid .pl-card { transform: rotate(-1deg); }
+.pl-grid .pl-col:nth-child(even) .pl-card { transform: rotate(1deg); }
+.pl-card p { margin: 0; font: 700 40px/1.1 var(--sans); letter-spacing: -0.01em; overflow-wrap: break-word; word-break: break-word; max-width: 100%; }
+.pl-grid .pl-card.win { z-index: 1; animation: pl-bounce 620ms cubic-bezier(0.3, 1.6, 0.5, 1) both; }
 @keyframes pl-bounce { 0%, 100% { transform: none; } 40% { transform: translateY(-26px) scale(1.04); } }
 
-/* after the vote: a lit ring round the winner, the other card steps back */
+/* after the vote: a lit ring round the winner, the others step back */
 .pl-ring {
   position: absolute; top: -12px; right: -12px; bottom: -12px; left: -12px; border-radius: 16px; pointer-events: none;
   box-shadow: 0 0 0 5px var(--spot), 0 0 36px rgba(255, 231, 163, 0.45); animation: pl-fade 400ms ease-out both;
@@ -120,47 +115,31 @@
 }
 @keyframes pl-fade { 0% { opacity: 0; } 100% { opacity: 1; } }
 .pl-sweep {
-  position: absolute; right: -26px; top: -30px; padding: 10px 22px 12px; border: 4px solid #c3283a; border-radius: 10px;
-  font: 40px/1 var(--display); color: #c3283a; background: rgba(251, 248, 241, 0.92); transform: rotate(8deg);
+  position: absolute; right: -14px; top: -22px; padding: 8px 18px 10px; border: 4px solid #c3283a; border-radius: 10px;
+  font: 32px/1 var(--display); color: #c3283a; background: rgba(251, 248, 241, 0.94); transform: rotate(8deg);
   animation: pl-stamp 420ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
 @keyframes pl-stamp { 0% { transform: rotate(8deg) scale(2.2); opacity: 0; } 100% { transform: rotate(8deg) scale(1); opacity: 1; } }
 
-/* under each card: chalk tallies on the brick, then the author */
-.pl-under { height: 96px; margin-top: 26px; display: flex; align-items: center; justify-content: center; }
+/* the author signs the card at the reveal; chalk tallies and points under it */
+.pl-byline { position: absolute; right: 16px; bottom: 10px; animation: pl-rise 400ms ease-out both; }
+.pl-byline .pl-name { font-size: 28px; color: var(--ink); }
+.pl-byline .pl-name i { width: 18px; height: 18px; box-shadow: 0 0 0 2px rgba(36, 19, 15, 0.5); }
 .pl-tally path.halo { stroke-width: 15; stroke: rgba(245, 242, 234, 0.2); }
 .pl-tally path {
   fill: none; stroke: var(--chalk); stroke-width: 8; stroke-linecap: round; opacity: 0;
   stroke-dasharray: 90; stroke-dashoffset: 90; animation: pl-chalk 260ms ease-out both;
 }
 @keyframes pl-chalk { 0% { opacity: 0.9; stroke-dashoffset: 90; } 100% { opacity: 0.92; stroke-dashoffset: 0; } }
-.pl-foot { display: flex; align-items: center; gap: 22px; animation: pl-rise 400ms ease-out both; }
-.pl-pts { font: 46px/1 var(--display); color: var(--spot); }
-@keyframes pl-rise { 0% { opacity: 0; transform: translateY(16px); } 100% { opacity: 1; transform: none; } }
-
-/* the last laugh: every answer on a smaller card; the author signs it at the reveal */
-.pl-main.is-final { top: 176px; }
-.pl-grid { margin: auto 0; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 26px 30px; }
-.pl-card.small {
-  width: 360px; height: 300px; min-height: 0; padding: 22px 24px 48px;
-  background-image: linear-gradient(180deg, #fbf8f1 0%, #efe9dc 100%);
-}
-.pl-card.small p { font-size: 40px; line-height: 1.12; }
-.pl-grid.many { gap: 14px 24px; }
-.pl-grid.many .pl-card.small { width: 382px; height: 268px; padding: 14px 18px 44px; }
-.pl-grid.many .pl-card.small p { line-height: 1.08; }
-.pl-grid .pl-col:nth-child(odd) .pl-card { transform: rotate(-1deg); }
-.pl-grid .pl-col:nth-child(even) .pl-card { transform: rotate(1deg); }
-.pl-grid .pl-card.win { z-index: 1; animation-name: pl-bounce; }
-.pl-byline { position: absolute; right: 16px; bottom: 10px; animation: pl-rise 400ms ease-out both; }
-.pl-byline .pl-name { font-size: 28px; color: var(--ink); }
-.pl-byline .pl-name i { width: 18px; height: 18px; box-shadow: 0 0 0 2px rgba(36, 19, 15, 0.5); }
 .pl-score-row { height: 56px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 18px; }
 .pl-score-row .pl-tally { height: 52px; width: auto; }
-.pl-score-row .pl-pts { font-size: 40px; animation: pl-rise 400ms ease-out both; }
-.pl-grid .pl-sweep { font-size: 30px; right: -12px; top: -20px; }
-.pl-main.is-final.ph-vote .pl-sign-in, .pl-main.is-final.ph-reveal .pl-sign-in { padding: 18px 48px; }
-.pl-main.is-final.ph-vote .pl-sign-in p, .pl-main.is-final.ph-reveal .pl-sign-in p { font-size: 46px; }
+.pl-pts { font: 42px/1 var(--display); color: var(--spot); animation: pl-rise 400ms ease-out both; }
+@keyframes pl-rise { 0% { opacity: 0; transform: translateY(16px); } 100% { opacity: 1; transform: none; } }
+.pl-main.ph-vote .pl-sign-in, .pl-main.ph-reveal .pl-sign-in { padding: 16px 48px; }
+.pl-main.ph-vote .pl-sign-in p, .pl-main.ph-reveal .pl-sign-in p { font-size: 42px; }
+.pl-main.ph-vote .pl-cue, .pl-main.ph-reveal .pl-cue { margin-top: 12px; font-size: 32px; }
+.pl-sign-slim { width: 1540px; }
+.pl-main.ph-vote, .pl-main.ph-reveal { top: 176px; }
 
 /* standings */
 .pl-scores, .pl-end { display: flex; flex-direction: column; align-items: center; width: 100%; }
@@ -217,8 +196,8 @@
 .plp-note { margin: 0; text-align: center; font: 500 17px/1.4 Inter, system-ui, sans-serif; color: rgba(245, 242, 234, 0.75); }
 
 /* writing: the prompt fills the top and gives way to the keyboard; the text box and Send stay in view */
-.plp-write { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
-.plp-prompt { position: relative; flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; justify-content: center; padding: 4px 6px; }
+.plp-write { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.plp-prompt { position: relative; flex: 1 0 auto; min-height: 96px; display: flex; flex-direction: column; justify-content: center; padding: 4px 6px; }
 .plp-prompt[hidden] { display: none; }
 .plp-step { font: 700 13px/1 Inter, system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c, var(--spot)); }
 .plp-q { margin: 10px 0 0; font: 700 24px/1.3 Inter, system-ui, sans-serif; overflow-wrap: break-word; }
@@ -265,3 +244,21 @@
 .plp-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px; }
 .pl-under .pl-tally { height: 92px; width: auto; }
 .pl-under.small .pl-tally { height: 62px; }
+.plp-list .plp-ans { min-height: 84px; font-size: 19px; flex: none; }
+.plp-status { font: 700 14px/1.3 Inter, system-ui, sans-serif; color: rgba(245, 242, 234, 0.7); }
+.plp-status.ok { color: #b5ec9a; }
+.plp-blank { display: inline-block; width: 2.2em; height: 0.1em; margin: 0 0.1em; background: var(--spot); border-radius: 2px; vertical-align: baseline; }
+.pl-nb { white-space: nowrap; }
+
+/* a short phone (landscape, or a small screen with the keyboard up): the prompt wraps in full, the page scrolls,
+   and in landscape the prompt and the answer sit side by side */
+@media (max-height: 500px) {
+  .plp-q { font-size: 20px; }
+  .plp-q.small { font-size: 17px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .plp-write { flex-direction: row; align-items: stretch; }
+  .plp-write .plp-prompt { flex: 1 1 45%; min-width: 0; overflow-y: auto; }
+  .plp-write .plp-entry { flex: 1 1 55%; min-width: 0; align-self: center; }
+  .plp-text { height: 64px; }
+}

@@ -1,5 +1,7 @@
 import { parsePad } from "./kit/pad.ts";
 import type { GameDef } from "./types.ts";
+import blastPad from "./blast/blast.pad?raw";
+import boomtownPad from "./boomtown/boomtown.pad?raw";
 import bridgePad from "./bridge/bridge.pad?raw";
 import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
@@ -383,7 +385,7 @@ export const GAMES: GameDef[] = [
   {
     id: "punchline",
     title: "Punchline",
-    tagline: "Write the funnier answer. Steal the room's votes.",
+    tagline: "Fill in the blank. Dark, filthy and funny.",
     minPlayers: 1,
     maxPlayers: 8,
     colors: ["#5a0f1f", "#ffe7a3"],
@@ -391,14 +393,24 @@ export const GAMES: GameDef[] = [
     controls: parsePad(punchlinePad, "punchline.pad"),
     settings: [
       {
+        key: "rounds",
+        label: "Rounds",
+        options: [
+          { value: 5, label: "5" },
+          { value: 8, label: "8" },
+          { value: 10, label: "10" },
+        ],
+        default: 8,
+      },
+      {
         key: "time",
         label: "Answer time",
         options: [
+          { value: 45, label: "45 s" },
           { value: 60, label: "60 s" },
           { value: 90, label: "90 s" },
-          { value: 120, label: "120 s" },
         ],
-        default: 90,
+        default: 60,
       },
       { key: "family", label: "Family-friendly prompts only", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: false },
       {
@@ -539,6 +551,95 @@ export const GAMES: GameDef[] = [
     ],
     host: () => import("./bridge/host.ts"),
     controller: () => import("./bridge/controller.ts"),
+  },
+  {
+    id: "boomtown",
+    title: "Boomtown",
+    tagline: "Buy up the harbour city, build, trade and bankrupt your friends.",
+    minPlayers: 1,
+    maxPlayers: 6,
+    colors: ["#14716f", "#e9a93a"],
+    glyph: "special",
+    controls: parsePad(boomtownPad, "boomtown.pad"),
+    settings: [
+      {
+        key: "minutes",
+        label: "Time limit",
+        options: [
+          { value: 20, label: "20 min" },
+          { value: 30, label: "30 min" },
+          { value: 45, label: "45 min" },
+        ],
+        default: 30,
+        applies: "now",
+      },
+      {
+        key: "cash",
+        label: "Starting cash",
+        options: [
+          { value: "low", label: "Low" },
+          { value: "normal", label: "Normal" },
+          { value: "high", label: "High" },
+        ],
+        default: "normal",
+      },
+      {
+        key: "bots",
+        label: "Computer players",
+        options: [0, 1, 2, 3, 4, 5].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+      },
+    ],
+    host: () => import("./boomtown/host.ts"),
+    controller: () => import("./boomtown/controller.ts"),
+  },
+  {
+    id: "blast",
+    title: "Blast Party",
+    tagline: "Throw bombs, punch, hop. Knock everyone off the edge.",
+    minPlayers: 1,
+    maxPlayers: 8,
+    colors: ["#ff8a1f", "#3d7a4f"],
+    glyph: "action",
+    controls: parsePad(blastPad, "blast.pad"),
+    settings: [
+      {
+        key: "mode",
+        label: "Mode",
+        options: [
+          { value: "ffa", label: "Last one standing" },
+          { value: "team", label: "Team brawl" },
+        ],
+        default: "ffa",
+      },
+      {
+        key: "wins",
+        label: "Round wins to take the match",
+        options: [3, 5].map((n) => ({ value: n, label: String(n) })),
+        default: 3,
+        applies: "now",
+      },
+      {
+        key: "arena",
+        label: "Arena",
+        options: [
+          { value: "rotate", label: "Rotate" },
+          { value: "shelf", label: "Toy shelf" },
+          { value: "blanket", label: "Picnic blanket" },
+          { value: "tub", label: "Bathtub" },
+        ],
+        default: "rotate",
+      },
+      {
+        key: "bots",
+        label: "Computer fighters",
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+        applies: "now",
+      },
+    ],
+    host: () => import("./blast/host.ts"),
+    controller: () => import("./blast/controller.ts"),
   },
   {
     id: "sandbox",

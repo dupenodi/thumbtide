@@ -201,7 +201,7 @@ export function createBots(g: Spyline, rng: Rng = g.rng, timing: BotTiming = { t
 
   function step(ms: number) {
     if (g.phase !== "clue" && g.phase !== "guess") return;
-    for (const s of g.bots()) {
+    for (const s of g.botPlayed()) {
       const m = mind(s.id);
       const handler = g.handler[s.team] === s.id;
       if (s.team !== g.turn) continue;
@@ -217,7 +217,7 @@ export function createBots(g: Spyline, rng: Rng = g.rng, timing: BotTiming = { t
         if (g.giveClue(s.id, idea.word, idea.n)) g.giveClue(s.id, "object", 1);
         m.seen = "";
       } else if (g.phase === "guess" && !handler) {
-        const picks = [...g.picks].map(([id, pick]) => ({ id, pick, human: !g.seat(id)?.bot }));
+        const picks = [...g.picks].map(([id, pick]) => ({ id, pick, human: !g.botPlayed().some((b) => b.id === id) }));
         const key = `guess:${g.round}:${g.history.length}:${g.guesses}`;
         if (m.seen !== key) {
           m.seen = key;

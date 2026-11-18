@@ -217,11 +217,13 @@ const mount: ControllerMount = (ctx) => {
     if (input) {
       input.value = draft;
       const onInput = () => {
-        // letters only, as you type
-        const clean = input.value.replace(/[^A-Za-z]/g, "").slice(0, 18);
-        if (clean !== input.value) input.value = clean;
+        // letters as you type; spaces stay so "One word only" can show; digits and symbols are dropped with a hint
+        const typed = input.value;
+        const letters = typed.replace(/[^A-Za-z ]/g, "");
+        const clean = letters.replace(/^ +/, "").replace(/ {2,}/g, " ").slice(0, 18);
+        if (clean !== typed) input.value = clean;
         draft = clean;
-        localErr = "";
+        localErr = letters.length < typed.length ? "Letters only, please" : /\S +\S/.test(clean) ? "One word only" : "";
         refresh();
       };
       const onKey = (e: KeyboardEvent) => {
@@ -260,7 +262,7 @@ const mount: ControllerMount = (ctx) => {
         }
         sending = true;
         localErr = "";
-        ctl.send({ type: "clue", word: draft, n: num });
+        ctl.send({ type: "clue", word: draft.trim(), n: num });
         break;
       }
       case "stop": {

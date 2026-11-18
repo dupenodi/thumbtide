@@ -1,6 +1,7 @@
 /** Where the relay lives. Set VITE_RELAY_URL in production (Vercel env var). */
 export const RELAY_URL: string =
-  import.meta.env.VITE_RELAY_URL || `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:8787`;
+  import.meta.env.VITE_RELAY_URL ||
+  `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:${import.meta.env.VITE_RELAY_PORT || 8787}`;
 
 /**
  * Base URL phones open from the QR code. VITE_JOIN_URL fixes it (the TV app, which runs from file://).

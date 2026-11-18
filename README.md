@@ -81,6 +81,7 @@ Run these from the repo root.
 
 | Command | What it does |
 |---|---|
+| `npm start` (or `node scripts/start.mjs`) | Starts everything in one terminal (relay + site, on the network) and prints the TV and phone addresses. `--relay=8788 --web=5174` picks other ports. To test on a laptop alone, open the TV page in one tab and the phone page in other tabs: each tab is its own player |
 | `pnpm dev` | Site + relay with live reload. Save a file and the TV page and phones update |
 | `pnpm test` | Relay tests, SDK tests and each game's rule tests |
 | `pnpm typecheck` | TypeScript check across the whole repo |

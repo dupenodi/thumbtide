@@ -40,10 +40,10 @@ export class Bots {
     for (const { seat, order } of g.orders()) {
       live.add(order.id);
       if (this.seen.has(order.id)) continue;
-      this.seen.add(order.id);
       const c = g.controls.get(order.ctl);
       const owner = c && g.seats.get(c.owner);
-      if (!c || !owner?.bot) continue; // a human's panel: the humans must hear it
+      if (!c || !(owner?.bot || owner?.away)) continue; // a present human's panel: the humans must hear it
+      this.seen.add(order.id);
       const mine = owner.id === seat.id;
       let delay = (mine ? 2000 + this.rand() * 3000 : 3000 + this.rand() * 4000) * (g.options.difficulty === "frantic" ? 0.85 : 1);
       delay = Math.min(delay, order.ttl * 0.8);

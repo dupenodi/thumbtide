@@ -3,19 +3,17 @@ import type { Phase } from "./rules.ts";
 
 export interface PunchShared {
   phase: Phase;
-  /** 0, 1, then 2 (the last laugh). */
+  /** 0-based round, and the rounds in the match. */
   round: number;
-  final: boolean;
-  /** What is being voted on (vote phase only): the prompt and every answer, in the TV's order. No authors. */
-  vote: { key: string; prompt: string; answers: string[] } | null;
+  rounds: number;
+  /** Names the round and the match: changes every round, so a phone can tell a new round from the old one. */
+  key: string;
+  /** The round's one prompt (write, vote, reveal). */
+  prompt: string;
+  /** The answers to vote on, in the TV's order. No authors. */
+  answers: string[];
   /** Names of the match winners (end only). */
   winners: string[];
-}
-
-export interface PunchTask {
-  key: string;
-  prompt: string;
-  sent: boolean;
 }
 
 export interface PunchOwn {
@@ -23,12 +21,17 @@ export interface PunchOwn {
   color: string;
   /** seated: playing. next: seated, answers from the next round (may vote now). watch: no free seat yet. */
   state: "seated" | "next" | "watch";
-  /** This round's prompts for you, while writing. */
-  tasks: PunchTask[];
-  /** Your part in the vote on show. */
-  vote: { key: string; author: boolean; options: number[]; mine: number | null } | null;
+  /** Your answer slot while writing: what you have sent (null if nothing yet). Null when you are not writing. */
+  task: { key: string; text: string | null } | null;
+  /** Your part in the vote on show: the answer indices you may pick, and your pick. */
+  vote: { key: string; options: number[]; mine: number | null } | null;
+  /** Your points this round and in all (reveal / scores / end). */
+  gained: number;
+  score: number;
   /** Your place at the end (1 = first). */
   place: number | null;
+  /** False for a player who joined late and never wrote in this match. */
+  played: boolean;
 }
 
 export interface PunchGame {

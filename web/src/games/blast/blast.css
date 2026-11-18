@@ -1,0 +1,179 @@
+/* ============================================================ Blast Party: TV
+   A toy-box diorama: painted wood blocks on a felt floor. Sizes are in --u: one pixel of a 1080p screen. */
+.blt {
+  --felt: #3d7a4f;
+  --wood: #e2b77a;
+  --wood-side: #b98a52;
+  --ink: #1d1a17;
+  --fuse: #ff8a1f;
+  --paper: #f6efe2;
+  --mute: #a89f8e;
+  --display: "Blast Display", "Lilita One", Impact, sans-serif;
+  --sans: "Blast Sans", Inter, system-ui, sans-serif;
+  --u: calc(100vh / 1080);
+  position: absolute; inset: 0; overflow: hidden; background: #1b1714; color: var(--paper);
+  font-family: var(--sans);
+}
+.blt-stage { position: absolute; inset: 0; }
+.blt-void { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.blt-box { position: absolute; }
+.blt-box canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.blt-ghost { opacity: 0; will-change: opacity, transform; }
+
+/* ------------------------------------------------------------ the scoreboard bar */
+.blt-bar {
+  position: absolute; left: 0; right: 0; top: 0; box-sizing: border-box; display: flex; align-items: center;
+  gap: calc(var(--u) * 28); padding: 0 calc(var(--u) * 32); background: var(--ink);
+  box-shadow: 0 calc(var(--u) * 6) 0 var(--wood-side), 0 calc(var(--u) * 12) 0 rgba(0, 0, 0, 0.35);
+}
+.blt-logo { flex: none; display: flex; align-items: center; gap: calc(var(--u) * 14); }
+.blt-logo span { font: 400 calc(var(--u) * 54) / 1 var(--display); color: var(--paper); letter-spacing: 0.01em; white-space: nowrap; }
+.blt-logo i {
+  position: relative; width: calc(var(--u) * 40); height: calc(var(--u) * 40); border-radius: 50%; background: #2a2623;
+  box-shadow: inset calc(var(--u) * -5) calc(var(--u) * -5) 0 #14110f, 0 0 0 calc(var(--u) * 3) var(--paper);
+}
+.blt-logo i::after {
+  content: ""; position: absolute; right: calc(var(--u) * -7); top: calc(var(--u) * -9); width: calc(var(--u) * 14); height: calc(var(--u) * 14);
+  border-radius: 50%; background: var(--fuse); box-shadow: 0 0 0 calc(var(--u) * 3) var(--ink);
+}
+.blt-chips {
+  list-style: none; margin: 0; padding: 0; flex: 1; min-width: 0; display: grid; align-content: center;
+  grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(var(--u) * 8) calc(var(--u) * 12);
+}
+.blt-chips li {
+  display: flex; align-items: center; gap: calc(var(--u) * 12); height: calc(var(--u) * 50); padding: 0 calc(var(--u) * 14);
+  background: var(--paper); color: var(--ink); border-radius: calc(var(--u) * 25); min-width: 0;
+  box-shadow: inset 0 calc(var(--u) * -4) 0 rgba(29, 26, 23, 0.14); transition: opacity 300ms;
+}
+.team .blt-chips li { box-shadow: inset calc(var(--u) * 10) 0 0 var(--t), inset 0 calc(var(--u) * -4) 0 rgba(29, 26, 23, 0.14); padding-left: calc(var(--u) * 24); }
+.blt-dot {
+  flex: none; width: calc(var(--u) * 26); height: calc(var(--u) * 26); border-radius: 50%; background: var(--k);
+  box-shadow: 0 0 0 calc(var(--u) * 3) var(--ink);
+}
+.blt-nm {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 700 calc(var(--u) * 28) / 1.1 var(--sans);
+}
+.blt-chips.dense li { gap: calc(var(--u) * 8); padding: 0 calc(var(--u) * 10); }
+.team .blt-chips.dense li { padding-left: calc(var(--u) * 20); }
+.blt-chips.dense .blt-dot { width: calc(var(--u) * 20); height: calc(var(--u) * 20); }
+.blt-chips.dense .blt-nm { font-size: calc(var(--u) * 24); }
+.blt-chips.dense .blt-pips { gap: calc(var(--u) * 3); }
+.blt-chips.dense .blt-pip { width: calc(var(--u) * 13); height: calc(var(--u) * 13); }
+.blt-chips.dense .blt-tag { font-size: calc(var(--u) * 16); }
+.blt-tag { flex: none; font: 700 calc(var(--u) * 20) / 1 var(--sans); font-style: normal; color: #7b7466; }
+.blt-chips li.out { opacity: 0.42; }
+.blt-chips li.next { opacity: 0.6; }
+.blt-pips { flex: none; display: flex; gap: calc(var(--u) * 6); }
+.blt-pip { width: calc(var(--u) * 20); height: calc(var(--u) * 20); border-radius: 50%; box-shadow: inset 0 0 0 calc(var(--u) * 3) #b9b09d; }
+.blt-pip.on { background: var(--fuse); box-shadow: inset 0 0 0 calc(var(--u) * 3) var(--ink); }
+.blt-pip.new { animation: blt-pop 420ms cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+@keyframes blt-pop { 0% { opacity: 0; transform: scale(2); } 70% { opacity: 1; transform: scale(0.9); } 100% { transform: scale(1); } }
+.blt-info { flex: none; display: flex; align-items: center; gap: calc(var(--u) * 16); }
+.blt-meta { display: flex; flex-direction: column; gap: calc(var(--u) * 8); font: 700 calc(var(--u) * 28) / 1 var(--sans); color: var(--mute); white-space: nowrap; }
+.blt-meta.big { font-size: calc(var(--u) * 30); }
+.blt-meta b { font: 400 calc(var(--u) * 46) / 1 var(--display); color: var(--paper); vertical-align: -0.06em; }
+.blt-team {
+  display: flex; align-items: center; gap: calc(var(--u) * 10); padding: 0 calc(var(--u) * 16); height: calc(var(--u) * 62);
+  border-radius: calc(var(--u) * 31); background: var(--t); color: var(--paper); text-shadow: 0 calc(var(--u) * 2) 0 rgba(29, 26, 23, 0.4);
+}
+.blt-team b { font: 400 calc(var(--u) * 46) / 1 var(--display); }
+.blt-team span { font: 700 calc(var(--u) * 26) / 1 var(--sans); }
+.blt-team.won { animation: blt-pop 420ms cubic-bezier(0.3, 0.7, 0.4, 1) both; box-shadow: 0 0 0 calc(var(--u) * 4) var(--paper); }
+
+/* ------------------------------------------------------------ over the arena */
+.blt-over { position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+.blt-count { display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 2); color: var(--paper); }
+.blt-count span {
+  font: 800 calc(var(--u) * 30) / 1 var(--sans); letter-spacing: 0.12em; text-transform: uppercase;
+  padding: calc(var(--u) * 10) calc(var(--u) * 22); background: rgba(29, 26, 23, 0.82); border-radius: calc(var(--u) * 28);
+}
+.blt-count b {
+  font: 400 calc(var(--u) * 260) / 1 var(--display);
+  text-shadow: calc(var(--u) * -6) 0 var(--ink), calc(var(--u) * 6) 0 var(--ink), 0 calc(var(--u) * -6) var(--ink), 0 calc(var(--u) * 6) var(--ink), calc(var(--u) * 6) calc(var(--u) * 6) var(--ink), calc(var(--u) * -6) calc(var(--u) * -6) var(--ink), calc(var(--u) * 6) calc(var(--u) * -6) var(--ink), calc(var(--u) * -6) calc(var(--u) * 6) var(--ink), 0 calc(var(--u) * 14) 0 var(--ink);
+  animation: blt-in 380ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.blt-count.go b { font-size: calc(var(--u) * 190); color: var(--fuse); }
+@keyframes blt-in { from { opacity: 0; transform: scale(1.25); } }
+
+.blt-card {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 12);
+  padding: calc(var(--u) * 34) calc(var(--u) * 80) calc(var(--u) * 38); background: var(--k, var(--paper)); color: var(--on, var(--ink));
+  border-radius: calc(var(--u) * 28); box-shadow: 0 0 0 calc(var(--u) * 6) var(--ink), 0 calc(var(--u) * 16) 0 calc(var(--u) * 6) var(--ink);
+  animation: blt-card 320ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.blt-card.plain { background: var(--paper); color: var(--ink); }
+@keyframes blt-card { from { opacity: 0; transform: translateY(calc(var(--u) * 20)) scale(0.96); } }
+.blt-card span { font: 800 calc(var(--u) * 28) / 1 var(--sans); letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.8; }
+.blt-card b { font: 400 calc(var(--u) * 100) / 1 var(--display); max-width: calc(var(--u) * 900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blt-card em { font: 700 calc(var(--u) * 34) / 1.1 var(--sans); font-style: normal; max-width: calc(var(--u) * 900); text-align: center; }
+
+.blt-match {
+  display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 12);
+  padding: calc(var(--u) * 40) calc(var(--u) * 80) calc(var(--u) * 36); background: var(--paper); color: var(--ink);
+  border-radius: calc(var(--u) * 32); box-shadow: 0 0 0 calc(var(--u) * 6) var(--ink), 0 calc(var(--u) * 18) 0 calc(var(--u) * 6) var(--ink);
+  min-width: calc(var(--u) * 760); animation: blt-card 420ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.blt-mk { font: 800 calc(var(--u) * 28) / 1 var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: #7b7466; }
+.blt-win {
+  font: 400 calc(var(--u) * 132) / 1.05 var(--display); color: var(--on); background: var(--k); padding: calc(var(--u) * 4) calc(var(--u) * 44) calc(var(--u) * 10);
+  border-radius: calc(var(--u) * 24); box-shadow: 0 0 0 calc(var(--u) * 5) var(--ink); max-width: calc(var(--u) * 1000); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.blt-wins { font: 700 calc(var(--u) * 34) / 1 var(--sans); font-style: normal; margin-top: calc(var(--u) * 6); }
+.blt-final { list-style: none; margin: calc(var(--u) * 22) 0 0; padding: 0; align-self: stretch; display: flex; flex-direction: column; gap: calc(var(--u) * 2); }
+.blt-final li { display: flex; align-items: center; gap: calc(var(--u) * 16); height: calc(var(--u) * 52); border-top: calc(var(--u) * 3) solid #ddd3be; }
+.blt-final .blt-rk { width: 1.2em; font: 400 calc(var(--u) * 32) / 1 var(--display); color: #7b7466; }
+.blt-final .blt-nm { font-size: calc(var(--u) * 30); }
+.blt-final .blt-dot { width: calc(var(--u) * 24); height: calc(var(--u) * 24); }
+
+/* ============================================================ Blast Party: phone
+   The kit gamepad, made plain: ink and felt, Inter, the stick on the left, a big round Bomb in the player's colour
+   with a smaller Punch and Jump above it. */
+.gp.blt-pad { --c: #8a90a0; background: #1d1a17; color: #f6efe2; font-family: Inter, system-ui, sans-serif; }
+.blt-pad .gp-stick { background: #2b5a3c; box-shadow: inset 0 0 0 3px #3d7a4f; border-radius: 24px; }
+.blt-pad .gp-stick-hint { color: #bcd8c3; font: 600 16px/1.2 Inter, system-ui, sans-serif; }
+.blt-pad .gp-btns {
+  display: grid; flex-direction: unset; container-type: size; gap: 12px; align-items: center; justify-items: center;
+  grid-template: "p j" minmax(0, 0.8fr) "b b" minmax(0, 1.6fr) / 1fr 1fr;
+}
+.blt-pad .gp-btn { border-radius: 50%; min-height: 0; flex: none; text-shadow: none; font: 800 22px/1 Inter, system-ui, sans-serif; letter-spacing: 0; }
+.blt-pad .gp-btn::before { content: none; }
+.blt-pad .gp-btn .gp-ico { display: none; }
+.blt-pad .gp-btn b { position: relative; z-index: 1; }
+.blt-pad .gp-btn[data-id="bomb"] {
+  grid-area: b; width: min(100cqw, 62cqh); height: min(100cqw, 62cqh); background: var(--c); color: #f6efe2; font-size: 32px;
+  box-shadow: 0 0 0 6px #1d1a17, 0 0 0 9px var(--c), 0 10px 0 6px #0f0d0b;
+}
+.blt-pad .gp-btn[data-id="punch"] { grid-area: p; }
+.blt-pad .gp-btn[data-id="jump"] { grid-area: j; }
+.blt-pad .gp-btn[data-id="punch"], .blt-pad .gp-btn[data-id="jump"] {
+  width: min(calc(50cqw - 6px), 30cqh); height: min(calc(50cqw - 6px), 30cqh); background: #3a342d; color: #f6efe2;
+  box-shadow: inset 0 0 0 3px #6b6254, 0 6px 0 #0f0d0b;
+}
+.blt-pad .gp-btn.pressed { transform: translateY(5px) scale(0.97); filter: brightness(1.12); }
+.blt-pad .gp-btn.pressed[data-id="bomb"] { transform: translateY(8px) scale(0.97); }
+.blt-cd {
+  position: absolute; inset: 0; border-radius: 50%; background: rgba(15, 13, 11, 0.62); transform-origin: 50% 100%;
+  transform: scaleY(0); pointer-events: none;
+}
+.blt-cd.run { animation: blt-cd 1000ms linear both; }
+@keyframes blt-cd { from { transform: scaleY(1); } to { transform: scaleY(0); } }
+.blt-pad.blt-idle .gp-btn[data-id="bomb"] { background: #3a342d; color: #8b8272; box-shadow: 0 0 0 6px #1d1a17, 0 0 0 9px #3a342d, 0 10px 0 6px #0f0d0b; }
+.blt-pad.blt-idle .gp-btn[data-id="punch"], .blt-pad.blt-idle .gp-btn[data-id="jump"] { color: #8b8272; box-shadow: inset 0 0 0 3px #3a342d, 0 6px 0 #0f0d0b; }
+
+.blt-top { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 0; }
+.blt-who { display: flex; align-items: center; gap: 10px; font: 600 18px/1.2 Inter, system-ui, sans-serif; color: #d7cfbe; }
+.blt-who i { width: 16px; height: 16px; border-radius: 50%; background: var(--c); flex: none; box-shadow: 0 0 0 2px #f6efe2; }
+.blt-who span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blt-status { margin: 0; font: 700 28px/1.2 Inter, system-ui, sans-serif; color: #f6efe2; }
+.blt-again {
+  align-self: stretch; min-height: 60px; border: 0; border-radius: 16px; background: var(--c); color: #f6efe2;
+  font: 700 22px/1 Inter, system-ui, sans-serif; touch-action: manipulation;
+}
+.blt-again[hidden] { display: none; }
+@media (orientation: portrait) {
+  .blt-top { padding-top: 12px; }
+}
+@media (orientation: landscape) {
+  .blt-pad .gp-btns { grid-template: "p j" minmax(0, 0.7fr) "b b" minmax(0, 1.3fr) / 1fr 1fr; }
+}

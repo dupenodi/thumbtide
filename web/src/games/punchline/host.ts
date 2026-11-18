@@ -6,13 +6,14 @@ import { isSys, type HostMount, type Settings } from "../types.ts";
 import { BOT_NAMES, Bots, isBot } from "./bots.ts";
 import { loadFonts } from "./font.ts";
 import { SEAT_COLORS } from "./look.ts";
-import { FINAL_ROUND, MAX_SEATS, MIN_SEATS, Punchline, TIMES, type Options, type PunchEvent } from "./rules.ts";
+import { MAX_SEATS, MIN_SEATS, Punchline, ROUND_CHOICES, TIMES, type Options, type PunchEvent } from "./rules.ts";
 import type { PunchGame, PunchOwn } from "./shared.ts";
 import { createView } from "./view.ts";
 import "./punchline.css";
 
 const optionsOf = (s: Settings): Options => ({
-  time: (TIMES as readonly number[]).includes(Number(s.time)) ? Number(s.time) : 90,
+  rounds: (ROUND_CHOICES as readonly number[]).includes(Number(s.rounds)) ? Number(s.rounds) : 8,
+  time: (TIMES as readonly number[]).includes(Number(s.time)) ? Number(s.time) : 60,
   family: s.family === true || s.family === "true",
 });
 
@@ -35,7 +36,7 @@ const mount: HostMount = (ctx) => {
     return Math.max(0, Math.min(MAX_SEATS - h, Math.max(MIN_SEATS - h, Number(ctx.settings().bots) || 0)));
   };
   const botSeats = () => game.list().filter((s) => isBot(s.id));
-  const between = () => game.phase === "intro" || game.phase === "wait" || game.phase === "end";
+  const between = () => game.phase === "intro" || game.phase === "wait" || game.phase === "scores" || game.phase === "end";
 
   function addBot() {
     const taken = new Set(game.list().map((s) => s.name.toLowerCase()));
@@ -75,38 +76,30 @@ const mount: HostMount = (ctx) => {
 
   function ownFor(p: HostPlayer<PunchGame>): PunchOwn {
     const s = game.seats.get(p.id);
-    if (!s) return { name: p.name, color: "#9aa3ad", state: "watch", tasks: [], vote: null, place: null };
-    const writing = game.phase === "write" && s.inRound;
-    const vk = game.voteKey();
-    let vote: PunchOwn["vote"] = null;
-    if (vk) {
-      const pair = game.current();
-      const author = game.final ? false : !!pair?.authors.includes(s.id);
-      const mine = game.final ? game.final.votes.get(s.id) : pair?.votes.get(s.id);
-      vote = { key: vk, author, options: game.final ? game.options(s.id) : author ? [] : [0, 1], mine: mine ?? null };
-    }
+    if (!s) return { name: p.name, color: "#9aa3ad", state: "watch", task: null, vote: null, gained: 0, score: 0, place: null, played: false };
+    const t = game.task(s.id);
     return {
       name: s.name,
       color: SEAT_COLORS[s.slot % MAX_SEATS]!,
       state: s.inRound || between() ? "seated" : "next",
-      tasks: writing ? game.tasks(s.id).map((t) => ({ key: t.key, prompt: t.prompt.text, sent: !!t.answer })) : [],
-      vote,
-      place: game.phase === "end" ? game.standings().findIndex((x) => x.id === s.id) + 1 : null,
+      task: t ? { key: t.key, text: t.text } : null,
+      vote: game.phase === "vote" ? { key: game.key(), options: game.options(s.id), mine: game.votes.get(s.id) ?? null } : null,
+      gained: s.gained,
+      score: s.score,
+      place: game.phase === "end" ? game.place(s.id) : null,
+      played: s.played,
     };
   }
 
   function publish() {
-    const pair = game.current();
-    const vk = game.voteKey();
+    const showing = game.phase === "write" || game.phase === "vote" || game.phase === "reveal";
     const shared = {
       phase: game.phase,
       round: game.round,
-      final: game.round === FINAL_ROUND,
-      vote: vk
-        ? game.final
-          ? { key: vk, prompt: game.final.prompt.text, answers: game.final.entries.map((e) => e.answer!.text) }
-          : { key: vk, prompt: pair!.prompt.text, answers: pair!.answers.map((a) => a!.text) }
-        : null,
+      rounds: game.opts.rounds,
+      key: game.key(),
+      prompt: showing && game.prompt ? game.prompt.text : "",
+      answers: game.phase === "vote" ? game.shown.map((ei) => game.entries[ei]!.text!) : [],
       winners: game.phase === "end" ? game.winners().map((s) => s.name) : [],
     };
     const sk = JSON.stringify(shared);
@@ -130,7 +123,7 @@ const mount: HostMount = (ctx) => {
   // ------------------------------------------------------------ events from the rules
   function handle(e: PunchEvent) {
     if (e.type === "phase") {
-      if (e.phase === "intro") seatAll();
+      if (e.phase === "intro" || e.phase === "scores") seatAll();
       if (e.phase === "write") buzzAll("write", (id) => !!game.seats.get(id)?.inRound);
       if (e.phase === "vote") buzzAll("vote", (id) => game.canVote(id));
       if (e.phase === "end") buzzAll("win", (id) => game.winners().some((s) => s.id === id));

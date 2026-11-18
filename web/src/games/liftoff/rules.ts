@@ -18,7 +18,7 @@ export const RESULT_STEPS = Math.round(5.5 * 60);
 export const RUN_OPTIONS = [1, 3, 5] as const;
 
 // ------------------------------------------------------------------ the rocket (metres, y up, origin at its centre)
-export const G = 9;
+export const G = 6;
 /** All thrusters on: this many g. */
 export const THRUST_ALL = 2.1;
 /** Thrusters spread over this base width: offsets run from -BASE/2 to BASE/2. */
@@ -26,13 +26,13 @@ export const BASE = 2.2;
 /** Rotational inertia (m²). */
 export const INERTIA = 1.7;
 /** Spin damping and drag (per second). */
-export const SPIN_DAMP = 2.6;
+export const SPIN_DAMP = 4;
 export const DRAG_X = 0.55;
 export const DRAG_Y = 0.42;
 /** The rocket's centre height while it stands on the pad. */
 export const PAD_Y = 2.6;
 /** The drop line never trails the best height by more than this. */
-export const DROP = 13;
+export const DROP = 18;
 /** The drop line starts climbing once the rocket is this high, or this long after lift-off is possible. */
 export const CREEP_FROM = 8;
 export const CREEP_DELAY = 8 * 60;

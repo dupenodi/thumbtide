@@ -1,17 +1,19 @@
 // The phone, built the conventional way: a status line on top, and a panel at the bottom with the action.
-// Writing: the prompt, a text box and a big Send button that stays above the keyboard; after Send, "Sent" and the
-// second prompt. Voting: the answers as big buttons. Everything on the phone comes from the sticky shared / own
-// state, so a phone that reloads lands on the right screen, and it moves on whenever the TV does.
+// Writing: the round's prompt, a text box and a big Send button that stays above the keyboard; after Send the phone
+// says "Sent, waiting for the others" and the answer can be changed until time is up. Voting: every answer except
+// your own as a big card; tap one, then confirm. Everything on the phone comes from the sticky shared / own state,
+// so a phone that reloads lands on the right screen, and it moves on whenever the TV does.
 import { haptic, type Controller } from "@thumbtide/sdk";
 import { button } from "@thumbtide/sdk/ui";
 import { gameById } from "../registry.ts";
 import type { ControllerMount } from "../types.ts";
-import type { PunchGame, PunchOwn, PunchShared, PunchTask } from "./shared.ts";
+import type { PunchGame, PunchOwn, PunchShared } from "./shared.ts";
 import "./punchline.css";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const MAX = 60;
+const MAX = 80;
 const ord = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th"}`;
+const promptHtml = (t: string) => esc(t).replace(/_{3,}([^ ]*)/g, `<span class="pl-nb"><span class="plp-blank"></span>$1</span>`);
 
 const mount: ControllerMount = (ctx) => {
   const ctl = ctx.ctl as Controller<PunchGame>;
@@ -57,19 +59,18 @@ const mount: ControllerMount = (ctx) => {
   let shownTask = "";
   let pending = "";
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function writeScene(tasks: PunchTask[]) {
-    const fresh = setScene(
-      `write:${tasks.map((t) => t.key).join()}`,
+  function writeScene(s: PunchShared, task: NonNullable<PunchOwn["task"]>) {
+    setScene(
+      `write:${task.key}`,
       `<div class="plp-write">
-        <div class="plp-prompt" data-scroll><small class="plp-step"></small><p class="plp-q"></p><div class="plp-toast" hidden>Sent</div></div>
+        <div class="plp-prompt" data-scroll><small class="plp-step"></small><p class="plp-q"></p></div>
         <div class="plp-panel plp-entry">
+          <div class="plp-status"></div>
           <textarea class="plp-text" rows="2" maxlength="${MAX}" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" spellcheck="true" placeholder="Your answer"></textarea>
           <div class="plp-meta"><span class="plp-hint"></span><span class="plp-count"></span></div>
           <button class="plp-btn primary plp-send">Send</button>
         </div>
-        <div class="plp-panel plp-done" hidden><h2>Sent</h2><p>Your answers are in. Watch the TV.</p></div>
       </div>`,
       () => {
         shownTask = "";
@@ -79,6 +80,7 @@ const mount: ControllerMount = (ctx) => {
           if (ta.value.includes("\n")) ta.value = ta.value.replace(/\n+/g, " ");
           drafts.set(shownTask, ta.value);
           count();
+          render();
         });
         ta.addEventListener("keydown", (e) => {
           if (e.key === "Enter") {
@@ -90,35 +92,25 @@ const mount: ControllerMount = (ctx) => {
         sceneOffs.push(button($(".plp-send"), { haptic: sendHaptic, onPress: send }));
       },
     );
-    const cur = tasks.find((t) => !t.sent);
-    const entry = $(".plp-entry");
-    const done = $(".plp-done");
     const ta = $<HTMLTextAreaElement>(".plp-text");
-    if (!cur) {
-      if (!entry.hidden) {
-        entry.hidden = true;
-        done.hidden = false;
-        $(".plp-prompt").hidden = true;
-        ta.blur();
-      }
-      return;
-    }
-    if (cur.key !== shownTask) {
-      const wasFocused = document.activeElement === ta;
-      const after = !fresh && shownTask !== "";
-      shownTask = cur.key;
-      const n = tasks.indexOf(cur);
-      $(".plp-step").textContent = tasks.length > 1 ? `Prompt ${n + 1} of ${tasks.length}` : "Everyone gets this one";
-      $(".plp-q").textContent = cur.prompt;
-      ta.value = drafts.get(cur.key) ?? "";
-      if (after) toast();
-      if (wasFocused) ta.focus();
+    if (task.key !== shownTask) {
+      shownTask = task.key;
+      $(".plp-step").textContent = `Round ${s.round + 1} of ${s.rounds} · everyone gets this one`;
+      ta.value = drafts.get(task.key) ?? task.text ?? "";
       count();
     }
-    const sending = pending === cur.key;
+    $(".plp-q").innerHTML = promptHtml(s.prompt);
+    // what the TV has: sent (and what it holds), or not yet
+    const clean = ta.value.replace(/\s+/g, " ").trim();
+    const sent = task.text !== null;
+    const same = sent && clean === task.text;
+    const sending = pending === task.key;
+    const status = $(".plp-status");
+    status.classList.toggle("ok", sent);
+    status.textContent = sent ? "Sent — waiting for the others. You can still change it." : "Type your answer, then send.";
     const btn = $<HTMLButtonElement>(".plp-send");
-    btn.disabled = sending;
-    btn.textContent = sending ? "Sending…" : "Send";
+    btn.disabled = sending || same;
+    btn.textContent = sending ? "Sending…" : same ? "Sent" : sent ? "Update my answer" : "Send";
   }
 
   function count() {
@@ -128,19 +120,6 @@ const mount: ControllerMount = (ctx) => {
     $(".plp-count").textContent = `${n} / ${MAX}`;
     $(".plp-count").classList.toggle("near", n >= MAX - 10);
     $(".plp-hint").textContent = "";
-  }
-
-  function toast() {
-    const t = $(".plp-toast");
-    t.hidden = false;
-    t.classList.remove("show");
-    void t.offsetWidth;
-    t.classList.add("show");
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      const el = body.querySelector<HTMLElement>(".plp-toast");
-      if (el) el.hidden = true;
-    }, 1400);
   }
 
   function send() {
@@ -166,55 +145,19 @@ const mount: ControllerMount = (ctx) => {
   // ------------------------------------------------------------------ voting
   let picked: number | null = null;
 
-  function pairVote(s: PunchShared, own: PunchOwn) {
+  function voteScene(s: PunchShared, own: PunchOwn) {
     const v = own.vote!;
-    if (v.author) {
-      setScene(`vote:${v.key}:mine`, info("That's yours up there", "No voting on your own. Fingers crossed."));
-      return;
-    }
-    const vote = s.vote!;
-    setScene(
-      `vote:${v.key}`,
-      `<div class="plp-prompt" data-scroll><small class="plp-step">Which is funnier?</small><p class="plp-q small">${esc(vote.prompt)}</p></div>
-       <div class="plp-panel plp-votes">${vote.answers
-         .map((a, i) => `<button class="plp-ans" data-pick="${i}"><span>${esc(a)}</span><em>Your vote</em></button>`)
-         .join("")}</div>`,
-      () => {
-        for (const el of body.querySelectorAll<HTMLElement>("[data-pick]")) {
-          sceneOffs.push(
-            button(el, {
-              mode: "tap",
-              haptic: voteHaptic,
-              onPress: () => {
-                const cur = ctl.own?.vote;
-                if (cur && cur.key === v.key) ctl.send({ type: "vote", key: v.key, pick: Number(el.dataset.pick) });
-              },
-            }),
-          );
-        }
-      },
-    );
-    for (const el of body.querySelectorAll<HTMLElement>("[data-pick]")) {
-      const on = v.mine === Number(el.dataset.pick);
-      el.classList.toggle("on", on);
-      el.classList.toggle("dim", v.mine !== null && !on);
-    }
-  }
-
-  function finalVote(s: PunchShared, own: PunchOwn) {
-    const v = own.vote!;
-    const vote = s.vote!;
     if (!v.options.length) {
-      setScene(`final:${v.key}:none`, info("Nothing to vote on", "Watch the TV."));
+      setScene(`vote:${v.key}:none`, info("Nothing to vote on", "Watch the TV."));
       return;
     }
     if (
       setScene(
-        `final:${v.key}`,
+        `vote:${v.key}`,
         `<div class="plp-final">
-          <div class="plp-prompt"><small class="plp-step">Pick your favourite</small><p class="plp-q small">${esc(vote.prompt)}</p></div>
+          <div class="plp-prompt"><small class="plp-step">Pick your favourite</small><p class="plp-q small">${promptHtml(s.prompt)}</p></div>
           <div class="plp-list" data-scroll>${v.options
-            .map((i) => `<button class="plp-ans small" data-pick="${i}"><span>${esc(vote.answers[i] ?? "")}</span><em>Your vote</em></button>`)
+            .map((i) => `<button class="plp-ans" data-pick="${i}"><span>${esc(s.answers[i] ?? "")}</span><em>Your vote</em></button>`)
             .join("")}</div>
           <div class="plp-panel"><button class="plp-btn primary plp-confirm">Tap an answer</button></div>
         </div>`,
@@ -253,7 +196,7 @@ const mount: ControllerMount = (ctx) => {
     }
     const btn = $<HTMLButtonElement>(".plp-confirm");
     btn.disabled = picked === null || picked === v.mine;
-    btn.textContent = picked === null ? "Tap an answer" : picked === v.mine ? "Voted" : v.mine === null ? "Vote for this one" : "Change my vote";
+    btn.textContent = picked === null ? "Tap an answer" : picked === v.mine ? "Voted. Waiting for the others" : v.mine === null ? "Vote for this one" : "Change my vote";
   }
 
   // ------------------------------------------------------------------ the rest
@@ -263,10 +206,11 @@ const mount: ControllerMount = (ctx) => {
     const decider = sh?.players.find((p) => p.id === sh.vip)?.name ?? "The host";
     const me = own?.name;
     const won = !!me && s.winners.includes(me);
-    const head = won ? (s.winners.length > 1 ? "You share the win" : "You win!") : s.winners.length ? `${esc(s.winners.join(" & "))} wins` : "Show's over";
-    const sub = own?.place && !won ? `You came ${ord(own.place)}.` : won ? "Best set of the night." : "";
+    const late = !!own && own.state !== "watch" && !own.played;
+    const head = late ? "Joined late" : won ? (s.winners.length > 1 ? "You share the win" : "You win!") : s.winners.length ? `${esc(s.winners.join(" & "))} wins` : "Show's over";
+    const sub = late ? "You're in from the next match." : own?.place && !won ? `You came ${ord(own.place)}.` : won ? "Best set of the night." : "";
     setScene(
-      `end:${s.winners.join()}:${own?.place}:${vip}:${decider}`,
+      `end:${s.winners.join()}:${own?.place}:${late}:${vip}:${decider}`,
       `${info(head, sub)}${
         vip
           ? `<div class="plp-panel plp-actions"><button class="plp-btn primary" data-act="again">Play again</button><button class="plp-btn ghost" data-act="lobby">Back to the lobby</button></div>`
@@ -291,14 +235,17 @@ const mount: ControllerMount = (ctx) => {
     root.style.setProperty("--c", own?.color ?? "#9aa3ad");
     (root.querySelector(".plp-name") as HTMLElement).textContent = own?.name ?? ctl.me?.name ?? "";
     const chip = root.querySelector(".plp-chip") as HTMLElement;
-    chip.textContent = !s || s.phase === "wait" || s.phase === "end" ? "" : s.final ? "Last laugh" : s.round === 1 ? "Round 2 · double" : "Round 1";
+    chip.textContent = !s || s.phase === "wait" || s.phase === "end" ? "" : `Round ${s.round + 1} of ${s.rounds}`;
 
-    // the pending send is settled once the TV says so, or the scene moves on
-    if (pending && !own?.tasks.some((t) => t.key === pending && !t.sent)) {
+    // the pending send is settled once the TV holds an answer, or the scene moves on
+    if (pending && own?.task?.key === pending && own.task.text !== null) {
+      pending = "";
+      if (pendingTimer) clearTimeout(pendingTimer);
+    } else if (pending && own?.task?.key !== pending) {
       pending = "";
       if (pendingTimer) clearTimeout(pendingTimer);
     }
-    root.classList.toggle("writing", s?.phase === "write" && !!own?.tasks.length);
+    root.classList.toggle("writing", s?.phase === "write" && !!own?.task);
 
     if (!s || !own) return void setScene("join", info("Taking your seat…"));
     if (s.phase === "end") return endScene(s, own);
@@ -307,23 +254,20 @@ const mount: ControllerMount = (ctx) => {
       case "wait":
         return void setScene("wait", info("Waiting for players", "Three or more to start."));
       case "intro":
-        return void setScene(
-          `intro:${s.round}`,
-          info(s.final ? "The last laugh" : `Round ${s.round + 1}`, s.final ? "One prompt. Everyone answers it." : s.round === 1 ? "Points count double." : "Two prompts each. Be funny."),
-        );
+        return void setScene(`intro:${s.key}`, info(`Round ${s.round + 1} of ${s.rounds}`, "One prompt for everyone. Be funny."));
       case "write":
         if (own.state === "next") return void setScene("next", info("You're in next round", "You can vote on the answers in a moment."));
-        // shared and own arrive apart: until this round's prompts are here, keep what is on screen
-        if (!own.tasks.length) return void (sceneKey || setScene("wait-tasks", info("Get ready")));
-        return writeScene(own.tasks);
+        // shared and own arrive apart: until this round's task is here, keep what is on screen
+        if (!own.task || own.task.key !== s.key) return void (sceneKey || setScene("wait-tasks", info("Get ready")));
+        return writeScene(s, own.task);
       case "vote":
         // shared and own arrive apart: until both name the same vote, keep what is on screen
-        if (!own.vote || !s.vote || own.vote.key !== s.vote.key) return void (sceneKey || setScene("vote-watch", info("Eyes on the TV")));
-        return s.final ? finalVote(s, own) : pairVote(s, own);
+        if (!own.vote || own.vote.key !== s.key) return void (sceneKey || setScene("vote-watch", info("Eyes on the TV")));
+        return voteScene(s, own);
       case "reveal":
-        return void setScene(`reveal`, info("Votes are in", "Watch the TV."));
+        return void setScene(`reveal:${s.key}`, info("Votes are in", own.gained > 0 ? `You scored ${own.gained}.` : "Watch the TV."));
       case "scores":
-        return void setScene(`scores:${s.round}`, info("Standings", "On the TV."));
+        return void setScene(`scores:${s.key}`, info("Standings", `You have ${own.score}. See the TV.`));
     }
   }
 
@@ -341,7 +285,6 @@ const mount: ControllerMount = (ctx) => {
 
   return () => {
     if (pendingTimer) clearTimeout(pendingTimer);
-    if (toastTimer) clearTimeout(toastTimer);
     offs.forEach((f) => f());
     sceneOffs.forEach((f) => f());
     root.remove();

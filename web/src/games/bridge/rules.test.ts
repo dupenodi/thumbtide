@@ -361,3 +361,19 @@ test("a bots-only voyage ends by itself in a few minutes", () => {
     assert.ok(g.sector >= 2);
   }
 });
+
+test("a seat whose phone dropped is played by a bot until the player is back", () => {
+  const g = playing(3, 9);
+  const b = new Bots(g, seeded(2));
+  g.setAway("p0", true);
+  assert.equal(g.seats.get("p0")!.away, true);
+  let done = 0;
+  for (let i = 0; i < 600 && g.phase === "play"; i++) {
+    g.advance(100);
+    b.step(100);
+    for (const e of g.drainEvents()) if (e.type === "done" && g.controls.get(e.ctl)?.owner === "p0") done++;
+  }
+  assert.ok(done > 0, "the bot used p0's controls");
+  g.setAway("p0", false);
+  assert.equal(g.seats.get("p0")!.away, false);
+});
