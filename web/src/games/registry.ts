@@ -352,6 +352,17 @@ export const GAMES: GameDef[] = applyThumbs([
     controller: () => import("./blast/controller.ts"),
   },
   {
+    // performance spike for a 3D BombSquad-style brawler (tools/perf scenarios blast3d-*); not a game yet
+    id: "blast3d",
+    title: "Blast 3D (spike)",
+    tagline: "Performance test for a 3D bomb brawler.",
+    minPlayers: 1,
+    maxPlayers: 8,
+    hidden: true,
+    host: () => import("./blast3d/host.ts"),
+    controller: () => import("./blast3d/controller.ts"),
+  },
+  {
     id: "sandbox",
     title: "Sandbox",
     tagline: "Check every phone is connected.",
