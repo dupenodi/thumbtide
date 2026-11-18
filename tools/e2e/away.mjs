@@ -385,6 +385,8 @@ async function exitToLobby() {
   await vip.page.tap(".sb-host");
   await vip.page.waitForSelector('[data-cmd="exit"]', { timeout: 3000 });
   await vip.page.tap('[data-cmd="exit"]');
+  // End game asks for a second tap (it sits next to Restart in the footer)
+  await vip.page.tap('[data-cmd="exit"][data-confirm]').catch(() => {});
   return until(() => tvEval(() => shellMod().then((m) => m.shell.host.config.game)).then((g) => g === "lobby"), 8000);
 }
 

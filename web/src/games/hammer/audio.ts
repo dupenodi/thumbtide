@@ -5,15 +5,16 @@
 // Effects: hits by material (metall / wood / stone, a blade cut adds bladaway), clashes (spark), disarm (chain),
 // gunshot (shoot_03), blast (explo_02), K.O. (explo_03), coins (gold), gong, drum and applause for the announcer;
 // synth: rotor hum, swing whoosh, stun, pickup, countdown. Effects decode one at a time after start (small buffers).
-// Music: Hammerfight's battle_small_01 (warm-up) and battle_mid_02 (fight), streamed by one <audio> element (never
-// decoded into memory: the TV has little); the synth groove plays if the file fails.
+// Music: Hammerfight's battle_small_01 (warm-up) and battle_mid_02 (fight), streamed by one <audio> element; on the
+// TV (bufferMusic) mono copies decoded once and looped by WebAudio, as the element cost frames there (see syncBuffered).
+// The synth groove plays if the file fails.
 // Slow motion closes a low-pass filter over the effects, so big hits sound heavy and muffled.
 
+import type { ShotKind } from "./sim.ts";
 import type { Material } from "./weapons.ts";
 
 const SOUND_URLS = import.meta.glob("./sounds/*.ogg", { query: "?url", import: "default", eager: true }) as Record<string, string>;
-const soundUrl = (name: string): string | undefined => SOUND_URLS[`./sounds/${name}.ogg`];
-const EFFECTS = [
+const soundUrl = (name: string): string | undefined => SOUND_URLS[`./sounds/${name}.ogg`];const EFFECTS = [
   "metall_01", "metall_02", "metall_03", "metall_04", "metall_05", "wood_01", "wood_02", "wood_03", "stone_01", "stone_02", "stone_03",
   "bladaway_01", "bladaway_02", "bladaway_03", "spark_01", "spark_02", "chain_01", "explo_02", "explo_03", "shoot_03",
   "gold_01", "gold_02", "gong", "drum_01", "aplause_01",
@@ -41,8 +42,8 @@ export interface GameAudio {
   pickup(): void;
   /** Coins: a spill on a hard hit (n coins) or one picked up (n 0). */
   coin(n: number): void;
-  /** A gunshot (bullet) or a mortar blast (ball). */
-  shot(ball: boolean): void;
+  /** A gun firing (sim.ts ShotKind), or a rocket's blast. */
+  shot(kind: ShotKind | "blast"): void;
   ko(): void;
   sting(kind: Sting, n?: number): void;
   /** Per frame: average machine speed and fastest weapon speed (0–1 each), and the time warp (1 normal, 0.3 slow). */
@@ -64,7 +65,7 @@ const BASS: (number | null)[] = [0, null, 0, 12, null, 0, 7, null, 0, null, 10, 
 const hz = (semis: number, base = 55) => base * 2 ** (semis / 12);
 
 /** lite (the TV): no hi-hats and a single partial for metal rings, to save audio-thread time. */
-export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean; samples?: boolean; fileMusic?: boolean } = {}): GameAudio | null {
+export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean; samples?: boolean; fileMusic?: boolean; bufferMusic?: boolean } = {}): GameAudio | null {
   if (!ctx) return null;
   const c = ctx;
   const lite = !!opts.lite;
@@ -254,7 +255,59 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
   /** False once a track failed to load: the synth groove takes over for good. */
   let fileMusic = opts.fileMusic !== false && !!soundUrl(TRACKS.fight) && typeof Audio !== "undefined";
   let track = "";
+  // bufferMusic (the TV): the tracks (mono copies, sounds/*.mono.ogg) decoded once and looped by WebAudio, not
+  // streamed by an <audio> element. On the TV the element cost ~3 fps in every fight, whatever the file format
+  // (Vorbis, AAC, MP3, mono 22 kHz: all the same); WebAudio playback nearly nothing (TV A/B, Co-op vs monsters,
+  // classic, 4 bots: element 53.7, WebAudio 56.1, no music 56.7 fps). Memory: 32 s mono at the context's rate is
+  // ~6 MB per track, both kept.
+  let bufferMusic = !!opts.bufferMusic && fileMusic && !!soundUrl(`${TRACKS.fight}.mono`) && !!soundUrl(`${TRACKS.warm}.mono`);
+  const bufs = new Map<string, AudioBuffer | null>();
+  let bufSrc: AudioBufferSourceNode | null = null;
+  let bufTrack = "";
+  const bufOut = c.createGain();
+  bufOut.gain.value = MUSIC_VOL;
+  // straight to the speakers, as the element was: the slow-motion filter doesn't touch the music
+  bufOut.connect(c.destination);
+  const syncBuffered = () => {
+    if (disposed) return;
+    // a pause suspends the whole context, which holds the track where it is: no stop and restart from 0 for it
+    const want = mood === "off" || !musicOn ? "" : TRACKS[mood];
+    if (want === bufTrack && (bufSrc || !want)) return;
+    bufSrc?.stop();
+    bufSrc = null;
+    bufTrack = want;
+    if (!want) return;
+    const buf = bufs.get(want);
+    if (buf) {
+      bufSrc = c.createBufferSource();
+      bufSrc.buffer = buf;
+      bufSrc.loop = true;
+      bufSrc.connect(bufOut);
+      bufSrc.start();
+      return;
+    }
+    if (buf === null) return; // decoding; it starts when ready
+    bufs.set(want, null);
+    void loadBytes(soundUrl(`${want}.mono`)!)
+      .then((d) => new Promise<AudioBuffer>((res, rej) => c.decodeAudioData(d, res, rej)))
+      .then((b) => {
+        if (disposed) return;
+        bufs.set(want, b);
+        if (bufTrack === want && !bufSrc) {
+          bufTrack = "";
+          syncBuffered();
+        }
+      })
+      .catch(() => {
+        if (disposed) return;
+        // the element streams it instead
+        bufferMusic = false;
+        bufs.clear();
+        syncMusic();
+      });
+  };
   const syncMusic = () => {
+    if (bufferMusic) return syncBuffered();
     if (!fileMusic) return;
     const want = mood === "off" || !musicOn || paused ? "" : TRACKS[mood];
     if (!want) {
@@ -359,17 +412,28 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
       // a short jingle: a few bright pings
       for (let i = 0; i < Math.min(5, 1 + Math.floor(n / 4)); i++) tone("triangle", 1500 + Math.random() * 1500, 1400 + Math.random() * 1400, t + i * 0.035, 0.08, 0.05);
     },
-    shot(ball) {
+    shot(kind) {
       // an arquebus fires 10 a second: at most one crack per 60 ms
       if (!allow(0.06)) return;
       const t = now();
-      if (play(ball ? "explo_02" : "shoot_03", ball ? 0.8 : 0.45, ball ? 1 : 0.95 + Math.random() * 0.15, t)) return;
-      if (ball) {
-        burst(t, "lowpass", 900, 0.7, 0.8, 0.45, sfx, 150);
-        tone("sine", 110, 40, t, 0.7, 0.35);
-      } else {
+      // each gun its own voice (before 2026-11-18 the mortars fired with the rocket's blast and a rocket launched
+      // with the arquebus crack): bullet the crack; scatter a deep bang; cannon a low boom; rocket a soft pop and a
+      // rush; blast the explosion
+      if (kind === "bullet") {
+        if (play("shoot_03", 0.45, 0.95 + Math.random() * 0.15, t)) return;
         burst(t, "bandpass", 2600, 0.9, 0.35, 0.07);
         tone("square", 300, 90, t, 0.06, 0.05);
+      } else if (kind === "scatter") {
+        if (play("shoot_03", 0.85, 0.68 + Math.random() * 0.06, t)) return;
+        burst(t, "lowpass", 1800, 0.7, 0.7, 0.18, sfx, 400);
+        tone("square", 180, 60, t, 0.12, 0.08);
+      } else if (kind === "rocket") {
+        play("shoot_03", 0.3, 0.5, t);
+        burst(t, "bandpass", 700, 1.2, 0.35, 0.35, sfx, 2400);
+      } else {
+        if (play("explo_02", kind === "cannon" ? 0.9 : 0.8, kind === "cannon" ? 0.72 : 1, t)) return;
+        burst(t, "lowpass", 900, 0.7, 0.8, 0.45, sfx, 150);
+        tone("sine", 110, 40, t, 0.7, 0.35);
       }
     },
     ko() {
@@ -434,7 +498,7 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
       syncMusic();
     },
     samples() {
-      return { loaded: bank.size, failed, music: fileMusic ? (el && !el.paused ? track : "file, idle") : "synth" };
+      return { loaded: bank.size, failed, music: bufferMusic ? `buffer ${bufSrc ? bufTrack : "idle"}` : fileMusic ? (el && !el.paused ? track : "file, idle") : "synth" };
     },
     dispose() {
       disposed = true;
@@ -444,6 +508,15 @@ export function createGameAudio(ctx: AudioContext | null, opts: { lite?: boolean
         el.removeAttribute("src");
         el.load(); // let go of the stream
       }
+      // the buffered music plays straight to the speakers (not through master): stop it and let its buffers go
+      try {
+        bufSrc?.stop();
+      } catch {
+        /* already stopped */
+      }
+      bufSrc = null;
+      bufOut.disconnect();
+      bufs.clear();
       bank.clear();
       // the context is shared with the lobby: leave it running
       if (paused) void c.resume().catch(() => {});

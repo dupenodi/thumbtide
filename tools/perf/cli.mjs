@@ -381,6 +381,8 @@ function receive(take, timeoutMs) {
         } catch {
           return; // not a report
         }
+        // a game's own reporter may post here too, in another format: keep frame-monitor reports and probe results
+        if (typeof r.frames !== "number" && !(r.cpu && r.gpu)) return;
         any = true;
         if (take(r)) {
           s.close();

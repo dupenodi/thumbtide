@@ -102,6 +102,14 @@ const mount: HostMount = (ctx) => {
   const abHudOff = import.meta.env.VITE_PERF === "1" && startParam("hud") === "off";
   // hud=frozen: the cards stop updating during a fight (they stay on screen): what the card updates cost
   const abHudFrozen = import.meta.env.VITE_PERF === "1" && startParam("hud") === "frozen";
+  // pvebots=1: in Co-op vs CPU, the bots in even slots play on the players' side (so a TV run with bots only can fight)
+  const abPveBots = import.meta.env.VITE_PERF === "1" && startParam("pvebots") === "1";
+  // fpsui=off: no on-screen frame-rate counter (what it costs)
+  const abFpsOff = import.meta.env.VITE_PERF === "1" && startParam("fpsui") === "off";
+  // fpsui=canvas: the counter drawn in the game canvas instead of the HUD (the HUD's corner text widens its layer)
+  const abFpsCanvas = import.meta.env.VITE_PERF === "1" && startParam("fpsui") === "canvas";
+  // wavebar=off: no wave-timer strip during a Co-op vs monsters fight (what it costs)
+  const abWaveBarOff = import.meta.env.VITE_PERF === "1" && startParam("wavebar") === "off";
   const abDrawOff = import.meta.env.VITE_PERF === "1" && startParam("draw") === "off";
   // kos=burst (perf builds): every 6 s in a fight, wreck 3 machines at once (the worst moment for shards and coins)
   const abKoBurst = import.meta.env.VITE_PERF === "1" && startParam("kos") === "burst";
@@ -118,7 +126,7 @@ const mount: HostMount = (ctx) => {
   // perf A/B (perf builds only): audio=synth (no samples, no file music), nomusic (no file music), nosamples
   const coinsOff = import.meta.env.VITE_PERF === "1" && startParam("coins") === "off";
   const audioAB = import.meta.env.VITE_PERF === "1" ? startParam("audio") : null;
-  const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite"), samples: audioAB !== "synth" && audioAB !== "nosamples", fileMusic: audioAB !== "synth" && audioAB !== "nomusic" });
+  const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite"), samples: audioAB !== "synth" && audioAB !== "nosamples", fileMusic: audioAB !== "synth" && audioAB !== "nomusic", bufferMusic: lite && audioAB !== "element" });
   const sound = tour ? tour.wrapSound(sound0) : sound0;
   sound?.setMusicOn(ctx.settings().music !== false);
   /** The material of a machine's striking part, for the hit sound. */
@@ -211,7 +219,7 @@ const mount: HostMount = (ctx) => {
   /** The mode of the current round (a change in Settings applies from the next warm-up). */
   let mode: Mode = settingMode();
   // co-op vs monsters: every seat (players and computer allies) is team 0
-  const teamOf = (s: Seat): number => (mode === "teams" ? s.slot % 2 : mode === "pve" ? (s.human ? 0 : 1) : mode === "pvm" ? 0 : s.slot);
+  const teamOf = (s: Seat): number => (mode === "teams" ? s.slot % 2 : mode === "pve" ? (s.human || (abPveBots && s.slot % 2 === 0) ? 0 : 1) : mode === "pvm" ? 0 : s.slot);
   const teamName = (t: number): string =>
     t === MONSTER_TEAM ? "The worms" : mode === "teams" ? TEAMS[t]!.name : mode === "pve" || mode === "pvm" ? PVE_TEAMS[t]!.name : "";
   const teamColor = (t: number): string => (t === MONSTER_TEAM ? MONSTER_COLOR : mode === "teams" ? TEAMS[t]!.color : PVE_TEAMS[t]!.color);
@@ -791,13 +799,19 @@ const mount: HostMount = (ctx) => {
         fx.burst(e.x, e.y, 14, 300, "#cfd6e4", 2);
         fx.text(e.x, e.y - 16, "SHIELD BROKEN", "#cfd6e4", 16);
       } else if (e.type === "blast") {
-        sound?.shot(true);
+        sound?.shot("blast");
         fx.burst(e.x, e.y, lite ? 18 : 36, 380, "#ffb347", 3);
         fx.burst(e.x, e.y, lite ? 8 : 16, 200, "#fff3c4", 2);
         fx.shake = Math.min(12, fx.shake + 7);
       } else if (e.type === "shot") {
-        sound?.shot(e.ball);
-        if (e.ball) fx.shake = Math.min(12, fx.shake + 3);
+        sound?.shot(e.kind);
+        // a bullet stays as it was (no shake, no flash); the heavier guns shake with their kick (mortar 300 → 3; a
+        // rocket pushes nothing but gets a small one; the heavy mortar's one big ball shakes most) and flash at the muzzle
+        if (e.kind !== "bullet") {
+          const cannon = e.kind === "cannon";
+          fx.shake = Math.min(12, fx.shake + (cannon ? 5 : Math.max(1.5, e.kick / 100)));
+          fx.burst(e.x, e.y, (lite ? 4 : 8) * (cannon ? 2 : 1), e.kind === "rocket" ? 160 : cannon ? 340 : 260, e.kind === "rocket" ? "#ffb347" : "#fff3c4", 2);
+        }
       } else if (e.type === "ping") {
         // a shot spent on a weapon, plate or gun: a spark (and a clank for a heavy one); the bullets of a burst
         // share the clash cooldown, so a stream of them stays cheap
@@ -915,7 +929,7 @@ const mount: HostMount = (ctx) => {
         waiting ? "Warm-up · waiting for a second player (or add computer players in Settings)" : "Warm-up · pick your weapon on your phone",
         waiting ? null : left / pickTotal,
       );
-    } else if (phase === "fight" && mode === "pvm" && waveTotal > 0 && callAt < 0) {
+    } else if (phase === "fight" && mode === "pvm" && waveTotal > 0 && callAt < 0 && !abWaveBarOff) {
       // the wave timer: text and bar change once a second; red for the last 5 s
       hud.warmup(`Wave ${round} · next wave in ${waveWhole} s`, waveWhole / waveTotal, waveWhole <= 5);
     } else {
@@ -931,6 +945,8 @@ const mount: HostMount = (ctx) => {
       canvas: `${canvas.width}x${canvas.height}`,
       phase,
       machines: arena.machines.length,
+      music: sound?.samples().music ?? "none",
+      audio: audio()?.state ?? "none",
       ...(tour ? tour.report() : {}),
     };
   });
@@ -1030,7 +1046,9 @@ const mount: HostMount = (ctx) => {
     // the on-screen counter: frames drawn over the last half second (the text changes at most twice a second)
     fpsFrames++;
     if (now - fpsFrom >= 500) {
-      hud.setFps(Math.round((fpsFrames * 1000) / (now - fpsFrom)));
+      const fpsNow = Math.round((fpsFrames * 1000) / (now - fpsFrom));
+      if (abFpsCanvas) renderer.fps = fpsNow;
+      else if (!abFpsOff) hud.setFps(fpsNow);
       fpsFrames = 0;
       fpsFrom = now;
     }

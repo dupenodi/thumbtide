@@ -60,7 +60,15 @@ const WALL_HP = 60;
  * crates, melka's middle cage, blocks' middle block).
  */
 export const ARENAS: Record<string, ArenaDef> = {
-  classic: { k: 1.5, obstacles: [] },
+  // 2026-11-18 (user: "yes side walls for classic arena"): a breakable wall toward each side, the middle stays open
+  classic: {
+    k: 1.5,
+    obstacles: [
+      ["wall", 0.1, 0.5, 12, 80, { hp: WALL_HP }],
+      ["wall", 0.9, 0.5, 12, 80, { hp: WALL_HP }],
+    ],
+    spawns: [[0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7], [0.2, 0.5], [0.8, 0.5], [0.42, 0.55], [0.58, 0.55]],
+  },
   crates: {
     k: 1.5,
     obstacles: [
@@ -210,21 +218,44 @@ export function applyArenaKind(arena: Arena, kind: string): { w: number; h: numb
 
 /** Grid cell (px) of the reach map below. */
 const CELL = 20;
-/** Is (x, y) within `pad` px of an obstacle? (turned boxes in their own frame; blocks and saws as circles) */
-function blocked(arena: Arena, x: number, y: number, pad: number): boolean {
-  for (const o of arena.obstacles) {
+/**
+ * A test "is (x, y) within `pad` px of an obstacle?" (turned boxes in their own frame; blocks and saws as circles),
+ * with each obstacle's position and cos/sin read once: the reach map below calls it for every grid cell (on the TV
+ * the whole map took ~20× the PC's 1.3–4.6 ms, a long frame at every wave of Co-op vs monsters).
+ */
+function blockTest(arena: Arena): (x: number, y: number, pad: number) => boolean {
+  const n = arena.obstacles.length;
+  const round = new Uint8Array(n);
+  const ox = new Float64Array(n);
+  const oy = new Float64Array(n);
+  const oc = new Float64Array(n);
+  const os = new Float64Array(n);
+  const hw = new Float64Array(n);
+  const hh = new Float64Array(n);
+  arena.obstacles.forEach((o, i) => {
     const b = o.body;
-    if (o.kind === "block" || o.kind === "saw") {
-      if (Math.hypot(x - b.x, y - b.y) < o.hw + pad) return true;
-      continue;
+    round[i] = o.kind === "block" || o.kind === "saw" ? 1 : 0;
+    ox[i] = b.x;
+    oy[i] = b.y;
+    oc[i] = Math.cos(b.a);
+    os[i] = Math.sin(b.a);
+    hw[i] = o.hw;
+    hh[i] = o.hh;
+  });
+  return (x, y, pad) => {
+    for (let i = 0; i < n; i++) {
+      if (round[i]) {
+        if (Math.hypot(x - ox[i]!, y - oy[i]!) < hw[i]! + pad) return true;
+        continue;
+      }
+      const c = oc[i]!;
+      const s = os[i]!;
+      const lx = (x - ox[i]!) * c + (y - oy[i]!) * s;
+      const ly = -(x - ox[i]!) * s + (y - oy[i]!) * c;
+      if (Math.abs(lx) < hw[i]! + pad && Math.abs(ly) < hh[i]! + pad) return true;
     }
-    const c = Math.cos(b.a);
-    const s = Math.sin(b.a);
-    const lx = (x - b.x) * c + (y - b.y) * s;
-    const ly = -(x - b.x) * s + (y - b.y) * c;
-    if (Math.abs(lx) < o.hw + pad && Math.abs(ly) < o.hh + pad) return true;
-  }
-  return false;
+    return false;
+  };
 }
 
 /**
@@ -237,22 +268,28 @@ export function openSideRows(arena: Arena): [number[], number[]] {
   const nx = Math.ceil(arena.w / CELL);
   const ny = Math.ceil(arena.h / CELL);
   const seen = new Uint8Array(nx * ny);
+  const blocked = blockTest(arena);
   const [sx, sy] = spawnPoint(arena, 0);
-  const q = [Math.floor(sx / CELL) + Math.floor(sy / CELL) * nx];
+  // a stack of cell indices (each cell goes in at most once)
+  const q = new Int32Array(nx * ny);
+  let top = 0;
+  q[top++] = Math.floor(sx / CELL) + Math.floor(sy / CELL) * nx;
   seen[q[0]!] = 1;
-  while (q.length) {
-    const i = q.pop()!;
+  const visit = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= nx || y >= ny) return;
+    const j = x + y * nx;
+    if (seen[j] || blocked((x + 0.5) * CELL, (y + 0.5) * CELL, 18)) return;
+    seen[j] = 1;
+    q[top++] = j;
+  };
+  while (top) {
+    const i = q[--top]!;
     const cx = i % nx;
     const cy = (i - cx) / nx;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-      const x = cx + dx;
-      const y = cy + dy;
-      if (x < 0 || y < 0 || x >= nx || y >= ny) continue;
-      const j = x + y * nx;
-      if (seen[j] || blocked(arena, (x + 0.5) * CELL, (y + 0.5) * CELL, 18)) continue;
-      seen[j] = 1;
-      q.push(j);
-    }
+    visit(cx + 1, cy);
+    visit(cx - 1, cy);
+    visit(cx, cy + 1);
+    visit(cx, cy - 1);
   }
   const rows: [number[], number[]] = [[], []];
   for (let y = 0; y < ny; y++) {
@@ -264,11 +301,11 @@ export function openSideRows(arena: Arena): [number[], number[]] {
     let left = true;
     let right = true;
     for (let x = 0; x <= reach && (left || right); x++) {
-      if (!seen[x + y * nx] || blocked(arena, (x + 0.5) * CELL, py, 30)) left = false;
-      if (!seen[nx - 1 - x + y * nx] || blocked(arena, arena.w - (x + 0.5) * CELL, py, 30)) right = false;
+      if (left && (!seen[x + y * nx] || blocked((x + 0.5) * CELL, py, 30))) left = false;
+      if (right && (!seen[nx - 1 - x + y * nx] || blocked(arena.w - (x + 0.5) * CELL, py, 30))) right = false;
     }
-    if (left && !blocked(arena, -20, py, 30)) rows[0].push(py);
-    if (right && !blocked(arena, arena.w + 20, py, 30)) rows[1].push(py);
+    if (left && !blocked(-20, py, 30)) rows[0].push(py);
+    if (right && !blocked(arena.w + 20, py, 30)) rows[1].push(py);
   }
   return rows;
 }
