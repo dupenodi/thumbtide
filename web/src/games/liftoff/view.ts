@@ -3,7 +3,8 @@
 //  - tunnel: the column in the middle, redrawn each frame from baked parts: a star tile (slow parallax), the walls
 //    with their seams, the height ruler on the left, the slabs, the drop line, and the rocket (a baked sprite, rebaked
 //    only when the crew changes) with a two-frame flame under each firing thruster. A crash breaks the rocket into
-//    five baked parts once.
+//    five baked parts once. Hazards (mines, meteors, spiked bars) are baked sprites too, blitted and rotated; the
+//    laser beams are a few strokes. A bump (wall or slab) throws a small ring and sparks and knocks the frame once.
 import { isWebOS } from "../../shell/tv.ts";
 import { HALF_W, hazardPose, type Hazard, type Rect } from "./course.ts";
 import { CREW, DISPLAY, LOOK } from "./look.ts";
@@ -78,6 +79,8 @@ export class TunnelView {
   private flashX = 0;
   private flashY = 0;
   private lastNow = 0;
+  /** Baked hazard shapes (mine frames, meteors, bars), rebuilt when the size changes. */
+  private sprites = new Map<string, HTMLCanvasElement>();
   /** Recent bumps (a spark burst each) and the last one's shake. */
   private bumps: { x: number; y: number; nx: number; ny: number; power: number; at: number }[] = [];
   private bumpAt = 0;
@@ -121,6 +124,7 @@ export class TunnelView {
     this.bakeSky();
     this.bakeStars();
     this.bakeHazard();
+    this.sprites.clear();
     this.crewKey = "";
   }
 
@@ -445,7 +449,34 @@ export class TunnelView {
     ctx.fillRect(x, y + h - 3 * u, w, 3 * u);
   }
 
-  /** Hazards share one language: dark body, chalk spikes or beam, signal orange. */
+  /** A baked hazard sprite (drawn once per size, blitted each frame). Local metres, y down, origin at the middle. */
+  private sprite(key: string, half: number, draw: (ctx: CanvasRenderingContext2D, px: number) => void): HTMLCanvasElement {
+    let c = this.sprites.get(key);
+    if (c) return c;
+    if (this.sprites.size > 160) this.sprites.clear();
+    const k = this.ppm * this.res;
+    c = document.createElement("canvas");
+    c.width = c.height = Math.ceil(half * 2 * k) + 2;
+    const ctx = c.getContext("2d")!;
+    ctx.setTransform(k, 0, 0, k, c.width / 2, c.height / 2);
+    // `px`: one designed pixel of the 1080p layout, in metres
+    draw(ctx, this.H / 1080 / this.ppm);
+    this.sprites.set(key, c);
+    return c;
+  }
+
+  private blit(ctx: CanvasRenderingContext2D, c: HTMLCanvasElement, X: number, Y: number, rot = 0) {
+    const s = c.width / this.res;
+    if (rot) {
+      ctx.save();
+      ctx.translate(X, Y);
+      ctx.rotate(rot);
+      ctx.drawImage(c, -s / 2, -s / 2, s, s);
+      ctx.restore();
+    } else ctx.drawImage(c, X - s / 2, Y - s / 2, s, s);
+  }
+
+  /** Hazards share one language: dark body, chalk spikes or beam, signal orange. Shapes are baked sprites. */
   private drawHazard(ctx: CanvasRenderingContext2D, h: Hazard, t: number, sx: (x: number) => number, sy: (y: number) => number) {
     const P = this.ppm;
     const u = this.H / 1080;
@@ -454,120 +485,116 @@ export class TunnelView {
     const Y = sy(p.y);
     switch (h.k) {
       case "mine": {
-        const R = h.r * P;
-        ctx.fillStyle = LOOK.chalk;
-        for (let i = 0; i < 8; i++) {
-          const a = (i * Math.PI) / 4 + Math.PI / 8;
-          const c = Math.cos(a);
-          const s = Math.sin(a);
-          ctx.beginPath();
-          ctx.moveTo(X + (c * R * 0.78 - s * R * 0.2), Y + (s * R * 0.78 + c * R * 0.2));
-          ctx.lineTo(X + c * R * 1.38, Y + s * R * 1.38);
-          ctx.lineTo(X + (c * R * 0.78 + s * R * 0.2), Y + (s * R * 0.78 - c * R * 0.2));
-          ctx.closePath();
-          ctx.fill();
-        }
-        ctx.fillStyle = "#1b2540";
-        ctx.beginPath();
-        ctx.arc(X, Y, R, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = LOOK.orange;
-        ctx.lineWidth = 3 * u;
-        ctx.stroke();
-        // the blinking light
+        // the blinking light: two baked frames
         const on = Math.sin(t * 6.5 + h.seed * 1.7) > 0;
-        if (on) {
-          ctx.fillStyle = "rgba(255, 106, 43, 0.3)";
-          ctx.beginPath();
-          ctx.arc(X, Y, R * 0.66, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = on ? "#ffb08a" : "#7a3a22";
-        ctx.beginPath();
-        ctx.arc(X, Y, R * 0.3, 0, Math.PI * 2);
-        ctx.fill();
+        const R = h.r;
+        this.blit(ctx, this.sprite(`mine:${on ? 1 : 0}:${R}@${P}`, R * 1.5, (g, px) => {
+          g.fillStyle = LOOK.chalk;
+          for (let i = 0; i < 8; i++) {
+            const a = (i * Math.PI) / 4 + Math.PI / 8;
+            const c = Math.cos(a);
+            const s = Math.sin(a);
+            g.beginPath();
+            g.moveTo(c * R * 0.78 - s * R * 0.2, s * R * 0.78 + c * R * 0.2);
+            g.lineTo(c * R * 1.38, s * R * 1.38);
+            g.lineTo(c * R * 0.78 + s * R * 0.2, s * R * 0.78 - c * R * 0.2);
+            g.closePath();
+            g.fill();
+          }
+          g.fillStyle = "#1b2540";
+          g.beginPath();
+          g.arc(0, 0, R, 0, Math.PI * 2);
+          g.fill();
+          g.strokeStyle = LOOK.orange;
+          g.lineWidth = 3 * px;
+          g.stroke();
+          if (on) {
+            g.fillStyle = "rgba(255, 106, 43, 0.3)";
+            g.beginPath();
+            g.arc(0, 0, R * 0.66, 0, Math.PI * 2);
+            g.fill();
+          }
+          g.fillStyle = on ? "#ffb08a" : "#7a3a22";
+          g.beginPath();
+          g.arc(0, 0, R * 0.3, 0, Math.PI * 2);
+          g.fill();
+        }), X, Y);
         return;
       }
       case "meteor": {
         const R = h.r * P;
-        // a streak behind it, along its sideways motion
+        // a flat two-step streak behind it, along its sideways motion
         const vx = h.ax * h.om * Math.cos(h.om * t + h.ph);
         if (Math.abs(vx) > 0.4) {
           const dir = vx > 0 ? -1 : 1;
-          const g = ctx.createLinearGradient(X, Y, X + dir * R * 3.4, Y);
-          g.addColorStop(0, "rgba(255, 106, 43, 0.42)");
-          g.addColorStop(1, "rgba(255, 106, 43, 0)");
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.moveTo(X, Y - R * 0.85);
-          ctx.lineTo(X + dir * R * 3.4, Y);
-          ctx.lineTo(X, Y + R * 0.85);
-          ctx.closePath();
-          ctx.fill();
-        }
-        ctx.save();
-        ctx.translate(X, Y);
-        ctx.rotate(t * 0.8 * (h.seed % 2 ? 1 : -1) + h.seed);
-        ctx.fillStyle = LOOK.slate;
-        ctx.beginPath();
-        for (let i = 0; i < 9; i++) {
-          const a = (i * Math.PI * 2) / 9;
-          const rr = R * (0.8 + 0.22 * hash(h.seed + i * 3.1));
-          const px = Math.cos(a) * rr;
-          const py = Math.sin(a) * rr;
-          if (i) ctx.lineTo(px, py);
-          else ctx.moveTo(px, py);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = LOOK.orange;
-        ctx.lineWidth = 3 * u;
-        ctx.stroke();
-        ctx.fillStyle = LOOK.slateHi;
-        ctx.beginPath();
-        ctx.arc(-R * 0.28, -R * 0.2, R * 0.26, 0, Math.PI * 2);
-        ctx.arc(R * 0.3, R * 0.28, R * 0.17, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-        return;
-      }
-      case "bar": {
-        const L = h.len * P;
-        const w = h.r * P;
-        ctx.save();
-        ctx.translate(X, Y);
-        ctx.rotate(-p.a);
-        // spikes along both edges
-        ctx.fillStyle = LOOK.chalk;
-        for (let m = -h.len + 0.5; m < h.len - 0.2; m += 0.9) {
-          const x = m * P;
-          for (const s of [-1, 1]) {
+          for (const [len, a] of [[3.4, 0.14], [2.2, 0.2]] as const) {
+            ctx.fillStyle = `rgba(255, 106, 43, ${a})`;
             ctx.beginPath();
-            ctx.moveTo(x - 0.22 * P, s * w);
-            ctx.lineTo(x, s * (w + 0.62 * P));
-            ctx.lineTo(x + 0.22 * P, s * w);
+            ctx.moveTo(X, Y - R * 0.85);
+            ctx.lineTo(X + dir * R * len, Y);
+            ctx.lineTo(X, Y + R * 0.85);
             ctx.closePath();
             ctx.fill();
           }
         }
-        ctx.fillStyle = "#1b2540";
-        ctx.fillRect(-L, -w, L * 2, w * 2);
-        ctx.fillStyle = LOOK.orange;
-        for (let m = -h.len; m < h.len - 0.5; m += 1.2) ctx.fillRect(m * P, -w * 0.45, 0.6 * P, w * 0.9);
-        for (const s of [-1, 1]) {
-          ctx.beginPath();
-          ctx.arc(s * L, 0, w * 1.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = LOOK.slate;
-        ctx.beginPath();
-        ctx.arc(0, 0, w * 2.1, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = LOOK.chalk;
-        ctx.beginPath();
-        ctx.arc(0, 0, w * 0.9, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+        const r = h.r;
+        const shape = h.seed % 5;
+        this.blit(ctx, this.sprite(`met:${shape}:${r.toFixed(2)}@${P}`, r * 1.15, (g, px) => {
+          g.fillStyle = LOOK.slate;
+          g.beginPath();
+          for (let i = 0; i < 9; i++) {
+            const a = (i * Math.PI * 2) / 9;
+            const rr = r * (0.8 + 0.22 * hash(shape * 11 + i * 3.1));
+            if (i) g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+            else g.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+          }
+          g.closePath();
+          g.fill();
+          g.strokeStyle = LOOK.orange;
+          g.lineWidth = 3 * px;
+          g.stroke();
+          g.fillStyle = LOOK.slateHi;
+          g.beginPath();
+          g.arc(-r * 0.28, -r * 0.2, r * 0.26, 0, Math.PI * 2);
+          g.arc(r * 0.3, r * 0.28, r * 0.17, 0, Math.PI * 2);
+          g.fill();
+        }), X, Y, t * 0.8 * (h.seed % 2 ? 1 : -1) + h.seed);
+        return;
+      }
+      case "bar": {
+        const len = h.len;
+        const w = h.r;
+        this.blit(ctx, this.sprite(`bar:${len.toFixed(2)}@${P}`, len + w + 0.7, (g) => {
+          // spikes along both edges
+          g.fillStyle = LOOK.chalk;
+          for (let m = -len + 0.5; m < len - 0.2; m += 0.9) {
+            for (const s of [-1, 1]) {
+              g.beginPath();
+              g.moveTo(m - 0.22, s * w);
+              g.lineTo(m, s * (w + 0.62));
+              g.lineTo(m + 0.22, s * w);
+              g.closePath();
+              g.fill();
+            }
+          }
+          g.fillStyle = "#1b2540";
+          g.fillRect(-len, -w, len * 2, w * 2);
+          g.fillStyle = LOOK.orange;
+          for (let m = -len; m < len - 0.5; m += 1.2) g.fillRect(m, -w * 0.45, 0.6, w * 0.9);
+          for (const s of [-1, 1]) {
+            g.beginPath();
+            g.arc(s * len, 0, w * 1.5, 0, Math.PI * 2);
+            g.fill();
+          }
+          g.fillStyle = LOOK.slate;
+          g.beginPath();
+          g.arc(0, 0, w * 2.1, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = LOOK.chalk;
+          g.beginPath();
+          g.arc(0, 0, w * 0.9, 0, Math.PI * 2);
+          g.fill();
+        }), X, Y, -p.a);
         return;
       }
       case "laser": {
@@ -582,6 +609,7 @@ export class TunnelView {
           ctx.lineTo(x, sy(h.y + h.ay) - 10 * u);
           ctx.stroke();
         }
+        // the beam: a wide low-alpha stroke under a thin bright one (no blur)
         ctx.lineCap = "round";
         ctx.strokeStyle = "rgba(255, 106, 43, 0.28)";
         ctx.lineWidth = 15 * u;
