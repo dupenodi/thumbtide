@@ -34,6 +34,11 @@
   transform: none;
 }
 
+/* `hudfix=notrans`: the countdown bar jumps instead of easing (an eased transform is a composited animation) */
+.hm-ab-notrans .hm-warm s {
+  transition: none;
+}
+
 /* ---- player cards */
 .hm-side {
   position: absolute;
@@ -498,7 +503,9 @@
 /* the health bar jumps on the TV: a running transition makes the bar a layer of its own (and with 8 machines
    some bar is nearly always moving) */
 .hm-lite .hm-hp,
-.hm-lite .hm-chip {
+.hm-lite .hm-chip,
+.hm-lite .hm-warm s {
+  /* an eased transform is a composited animation each time (the wave timer's bar: once a second all fight long) */
   transition: none;
 }
 /* ================================================================= phone */

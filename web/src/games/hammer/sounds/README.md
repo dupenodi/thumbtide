@@ -21,5 +21,8 @@ Which file plays for which event, from the exe (addresses in the dev copy v1.004
 | Arena music (ARENA, ARIA_multy, ARIA2_multy): our fight | `battle_mid_02` | ARENA.seria |
 | ARIA3_multy music: our warm-up | `battle_small_01` | ARIA3_multy.seria |
 
-Total about 1.5 MB. The effects (about 330 KB) are decoded one at a time after the game starts; the two music
-tracks are streamed by one `<audio>` element and never decoded into memory.
+Total about 2.2 MB. The effects (about 330 KB) are decoded one at a time after the game starts; the two music
+tracks are streamed by one `<audio>` element and never decoded into memory, except on the TV: there the element cost
+~3 fps in every fight, so it plays `battle_mid_02.mono.ogg` and `battle_small_01.mono.ogg` (mono copies, made with
+`ffmpeg -i battle_mid_02.ogg -ac 1 -c:a libvorbis -q:a 4 battle_mid_02.mono.ogg`) decoded once and looped by WebAudio
+(~6 MB each in memory).
