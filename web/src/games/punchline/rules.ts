@@ -77,6 +77,8 @@ export interface Seat {
   left: boolean;
   /** Answering this round (newcomers wait for the next one, but may vote). */
   inRound: boolean;
+  /** Has been dealt into at least one round of this match (a late joiner who never wrote has not). */
+  played: boolean;
   score: number;
   /** Points this round. */
   gained: number;
@@ -206,7 +208,7 @@ export class Punchline {
     if (this.seats.has(id)) return true;
     const s = this.freeSlot(slot);
     if (s < 0) return false;
-    this.seats.set(id, { id, name, slot: s, bot, left: false, inRound: false, score: 0, gained: 0 });
+    this.seats.set(id, { id, name, slot: s, bot, left: false, inRound: false, played: false, score: 0, gained: 0 });
     return true;
   }
 
@@ -252,6 +254,7 @@ export class Punchline {
       s.score = 0;
       s.gained = 0;
       s.inRound = false;
+      s.played = false;
     }
     this.prune();
     this.go("intro");
@@ -313,6 +316,7 @@ export class Punchline {
     }
     for (const s of seats) {
       s.inRound = true;
+      s.played = true;
       s.gained = 0;
     }
     this.prompt = this.draw();
@@ -453,6 +457,12 @@ export class Punchline {
   /** Seats by score, best first (ties by colour order). */
   standings(): Seat[] {
     return this.list().sort((a, b) => b.score - a.score || a.slot - b.slot);
+  }
+
+  /** The place (1 = first) of a seat among those who played this match, or null for one who never did. */
+  place(id: string): number | null {
+    const i = this.standings().filter((s) => s.played).findIndex((s) => s.id === id);
+    return i < 0 ? null : i + 1;
   }
 
   /** Milliseconds left in the phase. */

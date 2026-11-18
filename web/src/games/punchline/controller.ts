@@ -206,10 +206,11 @@ const mount: ControllerMount = (ctx) => {
     const decider = sh?.players.find((p) => p.id === sh.vip)?.name ?? "The host";
     const me = own?.name;
     const won = !!me && s.winners.includes(me);
-    const head = won ? (s.winners.length > 1 ? "You share the win" : "You win!") : s.winners.length ? `${esc(s.winners.join(" & "))} wins` : "Show's over";
-    const sub = own?.place && !won ? `You came ${ord(own.place)}.` : won ? "Best set of the night." : "";
+    const late = !!own && own.state !== "watch" && !own.played;
+    const head = late ? "Joined late" : won ? (s.winners.length > 1 ? "You share the win" : "You win!") : s.winners.length ? `${esc(s.winners.join(" & "))} wins` : "Show's over";
+    const sub = late ? "You're in from the next match." : own?.place && !won ? `You came ${ord(own.place)}.` : won ? "Best set of the night." : "";
     setScene(
-      `end:${s.winners.join()}:${own?.place}:${vip}:${decider}`,
+      `end:${s.winners.join()}:${own?.place}:${late}:${vip}:${decider}`,
       `${info(head, sub)}${
         vip
           ? `<div class="plp-panel plp-actions"><button class="plp-btn primary" data-act="again">Play again</button><button class="plp-btn ghost" data-act="lobby">Back to the lobby</button></div>`

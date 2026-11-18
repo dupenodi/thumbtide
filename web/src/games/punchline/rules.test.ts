@@ -493,3 +493,15 @@ test("vote screen text is never under 36 px, and shrinks as answers get longer",
   assert.ok(answerSize(10, 8) > answerSize(MAX_LEN, 8));
   assert.ok(answerSize(10, 3) > answerSize(10, 8));
 });
+
+test("a player who joined late and never wrote has no place; the others are ranked without them", () => {
+  const g = writing(3);
+  g.addSeat("late", "Late", false);
+  assert.equal(g.seats.get("late")!.played, false);
+  assert.equal(g.place("late"), null);
+  assert.deepEqual([...ids(3)].map((id) => g.place(id)).sort(), [1, 2, 3]);
+  g.startMatch();
+  g.advance(BEATS.intro);
+  assert.equal(g.seats.get("late")!.played, true, "dealt in at the next match");
+  assert.ok(g.place("late"));
+});

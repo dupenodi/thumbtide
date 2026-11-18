@@ -30,6 +30,8 @@ export interface PunchOwn {
   score: number;
   /** Your place at the end (1 = first). */
   place: number | null;
+  /** False for a player who joined late and never wrote in this match. */
+  played: boolean;
 }
 
 export interface PunchGame {

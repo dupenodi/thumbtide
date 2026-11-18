@@ -196,8 +196,8 @@
 .plp-note { margin: 0; text-align: center; font: 500 17px/1.4 Inter, system-ui, sans-serif; color: rgba(245, 242, 234, 0.75); }
 
 /* writing: the prompt fills the top and gives way to the keyboard; the text box and Send stay in view */
-.plp-write { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
-.plp-prompt { position: relative; flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; justify-content: center; padding: 4px 6px; }
+.plp-write { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.plp-prompt { position: relative; flex: 1 0 auto; min-height: 96px; display: flex; flex-direction: column; justify-content: center; padding: 4px 6px; }
 .plp-prompt[hidden] { display: none; }
 .plp-step { font: 700 13px/1 Inter, system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c, var(--spot)); }
 .plp-q { margin: 10px 0 0; font: 700 24px/1.3 Inter, system-ui, sans-serif; overflow-wrap: break-word; }
@@ -249,3 +249,16 @@
 .plp-status.ok { color: #b5ec9a; }
 .plp-blank { display: inline-block; width: 2.2em; height: 0.1em; margin: 0 0.1em; background: var(--spot); border-radius: 2px; vertical-align: baseline; }
 .pl-nb { white-space: nowrap; }
+
+/* a short phone (landscape, or a small screen with the keyboard up): the prompt wraps in full, the page scrolls,
+   and in landscape the prompt and the answer sit side by side */
+@media (max-height: 500px) {
+  .plp-q { font-size: 20px; }
+  .plp-q.small { font-size: 17px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .plp-write { flex-direction: row; align-items: stretch; }
+  .plp-write .plp-prompt { flex: 1 1 45%; min-width: 0; overflow-y: auto; }
+  .plp-write .plp-entry { flex: 1 1 55%; min-width: 0; align-self: center; }
+  .plp-text { height: 64px; }
+}

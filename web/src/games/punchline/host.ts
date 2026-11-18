@@ -76,7 +76,7 @@ const mount: HostMount = (ctx) => {
 
   function ownFor(p: HostPlayer<PunchGame>): PunchOwn {
     const s = game.seats.get(p.id);
-    if (!s) return { name: p.name, color: "#9aa3ad", state: "watch", task: null, vote: null, gained: 0, score: 0, place: null };
+    if (!s) return { name: p.name, color: "#9aa3ad", state: "watch", task: null, vote: null, gained: 0, score: 0, place: null, played: false };
     const t = game.task(s.id);
     return {
       name: s.name,
@@ -86,7 +86,8 @@ const mount: HostMount = (ctx) => {
       vote: game.phase === "vote" ? { key: game.key(), options: game.options(s.id), mine: game.votes.get(s.id) ?? null } : null,
       gained: s.gained,
       score: s.score,
-      place: game.phase === "end" ? game.standings().findIndex((x) => x.id === s.id) + 1 : null,
+      place: game.phase === "end" ? game.place(s.id) : null,
+      played: s.played,
     };
   }
 
