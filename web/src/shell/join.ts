@@ -30,6 +30,11 @@ const pausedEl = document.getElementById("paused")!;
 const rotateEl = document.getElementById("rotate")!;
 const sheet = document.getElementById("sheet")!;
 const sheetPanel = sheet.querySelector(".sh-panel") as HTMLElement;
+/** A fade over the pinned footer while the sheet has more below it (a scrolled-off item had no cue at all). */
+function moreBelow(): void {
+  sheetPanel.classList.toggle("more", sheetPanel.scrollHeight - sheetPanel.scrollTop - sheetPanel.clientHeight > 4);
+}
+sheetPanel.addEventListener("scroll", moreBelow, { passive: true });
 
 const NAME_KEY = "thumbtide:name";
 const ACTIVE_ROOM_KEY = "thumbtide:active-room";
@@ -286,13 +291,16 @@ function join(room: string, name: string) {
                 : `<li class="sh-empty">Nobody else here yet</li>`
             }</ul>
           </section>
-          ${inGame ? `<button class="sh-act danger sh-end" data-cmd="exit">⏏ End game</button>` : ""}
+          ${inGame && !s?.canPause ? `<button class="sh-act danger sh-end" data-cmd="exit">⏏ End game</button>` : ""}
         </div>
         ${
+          // End game sits in the pinned footer too: at the end of a long list it hid under the footer, and testers
+          // tapped Restart instead (QA, 390×664 and 400×860 phones with 3+ players)
           inGame && s?.canPause
-            ? `<div class="sh-foot">
+            ? `<div class="sh-foot sh-foot3">
                 <button class="sh-act" data-cmd="${s.paused ? "resume" : "pause"}">${s.paused ? "▶ Resume" : "❚❚ Pause"}</button>
-                <button class="sh-act" data-cmd="restart">↻ Restart round</button>
+                <button class="sh-act" data-cmd="restart">↻ Restart</button>
+                <button class="sh-act danger" data-cmd="exit">⏏ End game</button>
               </div>`
             : ""
         }`;
@@ -321,7 +329,11 @@ function join(room: string, name: string) {
           else if (cmd === "coach") openSheet("coach");
           else if (cmd === "leave") leave();
           else if (cmd === "lock") sys({ $sys: "lock", locked: !state?.locked });
-          else if (cmd === "exit") {
+          else if (cmd === "exit" && !b.dataset.confirm) {
+            // End game sits next to Restart in the footer: a second tap ends it
+            b.dataset.confirm = "1";
+            b.textContent = "Tap again";
+          } else if (cmd === "exit") {
             sys({ $sys: "exit" });
             closeSheet();
           } else {
@@ -345,6 +357,7 @@ function join(room: string, name: string) {
       });
     }
     sheetPanel.classList.toggle("has-foot", !!sheetPanel.querySelector(".sh-foot"));
+    moreBelow();
     const x = sheetPanel.querySelector(".sh-x") as HTMLButtonElement | null;
     if (x) button(x, { mode: "tap", onPress: closeSheet });
   }
