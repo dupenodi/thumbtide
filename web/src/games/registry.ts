@@ -378,7 +378,7 @@ export const GAMES: GameDef[] = [
   {
     id: "punchline",
     title: "Punchline",
-    tagline: "Write the funnier answer. Steal the room's votes.",
+    tagline: "Fill in the blank. Dark, filthy and funny.",
     minPlayers: 1,
     maxPlayers: 8,
     colors: ["#5a0f1f", "#ffe7a3"],
@@ -386,14 +386,24 @@ export const GAMES: GameDef[] = [
     controls: parsePad(punchlinePad, "punchline.pad"),
     settings: [
       {
+        key: "rounds",
+        label: "Rounds",
+        options: [
+          { value: 5, label: "5" },
+          { value: 8, label: "8" },
+          { value: 10, label: "10" },
+        ],
+        default: 8,
+      },
+      {
         key: "time",
         label: "Answer time",
         options: [
+          { value: 45, label: "45 s" },
           { value: 60, label: "60 s" },
           { value: 90, label: "90 s" },
-          { value: 120, label: "120 s" },
         ],
-        default: 90,
+        default: 60,
       },
       { key: "family", label: "Family-friendly prompts only", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: false },
       {
