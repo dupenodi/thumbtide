@@ -6,6 +6,9 @@
 //     angle to the rod, against the head's motion), put the head's path through the target, time the step in,
 //     see the enemy heads coming and leave their band, re-hit in the stun, wait for a killing blow at 12 health.
 //  2. Personalities (PROFILES): one readable strategy each, pushed to the limit, with weapons that suit it.
+//  2b. Rhythm (2026-11-18, the play test: "too monotonous, they keep chasing while swinging"): the original's attack
+//     phases (engage, back off to a ring and wind up, charge or whirl from far away) with a thumb's stick tilt per
+//     phase. BOT_AI.md has the model and the numbers.
 //  3. Drama: tie-breakers only (grudges, third-party dives on stunned machines, an engagement clock against long
 //     orbits, a pull to the middle of the stage). They choose between moves of near-equal value.
 
@@ -60,27 +63,65 @@ export interface Profile {
   pull: number;
   /** Assumed speed of the step in (px/s): the step starts gap/stepV before the head arrives. */
   stepV: number;
+  /** The fight's rhythm (the original's attack state machine, RE_AI.md 2.3 and BOT_AI.md). */
+  rhythm: Rhythm;
 }
+
+/**
+ * The phases of one attack, after the original's NPC (RE_AI.md 2.3): an engage window, then a back-off to a ring
+ * round the target, then engage again. From far away, a charge (straight in) or a whirl (wind up in place).
+ */
+export interface Rhythm {
+  /** Engage window, s (random in the range). It runs twice as fast inside the far range, as in the original (4–6 s → 2–3 s). */
+  engage: [number, number];
+  /** Back-off time, s (the original: 2–3 s). */
+  back: [number, number];
+  /** Back-off ring radius, × the weapon's reach (the original: 250 px, about 2.2 reaches). */
+  ring: number;
+  /** Stick tilt (0…1) while engaged: it sets the top speed (550 px/s × tilt), as a thumb short of the rim does. */
+  tilt: number;
+  /** Stick tilt while backing off and winding up (the original halves its gains there). */
+  backTilt: number;
+  /** From far away: chance to whirl in place (1–2 s) instead of a charge (the original: 10 %). */
+  whirl: number;
+  /** Chance to break off at once after landing a hit (hit and run; ours, not in the original). */
+  hitRun: number;
+  /** Chance to fall back too when the bot I fight backs off from me: a standoff, both circling (ours). */
+  mirror: number;
+}
+export type Phase = "engage" | "back" | "charge" | "whirl";
 /** The numbers bots.tune.ts may change (all of them fields of Profile). */
 export const TUNABLE = ["standoff", "gap", "gate", "pumpMove", "dodge", "commit", "wStunned", "wWeak", "lead", "window", "pull", "stepV"] as const;
 
 export type ProfileId = "dervish" | "lance" | "razor" | "thump" | "krank" | "bulwark" | "flak" | "jackal" | "pilot";
 
 type Tunable = "wNear" | "wLeader" | "wGrudge" | "lead" | "window" | "pull" | "stepV";
-const P = (p: Omit<Profile, Tunable> & Partial<Pick<Profile, Tunable>>): Profile => ({ wNear: 1, wLeader: 0.3, wGrudge: 0.6, lead: 0.15, window: 0.1, pull: 1 / 90, stepV: 380, ...p });
+/** The original's rhythm with a thumb's tilt (BOT_AI.md). */
+const RHYTHM: Rhythm = { engage: [6, 9], back: [1.2, 2], ring: 2.8, tilt: 0.8, backTilt: 0.5, whirl: 0.1, hitRun: 0.14, mirror: 0.35 };
+const P = (p: Omit<Profile, Tunable | "rhythm"> & Partial<Pick<Profile, Tunable>> & { rhythm?: Partial<Rhythm> }): Profile => ({
+  wNear: 1,
+  wLeader: 0.3,
+  wGrudge: 0.6,
+  lead: 0.15,
+  window: 0.1,
+  pull: 1 / 90,
+  stepV: 380,
+  ...p,
+  rhythm: { ...RHYTHM, ...p.rhythm },
+});
 
 /** The personalities. Each pushes one strategy to the limit; all share the skill core. */
 export const PROFILES: Record<ProfileId, Profile> = {
-  dervish: P({ id: "dervish", name: "Dervish", blurb: "A ring of chain that never stops; walks the ring onto you", style: "ring", weapons: ["stixmace", "starmace", "bladeflail"], gun: null, plate: null, standoff: 0.617, gap: 15.6, gate: 0.7, pumpMove: 0.708, dodge: 0.27, inside: false, wStunned: 0.5, wWeak: 0.3, commit: 2, shield: false, lead: 0.123, window: 0.118, pull: 0.013, stepV: 380 }),
-  lance: P({ id: "lance", name: "Lance", blurb: "Charges through at top speed; the head whips in at the pass", style: "lance", weapons: ["pike", "klevec", "goldhammer"], gun: "arquebus", plate: "woodlight", standoff: 0.6, gap: 38.35, gate: 0.39, pumpMove: 0.15, dodge: 0.25, inside: false, wStunned: 0.4, wWeak: 0.2, commit: 1.2, shield: false, wNear: 0.3, lead: 0.177, window: 0.1, pull: 0.011, stepV: 380 }),
-  razor: P({ id: "razor", name: "Razor", blurb: "Slices in fly-pasts; never meets you head-on", style: "graze", weapons: ["innata", "claw", "saian", "kathib"], gun: null, plate: null, standoff: 0.6, gap: 47.2, gate: 0.52, pumpMove: 0.306, dodge: 0.413, inside: false, wStunned: 0.6, wWeak: 1, commit: 1, shield: false, lead: 0.15, window: 0.1, pull: 0.009, stepV: 291.46 }),
-  thump: P({ id: "thump", name: "Thump", blurb: "Stun-lock: heavy blunt hits, and it never lets go", style: "stun", weapons: ["krankhammer", "warhammer", "kolotun"], gun: null, plate: "rusty", standoff: 0.9, gap: 30, gate: 0.233, pumpMove: 0.35, dodge: 0.348, inside: true, wStunned: 3, wWeak: 0.2, commit: 0.8, shield: false, lead: 0.15, window: 0.1, pull: 0.011, stepV: 380 }),
-  krank: P({ id: "krank", name: "Krank", blurb: "One huge blow: breaks shields, knocks weapons away", style: "heavy", weapons: ["maul", "silvermace", "palash"], gun: null, plate: "heavyplate", standoff: 0.65, gap: 81, gate: 0.9, pumpMove: 0.7, dodge: 0.203, inside: false, wStunned: 1, wWeak: 0.2, commit: 1.5, shield: true, lead: 0.123, window: 0.1, pull: 0.011, stepV: 247 }),
-  bulwark: P({ id: "bulwark", name: "Bulwark", blurb: "Holds its ground behind armour, then hits back at once", style: "counter", weapons: ["goldaxe", "mamba", "axe"], gun: null, plate: "armor", standoff: 0.65, gap: 60.75, gate: 0.81, pumpMove: 0.405, dodge: 0.3, inside: true, wStunned: 1.5, wWeak: 0.2, commit: 0.5, shield: true, lead: 0.15, window: 0.082, pull: 0.011, stepV: 247 }),
-  flak: P({ id: "flak", name: "Flak", blurb: "Shoots from below, then dives on whoever reels", style: "flak", weapons: ["severn", "hammer", "kolotun"], gun: "launcher", plate: "silver", standoff: 1, gap: 25.35, gate: 0.39, pumpMove: 0.203, dodge: 0.35, inside: false, wStunned: 2, wWeak: 0.5, commit: 2, shield: true, wLeader: 0.8, lead: 0.15, window: 0.1, pull: 0.011, stepV: 380 }),
-  jackal: P({ id: "jackal", name: "Jackal", blurb: "Waits outside every fight and steals the knockout", style: "jackal", weapons: ["klevec", "goldhammer", "berdish"], gun: "mortar", plate: null, standoff: 0.6, gap: 58.5, gate: 0.7, pumpMove: 0.405, dodge: 0.328, inside: false, wStunned: 3, wWeak: 2, commit: 0.3, shield: false, lead: 0.15, window: 0.1, pull: 0.011, stepV: 380 }),
+  dervish: P({ id: "dervish", name: "Dervish", blurb: "A ring of chain that never stops; walks the ring onto you", style: "ring", weapons: ["stixmace", "starmace", "bladeflail"], gun: null, plate: null, standoff: 0.617, gap: 15.6, gate: 0.7, pumpMove: 0.708, dodge: 0.27, inside: false, wStunned: 0.5, wWeak: 0.3, commit: 2, shield: false, lead: 0.123, window: 0.118, pull: 0.013, stepV: 380, rhythm: { engage: [7.5, 10.5], back: [1, 1.6], ring: 2.6, tilt: 0.85, backTilt: 0.5, whirl: 0.3, hitRun: 0.07 } }),
+  lance: P({ id: "lance", name: "Lance", blurb: "Charges through at top speed; the head whips in at the pass", style: "lance", weapons: ["pike", "klevec", "goldhammer"], gun: "arquebus", plate: "woodlight", standoff: 0.6, gap: 38.35, gate: 0.39, pumpMove: 0.15, dodge: 0.25, inside: false, wStunned: 0.4, wWeak: 0.2, commit: 1.2, shield: false, wNear: 0.3, lead: 0.177, window: 0.1, pull: 0.011, stepV: 380, rhythm: { engage: [4.5, 6], back: [1.2, 2], ring: 3.6, tilt: 0.95, backTilt: 0.6, whirl: 0, hitRun: 0.42 } }),
+  razor: P({ id: "razor", name: "Razor", blurb: "Slices in fly-pasts; never meets you head-on", style: "graze", weapons: ["innata", "claw", "saian", "kathib"], gun: null, plate: null, standoff: 0.6, gap: 47.2, gate: 0.52, pumpMove: 0.306, dodge: 0.413, inside: false, wStunned: 0.6, wWeak: 1, commit: 1, shield: false, lead: 0.15, window: 0.1, pull: 0.009, stepV: 291.46, rhythm: { engage: [4.5, 7.5], back: [0.8, 1.6], ring: 2.8, tilt: 0.9, backTilt: 0.55, whirl: 0.05, hitRun: 0.56 } }),
+  thump: P({ id: "thump", name: "Thump", blurb: "Stun-lock: heavy blunt hits, and it never lets go", style: "stun", weapons: ["krankhammer", "warhammer", "kolotun"], gun: null, plate: "rusty", standoff: 0.9, gap: 30, gate: 0.233, pumpMove: 0.35, dodge: 0.348, inside: true, wStunned: 3, wWeak: 0.2, commit: 0.8, shield: false, lead: 0.15, window: 0.1, pull: 0.011, stepV: 380, rhythm: { engage: [7.5, 10.5], back: [1, 1.6], ring: 2.6, tilt: 0.8, backTilt: 0.45, whirl: 0.1, hitRun: 0, mirror: 0.17 } }),
+  krank: P({ id: "krank", name: "Krank", blurb: "One huge blow: breaks shields, knocks weapons away", style: "heavy", weapons: ["maul", "silvermace", "palash"], gun: null, plate: "heavyplate", standoff: 0.65, gap: 81, gate: 0.9, pumpMove: 0.7, dodge: 0.203, inside: false, wStunned: 1, wWeak: 0.2, commit: 1.5, shield: true, lead: 0.123, window: 0.1, pull: 0.011, stepV: 247, rhythm: { engage: [4.5, 7.5], back: [1.2, 2], ring: 3, tilt: 0.75, backTilt: 0.5, whirl: 0.15, hitRun: 0.35 } }),
+  bulwark: P({ id: "bulwark", name: "Bulwark", blurb: "Holds its ground behind armour, then hits back at once", style: "counter", weapons: ["goldaxe", "mamba", "axe"], gun: null, plate: "armor", standoff: 0.65, gap: 60.75, gate: 0.81, pumpMove: 0.405, dodge: 0.3, inside: true, wStunned: 1.5, wWeak: 0.2, commit: 0.5, shield: true, lead: 0.15, window: 0.082, pull: 0.011, stepV: 247, rhythm: { engage: [4.5, 6], back: [1.6, 2.4], ring: 2.6, tilt: 0.75, backTilt: 0.4, whirl: 0, hitRun: 0.21, mirror: 0.56 } }),
+  flak: P({ id: "flak", name: "Flak", blurb: "Shoots from below, then dives on whoever reels", style: "flak", weapons: ["severn", "hammer", "kolotun"], gun: "launcher", plate: "silver", standoff: 1, gap: 25.35, gate: 0.39, pumpMove: 0.203, dodge: 0.35, inside: false, wStunned: 2, wWeak: 0.5, commit: 2, shield: true, wLeader: 0.8, lead: 0.15, window: 0.1, pull: 0.011, stepV: 380, rhythm: { engage: [6, 9], back: [1.2, 2], ring: 3.2, tilt: 0.8, backTilt: 0.5, whirl: 0, hitRun: 0.28 } }),
+  jackal: P({ id: "jackal", name: "Jackal", blurb: "Waits outside every fight and steals the knockout", style: "jackal", weapons: ["klevec", "goldhammer", "berdish"], gun: "mortar", plate: null, standoff: 0.6, gap: 58.5, gate: 0.7, pumpMove: 0.405, dodge: 0.328, inside: false, wStunned: 3, wWeak: 2, commit: 0.3, shield: false, lead: 0.15, window: 0.1, pull: 0.011, stepV: 380, rhythm: { engage: [6, 9], back: [1.2, 2], ring: 3.4, tilt: 0.85, backTilt: 0.45, whirl: 0.05, hitRun: 0.49 } }),
   /** The away-player autopilot: plain skill with the player's own weapon, no show. */
-  pilot: P({ id: "pilot", name: "Pilot", blurb: "Autopilot", style: "ring", weapons: [], gun: null, plate: null, standoff: 1, gap: 30, gate: 0.6, pumpMove: 0.35, dodge: 0.3, inside: false, wStunned: 1, wWeak: 0.3, commit: 1, shield: true, wGrudge: 0 }),
+  pilot: P({ id: "pilot", name: "Pilot", blurb: "Autopilot", style: "ring", weapons: [], gun: null, plate: null, standoff: 1, gap: 30, gate: 0.6, pumpMove: 0.35, dodge: 0.3, inside: false, wStunned: 1, wWeak: 0.3, commit: 1, shield: true, wGrudge: 0, rhythm: { back: [0.5, 1], hitRun: 0.05, mirror: 0 } }),
 };
 /** The personalities that seat as computer players, in seating order. */
 export const ROSTER: ProfileId[] = ["dervish", "thump", "razor", "krank", "lance", "bulwark", "flak", "jackal"];
@@ -131,6 +172,19 @@ export interface Bot {
   held: number;
   detourUntil: number;
   detourX: number;
+  /** The attack phase (Rhythm) and its time left (s); the side the back-off circles to (±1). */
+  phase: Phase;
+  phaseLeft: number;
+  phaseAt: number;
+  circle: number;
+  /** Frames per phase (the bench reads them). */
+  phaseSteps: Record<Phase, number>;
+  /** This frame's events had a hit by this bot (hit and run). */
+  landed: boolean;
+  /** This engage window is "all in" (the original's sub-mode 1: closer, harder) rather than "wind up and close". */
+  allIn: boolean;
+  /** The back-off of the enemy bot I last answered (standoff). */
+  mirrorAt: number;
 }
 
 const rand = (b: Bot) => {
@@ -164,10 +218,19 @@ export function makeBot(mode: BotMode, x: number, y: number, profile: ProfileId 
     held: 0,
     detourUntil: -1,
     detourX: 0,
+    phase: "engage",
+    phaseLeft: 0,
+    phaseAt: 0,
+    circle: 1,
+    phaseSteps: { engage: 0, back: 0, charge: 0, whirl: 0 },
+    landed: false,
+    allIn: false,
+    mirrorAt: -1,
   };
   b.theta = rand(b) * Math.PI * 2;
   b.spin = rand(b) < 0.5 ? -1 : 1;
   b.mood = 0.9 + rand(b) * 0.2;
+  b.phaseLeft = span(b, b.profile.rhythm.engage);
   return b;
 }
 
@@ -180,7 +243,10 @@ export function newRound(b: Bot): void {
   b.backUntil = -1;
   b.held = 0;
   b.detourUntil = -1;
+  b.phase = "engage";
+  b.phaseAt = 0;
   b.mood = 0.9 + rand(b) * 0.2;
+  b.phaseLeft = span(b, b.profile.rhythm.engage);
   for (const [k, v] of b.grudge) b.grudge.set(k, v * 0.5);
 }
 
@@ -213,18 +279,31 @@ function card(m: Machine, old: Card | null): Card {
   return { striker: s, L: Math.max(30, Math.hypot(s.x - m.hull.x, s.y - m.hull.y)), vSwing: 450, vFinish, blade: (tag?.bladeable ?? 0) > 0 };
 }
 
-/** The stick that makes the (full) thrust point along (dx, dy): the inverse of stickPush at full tilt. */
-function thrustStick(arena: Arena, m: Machine, dx: number, dy: number, t: StickTune): [number, number] {
-  const top = arena.tuning.speedClip;
-  const k = (t.steer + t.hold) * top;
+/**
+ * The stick of tilt `tilt` (0…1) that makes the thrust point along (dx, dy): the inverse of stickPush. A tilt short of
+ * the rim keeps the full force (from half tilt) but lowers the speed the stick holds (550 px/s × tilt), as a thumb does.
+ * Writes into `out` (no allocation per step).
+ */
+function thrustStick(arena: Arena, m: Machine, dx: number, dy: number, t: StickTune, tilt: number, out: [number, number]): [number, number] {
+  const k0 = (t.steer + t.hold) * arena.tuning.speedClip;
+  const k = k0 * tilt;
   const bx = t.steer * m.hull.vx;
   const by = t.steer * m.hull.vy;
   const l = Math.hypot(dx, dy) || 1;
   dx /= l;
   dy /= l;
   const bd = bx * dx + by * dy;
-  const lam = -bd + Math.sqrt(Math.max(0, bd * bd - (bx * bx + by * by) + k * k));
-  return [(lam * dx + bx) / k, (lam * dy + by) / k];
+  const disc = bd * bd - (bx * bx + by * by) + k * k;
+  // the hull is faster than this tilt holds: point the stick that way, it brakes the rest
+  if (disc < 0) {
+    out[0] = dx * tilt;
+    out[1] = dy * tilt;
+    return out;
+  }
+  const lam = -bd + Math.sqrt(disc);
+  out[0] = (lam * dx + bx) / k0;
+  out[1] = (lam * dy + by) / k0;
+  return out;
 }
 
 /** Spin of a weapon head about its hull (rad/s, signed) and the head's phase angle. */
@@ -278,10 +357,12 @@ function sweepTime(e: Machine, x: number, y: number, me: Machine): number {
 
 const stunTime = (m: Machine) => m.stun / (0.5 * (2.8 * Math.min(1, Math.max(0.1, m.hp / 50)) + 1));
 
+/** The live enemies of m, in one array reused every call (read it before the next call). */
+const FOES: Machine[] = [];
 function enemies(arena: Arena, m: Machine): Machine[] {
-  const out: Machine[] = [];
-  for (const o of arena.machines) if (o !== m && o.alive && o.team !== m.team) out.push(o);
-  return out;
+  FOES.length = 0;
+  for (const o of arena.machines) if (o !== m && o.alive && o.team !== m.team) FOES.push(o);
+  return FOES;
 }
 
 /** Who each bot is after, per arena: the original's crowd rule (RE_AI.md 4) reads it. */
@@ -414,7 +495,7 @@ function spacing(arena: Arena, m: Machine, T: Machine | null, out: [number, numb
  * The side to strike T from (a unit vector from T toward my spot): turned away from the other attackers on T (flank:
  * no two on one side), and toward the far side of T from a nearby wall or saw, so the hit drives T into it.
  */
-function strikeSide(arena: Arena, m: Machine, T: Machine, ux: number, uy: number): [number, number] {
+function strikeSide(arena: Arena, m: Machine, T: Machine, ux: number, uy: number, out: [number, number]): [number, number] {
   const c = claims.get(arena);
   if (c) {
     for (const [a, t] of c) {
@@ -450,7 +531,53 @@ function strikeSide(arena: Arena, m: Machine, T: Machine, ux: number, uy: number
     uy += sy * k;
   }
   const l = Math.hypot(ux, uy) || 1;
-  return [ux / l, uy / l];
+  out[0] = ux / l;
+  out[1] = uy / l;
+  return out;
+}
+
+/**
+ * No obstacle box (grown by 24 px) on the straight line from (x0, y0) to (x1, y1): a charge needs one (the original
+ * ray-tests the way to its target too, RE_AI.md 5.3 bit 0x100). Boxes are taken unrotated; slab test, no allocation.
+ */
+function clearPath(arena: Arena, x0: number, y0: number, x1: number, y1: number): boolean {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  for (const o of arena.obstacles) {
+    if (o.hp <= 0) continue;
+    const hw = o.hw + 24;
+    const hh = o.hh + 24;
+    let t0 = 0;
+    let t1 = 1;
+    if (Math.abs(dx) < 1e-6) {
+      if (Math.abs(x0 - o.body.x) > hw) continue;
+    } else {
+      let a = (o.body.x - hw - x0) / dx;
+      let b = (o.body.x + hw - x0) / dx;
+      if (a > b) {
+        const s = a;
+        a = b;
+        b = s;
+      }
+      t0 = Math.max(t0, a);
+      t1 = Math.min(t1, b);
+    }
+    if (Math.abs(dy) < 1e-6) {
+      if (Math.abs(y0 - o.body.y) > hh) continue;
+    } else {
+      let a = (o.body.y - hh - y0) / dy;
+      let b = (o.body.y + hh - y0) / dy;
+      if (a > b) {
+        const s = a;
+        a = b;
+        b = s;
+      }
+      t0 = Math.max(t0, a);
+      t1 = Math.min(t1, b);
+    }
+    if (t0 <= t1) return false;
+  }
+  return true;
 }
 
 const onStage = (arena: Arena, x: number, y: number) => x > EDGE_M + 30 && x < arena.w - EDGE_M - 30 && y > edgeTop(arena) + 10 && y < arena.h - EDGE_M - 10;
@@ -501,12 +628,15 @@ function guns(arena: Arena, m: Machine, enemy: Machine): void {
   }
 }
 
-/** Read this frame's events: the engagement clock, grudges, pick-ups. */
+/** Read this frame's events: the engagement clock, grudges, pick-ups, a landed hit. */
 function readEvents(arena: Arena, m: Machine, b: Bot): void {
-  for (const e of arena.events) {
+  for (const e of arena.lastEvents) {
     if (e.type === "hit") {
       if (e.attacker === m || e.victim === m) b.quiet = 0;
-      if (e.attacker === m && e.victim !== m && e.dmg > 0) b.backUntil = arena.t + BACK_S;
+      if (e.attacker === m && e.victim !== m && e.dmg > 0) {
+        b.backUntil = arena.t + BACK_S;
+        b.landed = true;
+      }
       if (e.victim === m && e.attacker !== m) b.grudge.set(e.attacker.id, Math.min(3, (b.grudge.get(e.attacker.id) ?? 0) + e.dmg / 20));
     } else if (e.type === "clash" && (e.a === m || e.b === m)) b.quiet = 0;
     else if (e.type === "ko" && e.victim !== m && e.by && e.by !== m && b.target === e.victim) {
@@ -515,6 +645,102 @@ function readEvents(arena: Arena, m: Machine, b: Bot): void {
     } else if (e.type === "pickup" && e.m === m) b.card = null;
   }
 }
+
+const span = (b: Bot, r: [number, number]) => r[0] + rand(b) * (r[1] - r[0]);
+
+/**
+ * A bot that backs off with its weapon wound up meets an enemy that comes in this far inside the ring (share of the
+ * ring radius), after 0.5 s of the back-off: hang back, wind up, hit what comes. Bulwark (the counter style) meets
+ * it at 0.6, wound up or not. Without it, a back-off from an enemy bot that chases cost 5–7 s per round (speed.bench).
+ */
+const COUNTER = 0.5;
+
+/**
+ * The attack phases (the original's NPC state machine, RE_AI.md 2.3): engage for a window that runs twice as fast
+ * inside the far range, then back off to a ring, then engage again; from far away a charge (or, now and then, a whirl
+ * in place). A nearly beaten target, sudden death and a worm keep the bot engaged (`stay`). A stunned target (`open`)
+ * ends a back-off, as in the original (0x4ad7ca), but only after a short break for the hit-and-run styles; a
+ * stun-lock style (Thump) stays on it.
+ */
+function nextPhase(b: Bot, mate: Bot | null, t: number, dT: number, far: number, ring: number, stay: boolean, open: boolean, ready: boolean, clear: boolean, showdown: boolean, dt: number): void {
+  const R = b.profile.rhythm;
+  const landed = b.landed;
+  b.landed = false;
+  const lock = b.profile.style === "stun";
+  if (b.phase === "engage") {
+    if (dT > far && clear && !stay && !open) {
+      if (rand(b) < R.whirl) setPhase(b, t, "whirl", 1 + rand(b));
+      else setPhase(b, t, "charge", 2 + rand(b));
+      return;
+    }
+    b.phaseLeft -= dt * (dT < far ? 2 : 1);
+    if (stay || (open && lock)) return;
+    // a standoff (ours): the bot I fight backs off from me; often I fall back too, and we circle before the next pass
+    let mirror = false;
+    if (mate && mate.phase === "back" && mate.phaseAt !== b.mirrorAt) {
+      b.mirrorAt = mate.phaseAt;
+      mirror = rand(b) < R.mirror;
+    }
+    if (b.phaseLeft <= 0 || mirror || (landed && rand(b) < R.hitRun)) {
+      setPhase(b, t, "back", span(b, R.back) * (showdown ? 0.6 : 1));
+      b.circle = rand(b) < 0.5 ? -1 : 1;
+    }
+  } else if (b.phase === "back") {
+    b.phaseLeft -= dt;
+    // a feint: now and then the circling turns the other way
+    if (rand(b) < dt / 1.6) b.circle = -b.circle;
+    // the counter: an enemy that comes in past the ring is met (COUNTER)
+    const counter = b.profile.style === "counter" ? dT < ring * 0.6 : ready && t - b.phaseAt > 0.5 && dT < ring * COUNTER;
+    const punish = open && (lock || t - b.phaseAt > 0.6);
+    if (stay || punish || counter || b.phaseLeft <= 0) setPhase(b, t, "engage", span(b, R.engage));
+  } else {
+    b.phaseLeft -= dt;
+    if (b.phaseLeft <= 0 || stay || (b.phase === "charge" ? dT < far * 0.6 || !clear : open)) setPhase(b, t, "engage", span(b, R.engage));
+  }
+}
+
+/** The bot that flies each machine (bots read each other's phase for the standoff). */
+const BOT_OF = new WeakMap<Machine, Bot>();
+function setPhase(b: Bot, t: number, phase: Phase, left: number): void {
+  b.phase = phase;
+  b.phaseLeft = left;
+  b.phaseAt = t;
+  if (phase === "engage") b.allIn = rand(b) < 0.6;
+}
+
+/** Move the spot (x, y) round the target (tx, ty), at radius `want`, onto the stage if it is off it. */
+function stageSpot(arena: Arena, tx: number, ty: number, ux: number, uy: number, want: number, out: [number, number]): void {
+  let px = tx + ux * want;
+  let py = ty + uy * want;
+  if (!onStage(arena, px, py)) {
+    const a0 = Math.atan2(uy, ux);
+    for (let k = 1; k <= 6; k++) {
+      const a1 = a0 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.5;
+      const qx = tx + Math.cos(a1) * want;
+      const qy = ty + Math.sin(a1) * want;
+      if (onStage(arena, qx, qy)) {
+        px = qx;
+        py = qy;
+        break;
+      }
+    }
+    px = Math.max(EDGE_M + 30, Math.min(arena.w - EDGE_M - 30, px));
+    py = Math.max(edgeTop(arena) + 10, Math.min(arena.h - EDGE_M - 10, py));
+  }
+  out[0] = px;
+  out[1] = py;
+}
+
+let fade = 1;
+function fadeGrudge(v: number, k: number, g: Map<number, number>): void {
+  if (v > 0.01) g.set(k, v * fade);
+}
+
+/** Scratch vectors (driveBot runs per bot per step: no allocations). */
+const DIR: [number, number] = [0, 0];
+const SPOT: [number, number] = [0, 0];
+const SIDE: [number, number] = [0, 0];
+const STICK: [number, number] = [0, 0];
 
 export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = STICK_DEFAULTS): void {
   if (!m.alive) return;
@@ -532,9 +758,14 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
 
   readEvents(arena, m, bot);
   bot.quiet += dt;
-  for (const [k, v] of bot.grudge) if (v > 0.01) bot.grudge.set(k, v * (1 - dt / 12));
+  // grudges fade (over 12 s), every 5th step: the map has entries since the bots see the hits (lastEvents)
+  if (bot.grudge.size && bot.steps % 5 === 0) {
+    fade = 1 - (5 * dt) / 12;
+    bot.grudge.forEach(fadeGrudge);
+  }
   bot.steps++;
   const p = bot.profile;
+  const R = p.rhythm;
   const foes = enemies(arena, m);
   const h = m.hull;
 
@@ -552,13 +783,13 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
       }
     }
     bot.intent = "retrieve";
-    if (g) seek(arena, m, g.x, g.y + 6, 550, tune);
+    if (g) seek(arena, m, g.x, g.y + 6, 550 * R.tilt, tune);
     else if (foes[0]) {
       // nothing to pick up: keep away from the enemy, but on the stage and on the move (fleeing straight away pinned
       // the machine to a side wall for the rest of the round)
       const x = Math.max(EDGE_M + 60, Math.min(arena.w - EDGE_M - 60, h.x + (h.x - foes[0].hull.x)));
       const y = arena.h * (0.5 + 0.25 * Math.sin(arena.t * 0.8 + m.id));
-      seek(arena, m, x, y, 400, tune);
+      seek(arena, m, x, y, 400 * R.backTilt, tune);
     }
     return;
   }
@@ -595,16 +826,39 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
   const lastStand = m.hp <= 12 && !sudden;
   const dodgeLead = p.dodge * (lastStand ? 0.6 : 1);
 
-  const dir: [number, number] = [0, 0];
-  const pumpDir = (sign: number): [number, number] => {
-    const rx = (s.x - h.x) / (head.r || 1);
-    const ry = (s.y - h.y) / (head.r || 1);
-    // thrust at a right angle to the rod, against the head's motion about the hull
-    return [-sign * -ry, -sign * rx];
-  };
-  // thrust against the head's motion about the hull: it speeds the head up the way it already turns
-  const pump = pumpDir(bot.spin);
+  // ---- the phase (the original's rhythm)
+  const dT = Math.hypot(T.hull.x - h.x, T.hull.y - h.y);
+  const finishing = T.hp <= 12 && !sudden;
+  const stunned = T.stun > 0.15 && stunTime(T) > 0.25;
+  let alive = 0;
+  for (const x of arena.machines) if (x.alive && !x.monster) alive++;
+  // showdown: the last two machines drop their caution (no third party is left to profit)
+  const showdown = foes.length === 1 && alive === 2;
+  // the original's far range is 500 px (about 4 reaches); ring: 250 px (about 2.2)
+  const far = Math.max(380, c.L * 3.2 + 120);
+  const ring = Math.max(250, c.L * R.ring);
+  BOT_OF.set(m, bot);
+  const tb = BOT_OF.get(T);
+  nextPhase(bot, tb && tb.target === m ? tb : null, arena.t, dT, far, ring, finishing || sudden || T.monster !== null, stunned, vh >= p.gate * c.vSwing, dT < far * 0.6 || clearPath(arena, h.x, h.y, T.hull.x, T.hull.y), showdown, dt);
+  bot.phaseSteps[bot.phase]++;
+  let tilt = R.tilt;
 
+  // thrust at a right angle to the rod, against the head's motion about the hull: it speeds the head up the way it
+  // already turns
+  const rx = (s.x - h.x) / (head.r || 1);
+  const ry = (s.y - h.y) / (head.r || 1);
+  const pumpX = bot.spin * ry;
+  const pumpY = -bot.spin * rx;
+  const dir = DIR;
+  dir[0] = 0;
+  dir[1] = 0;
+  const ready = vh >= p.gate * c.vSwing;
+
+  // the spot to fly to, its pull per px, and the share of the pump (each phase sets them; the detour below is shared)
+  let px = h.x;
+  let py = h.y;
+  let kPos = p.pull;
+  let pw = 1;
   if (threat && tThreat < dodgeLead) {
     // ---- evade: out of the band (or inside the ring, where links and rods do not hit)
     bot.intent = "evade";
@@ -614,87 +868,114 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
     const rE = headSpin(threat).r;
     const goIn = p.inside && d < rE;
     const sgn = goIn ? -1 : 1;
-    dir[0] = (ex / d) * sgn + pump[0] * 0.3;
-    dir[1] = (ey / d) * sgn + pump[1] * 0.3;
+    dir[0] = (ex / d) * sgn + pumpX * 0.3;
+    dir[1] = (ey / d) * sgn + pumpY * 0.3;
+    tilt = Math.max(tilt, 0.9);
     if (p.shield && m.plates.length > 1) arena.shield(m);
   } else {
-    // ---- strike: the head's path through the target (or grazing its face for a slice)
-    const tc = p.lead;
-    const tx = T.hull.x + T.hull.vx * tc;
-    const ty = T.hull.y + T.hull.vy * tc + (T.stun > 0 ? 0.5 * arena.tuning.gravity * tc * tc : 0);
-    let ux = h.x - tx;
-    let uy = h.y - ty;
-    const du = Math.hypot(ux, uy) || 1;
-    ux /= du;
-    uy /= du;
-    [ux, uy] = strikeSide(arena, m, T, ux, uy);
-    const ready = vh >= p.gate * c.vSwing;
-    const finishing = T.hp <= 12 && !sudden;
-    const strong = !finishing || vh >= c.vFinish * (c.blade ? 0.8 : 1);
-    const stunned = T.stun > 0.15 && stunTime(T) > 0.25;
-    // engagement clock: from 2 s without action the gap shrinks
-    const urge = Math.max(0, Math.min(1, (bot.quiet - 2) / 3));
-    // showdown: the last two machines drop their caution (no third party is left to profit)
-    const showdown = foes.length === 1 && arena.machines.filter((x) => x.alive).length === 2;
-    let gap = p.gap * bot.mood * (1 - urge) * (showdown ? 0.5 : 1);
-    // the head's time to the target's bearing, and the time to step in: lunge when they match
-    const bearing = Math.atan2(ty - h.y, tx - h.x);
-    const tHead = Math.abs(head.w) > 1 ? angTo(head.phase, bearing, Math.sign(head.w)) / Math.abs(head.w) : 9;
-    const tStep = gap / p.stepV;
-    const inPhase = tHead < tStep + p.window || stunned;
-    if (inPhase && ready && strong) gap = 0;
-    if (!strong) gap = Math.max(gap, s.radius + 50); // wait outside until a killing blow is wound up
-    let want = c.L * p.standoff * bot.mood + (c.blade && p.style === "graze" ? s.radius + 10 : 0) + gap;
-    if (arena.t < bot.backUntil && !finishing) want += BACK_PX;
-    // Flak keeps its rocket range and Jackal waits outside, but not in a showdown or after a quiet spell
-    if (p.style === "flak" && !showdown && !stunned) want = Math.max(want, 220 * (1 - urge));
-    if (p.style === "jackal" && !showdown && !stunned && T.hp > 25) want = Math.max(want, c.L * 2.2 * (1 - urge));
-    // the spot round the target nearest to my bearing that is on the stage (off the side edges, below the score
-    // cards, above the floor band): the fight stays in view, and the target gets hit toward the edges, not me
-    let px = tx + ux * want;
-    let py = ty + uy * want;
-    if (p.style === "flak" && !showdown && !stunned) {
-      // sit below the fight (Flak), but on the stage
-      py = Math.max(py, ty + 140 * (1 - urge));
-    }
-    if (!onStage(arena, px, py)) {
-      const a0 = Math.atan2(uy, ux);
-      for (let k = 1; k <= 6; k++) {
-        const a1 = a0 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.5;
-        const qx = tx + Math.cos(a1) * want;
-        const qy = ty + Math.sin(a1) * want;
-        if (onStage(arena, qx, qy)) {
-          px = qx;
-          py = qy;
-          break;
+    if (bot.phase === "charge") {
+      // ---- charge: straight at the target, the head kept turning (the original: unit steer, no swing)
+      bot.intent = "charge";
+      px = T.hull.x;
+      py = T.hull.y;
+      kPos = 1 / Math.max(60, dT);
+      pw = 0.3;
+      tilt = 1;
+    } else if (bot.phase === "whirl") {
+      // ---- whirl: wind the weapon up in place, drifting at the target (the original: swing gain 5, no pull)
+      bot.intent = "whirl";
+      px = h.x + ((T.hull.x - h.x) / (dT || 1)) * 30;
+      py = h.y + ((T.hull.y - h.y) / (dT || 1)) * 30;
+      kPos = 1 / 150;
+      tilt = R.backTilt + 0.15;
+    } else if (bot.phase === "back") {
+      // ---- back off: hang on a ring round the target, circling and winding the weapon up (the original: a 250 px
+      // ring, half gains; spiral out when inside it). The side is turned away from the other attackers on the target.
+      bot.intent = "back";
+      let ux = h.x - T.hull.x;
+      let uy = h.y - T.hull.y;
+      const du = Math.hypot(ux, uy) || 1;
+      ux /= du;
+      uy /= du;
+      strikeSide(arena, m, T, ux, uy, SIDE);
+      ux = SIDE[0];
+      uy = SIDE[1];
+      // aim a little ahead round the ring: the bot circles
+      const a = Math.atan2(uy, ux) + bot.circle * 0.45;
+      stageSpot(arena, T.hull.x, T.hull.y, Math.cos(a), Math.sin(a), ring, SPOT);
+      px = SPOT[0];
+      py = SPOT[1];
+      kPos = p.pull * (dT < ring ? 1.8 : 1);
+      pw = ready ? 0.9 : 1.3;
+      tilt = R.backTilt;
+    } else {
+      // ---- strike: the head's path through the target (or grazing its face for a slice)
+      const tc = p.lead;
+      const tx = T.hull.x + T.hull.vx * tc;
+      const ty = T.hull.y + T.hull.vy * tc + (T.stun > 0 ? 0.5 * arena.tuning.gravity * tc * tc : 0);
+      let ux = h.x - tx;
+      let uy = h.y - ty;
+      const du = Math.hypot(ux, uy) || 1;
+      ux /= du;
+      uy /= du;
+      strikeSide(arena, m, T, ux, uy, SIDE);
+      ux = SIDE[0];
+      uy = SIDE[1];
+      const strong = !finishing || vh >= c.vFinish * (c.blade ? 0.8 : 1);
+      // engagement clock: from 2 s without action the gap shrinks
+      const urge = Math.max(0, Math.min(1, (bot.quiet - 1) / 2));
+      // the original's two ways to engage (0x4ada00 sub-mode, a coin flip per window): wind up and close, or all in
+      let gap = p.gap * bot.mood * (1 - urge) * (showdown ? 0.5 : 1) * (bot.allIn ? 0 : 0.3);
+      // the head's time to the target's bearing, and the time to step in: lunge when they match
+      const bearing = Math.atan2(ty - h.y, tx - h.x);
+      const tHead = Math.abs(head.w) > 1 ? angTo(head.phase, bearing, Math.sign(head.w)) / Math.abs(head.w) : 9;
+      const tStep = gap / p.stepV;
+      const inPhase = tHead < tStep + p.window || stunned;
+      if (inPhase && ready && strong) gap = 0;
+      if (!strong) gap = Math.max(gap, s.radius + 50); // wait outside until a killing blow is wound up
+      let want = c.L * p.standoff * bot.mood + (c.blade && p.style === "graze" ? s.radius + 10 : 0) + gap;
+      if (arena.t < bot.backUntil && !finishing) want += BACK_PX;
+      // Flak keeps its rocket range and Jackal waits outside, but not in a showdown or after a quiet spell
+      if (p.style === "flak" && !showdown && !stunned) want = Math.max(want, 220 * (1 - urge));
+      if (p.style === "jackal" && !showdown && !stunned && T.hp > 25) want = Math.max(want, c.L * 2.2 * (1 - urge));
+      // the spot round the target nearest to my bearing that is on the stage (off the side edges, below the score
+      // cards, above the floor band): the fight stays in view, and the target gets hit toward the edges, not me
+      stageSpot(arena, tx, ty, ux, uy, want, SPOT);
+      px = SPOT[0];
+      py = SPOT[1];
+      if (p.style === "flak" && !showdown && !stunned) {
+        // sit below the fight (Flak), but on the stage
+        py = Math.min(arena.h - EDGE_M - 10, Math.max(py, ty + 140 * (1 - urge)));
+      }
+      bot.intent = stunned ? "combo" : finishing ? "finish" : inPhase && ready ? "strike" : "windup";
+      // the strike itself and the finish go at full tilt; the wind-up beside the target does not
+      if (stunned || finishing || (inPhase && ready)) tilt = 1;
+
+      // Lance: a straight pass through the target at top speed, the head whipping round at contact
+      if (p.style === "lance") {
+        if (arena.t < bot.passUntil) {
+          px = bot.passX;
+          py = bot.passY;
+          bot.intent = "charge";
+        } else if (du > c.L * 3 && ready) {
+          bot.passX = tx - ux * (c.L * 2.5);
+          bot.passY = ty - uy * (c.L * 2.5);
+          bot.passUntil = arena.t + (du + c.L * 2.5) / 500;
+          px = bot.passX;
+          py = bot.passY;
+        } else if (du < c.L * 3) {
+          // back off to the far end for the next run
+          px = tx + ux * c.L * 4;
+          py = ty + uy * c.L * 4;
         }
       }
-      px = Math.max(EDGE_M + 30, Math.min(arena.w - EDGE_M - 30, px));
-      py = Math.max(edgeTop(arena) + 10, Math.min(arena.h - EDGE_M - 10, py));
-    }
-    bot.intent = stunned ? "combo" : finishing ? "finish" : inPhase && ready ? "strike" : "windup";
-
-    // Lance: a straight pass through the target at top speed, the head whipping round at contact
-    if (p.style === "lance") {
-      if (arena.t < bot.passUntil) {
-        px = bot.passX;
-        py = bot.passY;
-        bot.intent = "charge";
-      } else if (du > c.L * 3 && ready) {
-        bot.passX = tx - ux * (c.L * 2.5);
-        bot.passY = ty - uy * (c.L * 2.5);
-        bot.passUntil = arena.t + (du + c.L * 2.5) / 500;
-        px = bot.passX;
-        py = bot.passY;
-      } else if (du < c.L * 3) {
-        // back off to the far end for the next run
-        px = tx + ux * c.L * 4;
-        py = ty + uy * c.L * 4;
-      }
+      if (p.style === "lance" && bot.intent === "charge") kPos = 1 / 30;
+      pw = !ready ? 1 : p.pumpMove;
+      if (p.shield && m.plates.length > 1 && threat && tThreat < 0.25) arena.shield(m);
     }
 
     // held off the spot (by a ledge or a wall between, or by the spacing) for over a second: go round, toward the
-    // open middle, for a moment (play test 2026-11-17: Flak sat on a balcony over its target under it)
+    // open middle, for a moment (play test 2026-11-17: Flak sat on a balcony over its target under it). Every phase.
     if (Math.hypot(h.vx, h.vy) < 40 && Math.hypot(px - h.x, py - h.y) > 60) bot.held += dt;
     else bot.held = 0;
     if (bot.held > 1.2) {
@@ -705,31 +986,20 @@ export function driveBot(arena: Arena, m: Machine, bot: Bot, tune: StickTune = S
     if (arena.t < bot.detourUntil) {
       px = bot.detourX;
       py = h.y;
+      kPos = p.pull;
       bot.intent = "detour";
     }
-    const ex = px - h.x;
-    const ey = py - h.y;
-    const ed = Math.hypot(ex, ey);
-    const kPos = p.style === "lance" && bot.intent === "charge" ? 1 / 30 : p.pull;
-    const pw = !ready ? 1 : p.pumpMove;
-    dir[0] = pump[0] * pw + ex * kPos;
-    dir[1] = pump[1] * pw + ey * kPos;
-    // close to the spot and slow: hold softer so the swing, not the hull, does the work
-    if (ed < 12 && pw === 0) {
-      seek(arena, m, px, py, 300, tune);
-      return;
-    }
-    if (bot.intent !== "evade" && p.shield && m.plates.length > 1 && threat && tThreat < 0.25) arena.shield(m);
+    dir[0] = pumpX * pw + (px - h.x) * kPos;
+    dir[1] = pumpY * pw + (py - h.y) * kPos;
   }
-  if (!ready_(vh, c, p)) bot.pumpSteps++;
+
+  if (!ready) bot.pumpSteps++;
   stagePush(arena, m, dir);
   spacing(arena, m, T, dir);
-  const [sx, sy] = thrustStick(arena, m, dir[0], dir[1], tune);
-  stickPush(arena, m, sx, sy, tune);
+  const st = thrustStick(arena, m, dir[0], dir[1], tune, tilt, STICK);
+  stickPush(arena, m, st[0], st[1], tune);
   if (m.guns.length) guns(arena, m, T);
 }
-
-const ready_ = (vh: number, c: Card, p: Profile) => vh >= p.gate * c.vSwing;
 
 // ---- the bench -----------------------------------------------------------------------------------
 
@@ -797,10 +1067,28 @@ const classic = (viaStick: boolean): BenchProfile => ({
   weapon: () => null,
 });
 
+/** Bench: frames per phase and per profile, summed over every bench round (alive, armed, with a target, not stunned). */
+export const PHASE_FRAMES = new Map<string, Record<Phase, number>>();
+/** Bench: the summed hull distance to the target in those frames (mean = PHASE_DIST / PHASE_FRAMES). */
+export const PHASE_DIST = new Map<string, Record<Phase, number>>();
 const personality = (id: ProfileId, ownLoadout: boolean): BenchProfile => ({
   driver: (_a, m) => {
     const b = makeBot("fight", m.hull.x, m.hull.y, id, m.id * 7919);
-    return (a, mm) => driveBot(a, mm, b);
+    let f = PHASE_FRAMES.get(id);
+    if (!f) PHASE_FRAMES.set(id, (f = { engage: 0, back: 0, charge: 0, whirl: 0 }));
+    let g = PHASE_DIST.get(id);
+    if (!g) PHASE_DIST.set(id, (g = { engage: 0, back: 0, charge: 0, whirl: 0 }));
+    const frames = f;
+    const dist = g;
+    return (a, mm) => {
+      const n = b.steps;
+      driveBot(a, mm, b);
+      const T = b.target;
+      if (b.steps > n && mm.armed && T && mm.stun <= 0) {
+        frames[b.phase]++;
+        dist[b.phase] += Math.hypot(T.hull.x - mm.hull.x, T.hull.y - mm.hull.y);
+      }
+    };
   },
   weapon: (seed) => (ownLoadout ? profileLoadout(id, (seed % 97) / 97).weapon : null),
   sidearm: () => (ownLoadout ? PROFILES[id].gun : null),
@@ -854,7 +1142,7 @@ function human(kind: "chaser" | "spinner"): BenchProfile {
           const r = Math.hypot(s.x - m.hull.x, s.y - m.hull.y) || 1;
           const px = (sign * (s.y - m.hull.y)) / r + dx * 0.006;
           const py = (-sign * (s.x - m.hull.x)) / r + dy * 0.006;
-          const [sx, sy] = thrustStick(a, m, px, py, STICK_DEFAULTS);
+          const [sx, sy] = thrustStick(a, m, px, py, STICK_DEFAULTS, 1, [0, 0]);
           stickPush(a, m, sx, sy, STICK_DEFAULTS);
         }
         if (m.guns.length && Math.random() < 0.05) a.fire(m);

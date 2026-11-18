@@ -435,6 +435,8 @@ export class Arena {
   readonly world = new World();
   readonly machines: Machine[] = [];
   readonly events: SimEvent[] = [];
+  /** The events of the last step only (they stay after `events` is cleared): what the bots read. */
+  readonly lastEvents: SimEvent[] = [];
   /** Simulated seconds (slows down in slow motion). */
   t = 0;
   /** The step time of the last shot hit reported (pellets landing together merge into it, see damage). */
@@ -666,6 +668,15 @@ export class Arena {
 
   /** One 50 Hz frame. */
   step(): void {
+    const e0 = this.events.length;
+    this.stepInner();
+    // keep this step's events for the bots: the host and the benches clear `events` right after the step, before the
+    // next input is read (until 2026-11-18 the bots read `events` there and never saw a hit)
+    this.lastEvents.length = 0;
+    for (let i = e0; i < this.events.length; i++) this.lastEvents.push(this.events[i]!);
+  }
+
+  private stepInner(): void {
     const tn = this.tuning;
     const tw = this.timewarp;
     const dt = STEP * tw;

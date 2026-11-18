@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import { ARENAS } from "./arenas.ts";
 import { type Entrant, modeTeams, type RoundResult, runRound, withSeed } from "./botmatch.ts";
-import { BENCH_PROFILES, ROSTER } from "./bots.ts";
+import { BENCH_PROFILES, PHASE_DIST, PHASE_FRAMES, ROSTER } from "./bots.ts";
 import { WEAPON_KINDS, type WeaponKind } from "./weapons.ts";
 
 const ROUNDS = Number(process.env.ROUNDS) || 4;
@@ -105,6 +105,15 @@ test("speed and rhythm", () => {
         ` · fast ${pct(fast / n)} · stick ${pct(a.input / n)} sat ${pct(a.sat / n)} · turn ${(a.turn / n).toFixed(1).padStart(4)}` +
         ` · near ${pct((a.dist[0]! + a.dist[1]! + a.dist[2]!) / dn)} d50 ${quant(a.dist, 0.5, 50).toFixed(0).padStart(3)} · in ${pct(a.closing / n)} out ${pct(a.opening / n)}` +
         ` · dmg/rnd ${(a.dealt / a.rounds).toFixed(0).padStart(3)} · wins ${a.wins}`,
+    );
+  }
+  console.log("\nPHASES (share of armed frames with a target)");
+  for (const [id, f] of PHASE_FRAMES) {
+    const n = f.engage + f.back + f.charge + f.whirl || 1;
+    const g = PHASE_DIST.get(id)!;
+    const d = (k: keyof typeof f) => (f[k] ? (g[k] / f[k]).toFixed(0) : "-").padStart(4);
+    console.log(
+      `${id.padEnd(9)} engage ${pct(f.engage / n)} at ${d("engage")} px · back ${pct(f.back / n)} at ${d("back")} · charge ${pct(f.charge / n)} at ${d("charge")} · whirl ${pct(f.whirl / n)} at ${d("whirl")}`,
     );
   }
 });
