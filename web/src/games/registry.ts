@@ -1,4 +1,5 @@
 import { parsePad } from "./kit/pad.ts";
+import { applyThumbs } from "./thumbs.ts";
 import type { GameDef } from "./types.ts";
 import blastPad from "./blast/blast.pad?raw";
 import boomtownPad from "./boomtown/boomtown.pad?raw";
@@ -17,7 +18,7 @@ import trailsPad from "./trails/trails.pad?raw";
 import wetpaintPad from "./wetpaint/wetpaint.pad?raw";
 
 /** Every game on the platform. Modules are lazy-loaded so phones only download what they need. */
-export const GAMES: GameDef[] = [
+export const GAMES: GameDef[] = applyThumbs([
   {
     id: "lobby",
     title: "Lobby",
@@ -653,7 +654,7 @@ export const GAMES: GameDef[] = [
     host: () => import("./sandbox/host.ts"),
     controller: () => import("./sandbox/controller.ts"),
   },
-];
+]);
 
 export const gameById = (id: string) => GAMES.find((g) => g.id === id);
 export const pickableGames = () => GAMES.filter((g) => !g.hidden);

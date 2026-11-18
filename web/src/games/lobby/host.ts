@@ -1,26 +1,29 @@
-// The TV lobby: how to join on the left, the game library on the right, and everyone's seat along the bottom.
-// The VIP picks from their phone; a TV remote (arrows + OK) or a mouse works too.
+// The TV lobby. The selected game fills the screen: its tiny background image scaled up (a free blur), its title,
+// tagline and card in front, the rest of the library as a strip of small cards, and everyone's seat below.
+// The VIP picks with Left / Right on their phone; a TV remote (arrows + OK) or a mouse works too.
+// The selection lives in the shell (ShellState.selected): the phone's tap, the remote and this screen all go through it.
 import { qrSvg } from "@thumbtide/sdk/qr";
 import { colorFor, joinBase, joinDisplay } from "../../config.ts";
 import { shell } from "../../shell/host-state.ts";
 import { blip } from "../../shell/sound.ts";
-import { gameById, pickableGames } from "../registry.ts";
+import { pickableGames } from "../registry.ts";
 import type { HostMount } from "../types.ts";
-import { coverHtml, esc } from "./library.ts";
+import { coverHtml, esc, gameColors, playersText } from "./library.ts";
 import type { LobbyOwn } from "./shared.ts";
 import "./lobby.css";
 
 const CROWN = `<svg viewBox="0 0 64 44" aria-hidden="true"><path d="M4 40 L8 10 L22 24 L32 4 L42 24 L56 10 L60 40 Z" fill="#ffd23f" stroke="#0b0b12" stroke-width="5" stroke-linejoin="round"/></svg>`;
 
+let lastPick: string | null = null; // the lobby opens on the game picked last (End game comes back here)
+
 const mount: HostMount = ({ host, root }) => {
   const games = pickableGames();
-  let cursor = 0;
-  let lastSelected: string | null = null;
-  let focusShown = "";
   const seen = new Set<string>(); // players already on screen: only newcomers pop in
+  const owned = new Map<string, string>(); // player id -> colour already sent
 
   root.innerHTML = `
     <div class="lb">
+      <div class="lb-bg" aria-hidden="true"><div class="lb-bgl" hidden></div><div class="lb-bgl" hidden></div></div>
       <aside class="lb-join">
         <div class="logo lb-logo">thumb<span>tide</span></div>
         <div class="lb-join-body">
@@ -30,15 +33,20 @@ const mount: HostMount = ({ host, root }) => {
         </div>
       </aside>
       <main class="lb-main">
-        <header class="lb-head">
-          <h2>Games</h2>
-          <p class="lb-keys"><kbd>◀</kbd><kbd>▶</kbd><span>Choose</span><kbd>OK</kbd><span>Play</span></p>
-        </header>
-        <div class="lb-shelf-wrap"><ul class="lb-shelf">
-          ${games.map((g, i) => `<li class="lb-tile" data-i="${i}">${coverHtml(g)}<span class="lb-pick" hidden></span></li>`).join("")}
-          <li class="lb-tile lb-soon" aria-hidden="true"><div class="cv"><span>More games<br>on the way</span></div></li>
-        </ul></div>
-        <section class="lb-detail"><h1></h1><p></p></section>
+        <section class="lb-stage">
+          <div class="lb-text">
+            <p class="lb-eyebrow"></p>
+            <h1 class="lb-title"></h1>
+            <p class="lb-tagline"></p>
+            <p class="lb-meta"><span class="lb-pl"></span><span class="lb-play"></span></p>
+          </div>
+          <div class="lb-card"></div>
+        </section>
+        <nav class="lb-strip" aria-label="Games"><ul class="lb-rail">
+          ${games
+            .map((g, i) => `<li class="lb-tile" data-i="${i}">${coverHtml(g, { title: false, lazy: true })}<span class="lb-tn">${esc(g.title)}</span></li>`)
+            .join("")}
+        </ul></nav>
         <footer class="lb-foot">
           <ul class="lb-seats"></ul>
           <p class="lb-status"></p>
@@ -47,7 +55,9 @@ const mount: HostMount = ({ host, root }) => {
     </div>`;
   const lb = root.firstElementChild as HTMLElement;
   const $ = <T extends Element>(sel: string) => root.querySelector(sel) as T;
-  const tiles = [...root.querySelectorAll<HTMLElement>(".lb-tile:not(.lb-soon)")];
+  const tiles = [...root.querySelectorAll<HTMLElement>(".lb-tile")];
+  const rail = $<HTMLElement>(".lb-rail");
+  const layers = [...root.querySelectorAll<HTMLElement>(".lb-bgl")];
 
   let lastQrFor = "";
   async function renderQr() {
@@ -58,74 +68,133 @@ const mount: HostMount = ({ host, root }) => {
     $(".lb-code b").textContent = host.code;
   }
 
-  function render() {
+  // ------------------------------------------------------------------ selection
+  const indexOf = (id: string | null | undefined) => games.findIndex((g) => g.id === id);
+  const current = () => Math.max(0, indexOf(shell.state?.selected ?? lastPick));
+  const pick = (id: string) => {
+    lastPick = id;
+    shell.select(id); // tells every phone, and calls render() through shell.onChange
+  };
+  const move = (d: number) => {
+    blip("move");
+    pick(games[(current() + d + games.length) % games.length]!.id);
+  };
+
+  let shownId = "";
+  let layerOn = -1;
+  let fadeTimer = 0;
+  /** Background: only the selected game's 160×90 image is in the DOM (two layers only while crossfading). */
+  function setBackground(g: (typeof games)[number]) {
+    const next = layers[(layerOn + 1) % 2]!;
+    const prev = layerOn >= 0 ? layers[layerOn]! : null;
+    const [a, b] = gameColors(g);
+    next.style.setProperty("--ga", a);
+    next.style.setProperty("--gb", b);
+    next.replaceChildren();
+    next.hidden = false;
+    layerOn = (layerOn + 1) % 2;
+    const show = () => {
+      next.classList.add("on");
+      prev?.classList.remove("on");
+      window.clearTimeout(fadeTimer);
+      fadeTimer = window.setTimeout(() => {
+        for (const l of layers) {
+          if (!l.classList.contains("on")) {
+            l.replaceChildren(); // the old image leaves the DOM
+            l.hidden = true;
+          }
+        }
+      }, 500);
+    };
+    if (g.thumbBg) {
+      const img = new Image();
+      img.alt = "";
+      img.decoding = "async";
+      img.draggable = false;
+      img.onload = img.onerror = show;
+      img.src = g.thumbBg;
+      next.append(img);
+    } else {
+      show();
+    }
+  }
+
+  function renderSelection() {
+    const selected = shell.state?.selected ?? null;
+    if (selected) lastPick = selected;
+    const i = current();
+    const g = games[i]!;
+    const connected = host.list.filter((p) => p.connected).length;
+    const vip = host.list.find((p) => p.id === shell.vip);
+    const enough = connected >= g.minPlayers;
+
+    if (shownId !== g.id) {
+      shownId = g.id;
+      setBackground(g);
+      $(".lb-card").innerHTML = coverHtml(g, { title: false });
+      $(".lb-title").textContent = g.title;
+      $(".lb-tagline").textContent = g.tagline;
+      $(".lb-pl").textContent = playersText(g);
+      const text = $<HTMLElement>(".lb-text");
+      text.classList.remove("swap");
+      void text.offsetWidth;
+      text.classList.add("swap");
+      // keep the selected card in the middle of the strip (a transform: no layout, no repaint of the page)
+      const t = tiles[i]!;
+      const view = rail.parentElement!.clientWidth;
+      const max = Math.max(0, rail.scrollWidth - view);
+      const x = Math.min(max, Math.max(0, t.offsetLeft + t.offsetWidth / 2 - view / 2));
+      rail.style.transform = `translate3d(${-x}px,0,0)`;
+      tiles.forEach((tile, k) => tile.classList.toggle("focus", k === i));
+    }
+    tiles.forEach((tile, k) => tile.classList.toggle("locked", connected < games[k]!.minPlayers));
+    $(".lb-eyebrow").innerHTML = vip
+      ? `<i class="crown">${CROWN}</i><span><b>${esc(vip.name)}</b> is picking</span>`
+      : `<span>${host.list.length ? "Waiting for the host" : "Pick a game"}</span>`;
+    $(".lb-play").innerHTML = enough ? `<kbd>OK</kbd> Play` : `Needs ${g.minPlayers} players`;
+    $(".lb-play").classList.toggle("short", !enough);
+  }
+
+  // ------------------------------------------------------------------ people
+  let peopleKey = "";
+  function renderPeople() {
     void renderQr();
     const players = host.list;
     const connected = players.filter((p) => p.connected).length;
-    const vip = players.find((p) => p.id === shell.vip);
-
-    // the VIP's pick (from their phone) moves the focus; the remote can move it too
-    const selected = shell.state?.selected ?? null;
-    if (selected !== lastSelected) {
-      lastSelected = selected;
-      const i = games.findIndex((g) => g.id === selected);
-      if (i >= 0) cursor = i;
+    const key = JSON.stringify([players.map((p) => [p.id, p.name, p.index, p.connected, p.away]), shell.vip, host.config.maxPlayers]);
+    if (key !== peopleKey) {
+      peopleKey = key;
+      // the room takes up to 16, but 16 empty circles would crowd the TV: show 8, and more as people arrive
+      const max = Math.max(Math.min(host.config.maxPlayers, 8), players.length);
+      $(".lb-seats").innerHTML = [
+        ...players.map((p) => {
+          const isNew = !seen.has(p.id);
+          seen.add(p.id);
+          return `<li class="seat ${p.connected && !p.away ? "" : "away"} ${isNew ? "new" : ""}" style="--c:${colorFor(p.index)}">
+            <span class="av"><b>${esc((p.name.trim()[0] ?? "?").toUpperCase())}</b>${p.id === shell.vip ? `<i class="vip">${CROWN}</i>` : ""}</span>
+            <span class="nm">${esc(p.name)}</span></li>`;
+        }),
+        ...Array.from({ length: max - players.length }, () => `<li class="seat empty"><span class="av"></span><span class="nm"></span></li>`),
+      ].join("");
+      $(".lb-status").textContent = !players.length ? "Scan the code with your phone's camera to join" : `${connected} here`;
     }
-    const focus = games[cursor]!;
-    const picked = selected === focus.id;
-    const [a, b] = focus.colors ?? ["#7c5cff", "#2de2c9"];
-    lb.style.setProperty("--ga", a);
-    lb.style.setProperty("--gb", b);
-
-    tiles.forEach((t, i) => {
-      const g = games[i]!;
-      t.classList.toggle("focus", i === cursor);
-      t.classList.toggle("locked", connected < g.minPlayers);
-      const pick = t.querySelector(".lb-pick") as HTMLElement;
-      pick.hidden = !(selected === g.id && vip);
-      if (!pick.hidden) pick.textContent = `${vip!.name}'s pick`;
-    });
-    if (focusShown !== focus.id) {
-      focusShown = focus.id;
-      const d = $<HTMLElement>(".lb-detail");
-      d.querySelector("h1")!.textContent = focus.title;
-      d.querySelector("p")!.textContent = focus.tagline;
-      d.animate([{ opacity: 0, transform: "translateY(0.4em)" }, { opacity: 1, transform: "none" }], { duration: 360, easing: "ease-out" });
-      tiles[cursor]!.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
-    }
-
-    // seats: everyone who's here, then the empty ones
-    // the room takes up to 16, but 16 empty circles would crowd the TV: show 8, and more as people arrive
-    const max = Math.max(Math.min(host.config.maxPlayers, 8), players.length);
-    $(".lb-seats").innerHTML = [
-      ...players.map((p) => {
-        const isNew = !seen.has(p.id);
-        seen.add(p.id);
-        return `<li class="seat ${p.connected && !p.away ? "" : "away"} ${isNew ? "new" : ""}" style="--c:${colorFor(p.index)}">
-          <span class="av"><b>${esc((p.name.trim()[0] ?? "?").toUpperCase())}</b>${p.id === shell.vip ? `<i class="vip">${CROWN}</i>` : ""}</span>
-          <span class="nm">${esc(p.name)}</span></li>`;
-      }),
-      ...Array.from({ length: max - players.length }, () => `<li class="seat empty"><span class="av"></span><span class="nm"></span></li>`),
-    ].join("");
-
-    $(".lb-status").innerHTML = !players.length
-      ? `Scan the code with your phone's camera to join`
-      : connected < focus.minPlayers
-        ? `${esc(focus.title)} needs ${focus.minPlayers} players`
-        : vip
-          ? picked
-            ? `<i class="crown">${CROWN}</i><b>${esc(vip.name)}</b> picked ${esc(focus.title)}`
-            : `<i class="crown">${CROWN}</i><b>${esc(vip.name)}</b> picks the game on their phone`
-          : "";
-
     for (const p of host.players.values()) {
-      const own: LobbyOwn = { color: colorFor(p.index) };
+      const color = colorFor(p.index);
+      if (owned.get(p.id) === color) continue; // send only what changed: this runs on every selection
+      owned.set(p.id, color);
+      const own: LobbyOwn = { color };
       host.setOwn(p.id, own);
     }
   }
 
-  const start = (g = games[cursor]) => {
-    if (g && host.list.filter((p) => p.connected).length >= g.minPlayers) {
+  const render = () => {
+    renderSelection();
+    renderPeople();
+  };
+
+  const start = () => {
+    const g = games[current()]!;
+    if (host.list.filter((p) => p.connected).length >= g.minPlayers) {
       blip("start");
       void shell.mount(g.id);
     }
@@ -133,23 +202,20 @@ const mount: HostMount = ({ host, root }) => {
 
   // TV remote / keyboard
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "ArrowRight" || e.key === "ArrowDown") cursor = (cursor + 1) % games.length;
-    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") cursor = (cursor - 1 + games.length) % games.length;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") move(1);
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") move(-1);
     else if (e.key === "Enter" || e.key === " ") return start();
     else return;
     e.preventDefault();
-    blip("move");
-    render();
   };
   window.addEventListener("keydown", onKey);
-  // mouse: click to choose, click again to play
+  // mouse: click a card to choose it, click the chosen one again to play
   const onClick = (e: MouseEvent) => {
-    const t = (e.target as HTMLElement).closest<HTMLElement>(".lb-tile:not(.lb-soon)");
+    const t = (e.target as HTMLElement).closest<HTMLElement>(".lb-tile");
     if (!t) return;
     const i = Number(t.dataset.i);
-    if (i === cursor) start();
-    cursor = i;
-    render();
+    if (i === current()) start();
+    else pick(games[i]!.id);
   };
   lb.addEventListener("click", onClick);
 
@@ -168,9 +234,12 @@ const mount: HostMount = ({ host, root }) => {
     }),
     shell.onChange(render),
   ];
+  // open on the last pick (or the first game), and tell the phones
+  if (!shell.state?.selected) shell.select(games[current()]!.id);
   render();
 
   return () => {
+    window.clearTimeout(fadeTimer);
     window.removeEventListener("keydown", onKey);
     offs.forEach((off) => off());
   };

@@ -104,6 +104,10 @@ async function mount(id: string) {
   publish();
 }
 shell.mount = mount;
+shell.select = (id) => {
+  state.selected = id && gameById(id) ? id : null;
+  publish();
+};
 
 // ------------------------------------------------------------------ host commands
 function pause(by: string | null = null) {

@@ -119,6 +119,10 @@ export interface GameDef {
   maxPlayers: number;
   /** Two colours for the game's card. */
   colors?: [string, string];
+  /** Lobby card, 480×270 WebP (games/<id>/thumb/card.webp, filled in by games/thumbs.ts). Beats `cover`. */
+  thumb?: string;
+  /** Lobby background, 160×90 WebP, scaled up to full screen for a free blur (thumb/bg.webp). */
+  thumbBg?: string;
   /** Cover art for the library (an image URL). Games without one get a cover drawn from colors + glyph. */
   cover?: string;
   /** Icon for the drawn cover and small tiles. */

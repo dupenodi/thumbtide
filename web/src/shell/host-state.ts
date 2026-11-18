@@ -9,6 +9,8 @@ export const shell = {
   host: null as Host | null,
   vip: null as string | null,
   state: null as ShellState | null,
+  /** Lobby: set the game on the cards (a TV remote press); every phone is told. */
+  select: (_id: string | null): void => {},
   mount: (_id: string): Promise<void> => Promise.resolve(),
   /** Fires when the VIP, pause state, settings or selection change. */
   onChange(fn: Listener): () => void {
