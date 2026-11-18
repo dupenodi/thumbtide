@@ -14,6 +14,10 @@ export const onColor = (hex: string) => {
   return l > 150 ? "#1d1a17" : "#f6efe2";
 };
 
+/** A team colour, with a fallback so a stale team index never breaks the screen. */
+const teamColor = (t: number | null | undefined) => TEAM_COLORS[t ?? -1] ?? "#f6efe2";
+const teamName = (t: number | null | undefined) => TEAM_NAMES[t ?? -1] ?? "";
+
 const pips = (won: number, of: number, fresh = -1) =>
   Array.from({ length: of }, (_, i) => `<i class="blt-pip${i < won ? " on" : ""}${i === fresh ? " new" : ""}"></i>`).join("");
 
@@ -72,6 +76,7 @@ export function createHud(stage: HTMLElement, box: HTMLElement, isBot: (id: stri
           return `<li class="${st}"${edge}><span class="blt-dot"></span><span class="blt-nm">${esc(s.name)}</span>${tag}${wins}</li>`;
         })
         .join("");
+      chips.classList.toggle("dense", ordered.length > 4);
       chips.style.setProperty("--n", String(Math.max(1, ordered.length)));
       info.innerHTML = team
         ? [0, 1]
@@ -101,7 +106,7 @@ export function createHud(stage: HTMLElement, box: HTMLElement, isBot: (id: stri
     roundResult(game: Blast, winner: Seat | null, team: number | null) {
       shown = `round${game.round}`;
       if (team !== null) {
-        layer.innerHTML = `<div class="blt-card res" style="--k:${TEAM_COLORS[team]};--on:${onColor(TEAM_COLORS[team]!)}"><span>Round ${game.round}</span><b>${TEAM_NAMES[team]} team</b><em>${teamLine(game, team)}</em></div>`;
+        layer.innerHTML = `<div class="blt-card res" style="--k:${teamColor(team)};--on:${onColor(teamColor(team))}"><span>Round ${game.round}</span><b>${teamName(team)} team</b><em>${teamLine(game, team)}</em></div>`;
       } else if (winner) {
         const c = inkOf(winner);
         layer.innerHTML = `<div class="blt-card res" style="--k:${c};--on:${onColor(c)}"><span>Round ${game.round}</span><b>${esc(winner.name)}</b><em>last one standing</em></div>`;
@@ -114,8 +119,8 @@ export function createHud(stage: HTMLElement, box: HTMLElement, isBot: (id: stri
       shown = "match";
       const team = game.team;
       const w = game.winner ? game.seats.get(game.winner) ?? null : null;
-      const color = team ? TEAM_COLORS[game.winTeam ?? 0]! : w ? inkOf(w) : "#f6efe2";
-      const title = team ? `${TEAM_NAMES[game.winTeam ?? 0]} team` : w ? esc(w.name) : "Nobody";
+      const color = team ? teamColor(game.winTeam ?? 0) : w ? inkOf(w) : "#f6efe2";
+      const title = team ? `${teamName(game.winTeam ?? 0)} team` : w ? esc(w.name) : "Nobody";
       const sub = team ? teamLine(game, game.winTeam ?? 0) : "takes the match";
       const rows = team
         ? [0, 1]
@@ -131,7 +136,7 @@ export function createHud(stage: HTMLElement, box: HTMLElement, isBot: (id: stri
             .join("");
       layer.innerHTML = `
         <div class="blt-match">
-          <span class="blt-mk">Match · ${game.round} rounds</span>
+          <span class="blt-mk">Match · ${game.round} ${game.round === 1 ? "round" : "rounds"}</span>
           <b class="blt-win" style="--k:${color};--on:${onColor(color)}">${title}</b>
           <em class="blt-wins">${sub}</em>
           <ol class="blt-final">${rows}</ol>

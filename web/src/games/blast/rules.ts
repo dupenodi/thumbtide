@@ -226,16 +226,21 @@ export class Blast {
     this.opts.wins = clampWins(this.opts.wins);
     this.opts.arena = clampArena(this.opts.arena);
     this.arena = ARENAS[this.opts.arena === "rotate" ? ARENA_ORDER[0]! : this.opts.arena];
+    this.teamMode = this.opts.mode === "team";
   }
 
   configure(opts: Partial<Options>) {
     if (opts.wins !== undefined) this.opts.wins = clampWins(opts.wins);
     if (opts.mode !== undefined) this.opts.mode = clampMode(opts.mode);
     if (opts.arena !== undefined) this.opts.arena = clampArena(opts.arena);
+    if (this.phase === "wait") this.teamMode = this.opts.mode === "team";
   }
 
+  /** Teams or not for the round in progress. A mode change in the menu applies from the next round. */
+  private teamMode = false;
+
   get team() {
-    return this.opts.mode === "team";
+    return this.teamMode;
   }
 
   // ------------------------------------------------------------------ ground
@@ -448,6 +453,16 @@ export class Blast {
     if (list.length < 2) {
       this.setPhase("wait");
       return;
+    }
+    // a mode change from the menu takes hold here: the match score starts again in the new mode
+    const wantTeam = this.opts.mode === "team";
+    if (wantTeam !== this.teamMode) {
+      this.teamMode = wantTeam;
+      for (const s of list) s.wins = 0;
+      this.teamWins = [0, 0];
+      this.round = 0;
+      this.winner = null;
+      this.winTeam = null;
     }
     this.round++;
     const key: ArenaKey = this.opts.arena === "rotate" ? ARENA_ORDER[(this.arenaStart + this.round - 1) % ARENA_ORDER.length]! : this.opts.arena;

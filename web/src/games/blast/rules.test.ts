@@ -334,6 +334,30 @@ test("a team brawl: the round goes to the last team, wins count for the team", (
   assert.deepEqual(g.teamWins, [1, 0]);
 });
 
+test("a mode change in the menu applies from the next round, not mid-round", () => {
+  const g = playing(["a", "b", "c", "d"], 3, { arena: "blanket" });
+  assert.equal(g.team, false);
+  g.configure({ mode: "team" });
+  assert.equal(g.team, false, "still free-for-all in this round");
+  assert.equal(g.phase, "play");
+  assert.ok([...g.seats.values()].every((s) => s.team === -1));
+  open(g);
+  const [a, ...rest] = [...g.seats.values()];
+  rest.forEach((s) => place(s, 500, 500)); // off the platform
+  place(a!, 0, 0);
+  run(g, 120);
+  assert.equal(g.phase, "round");
+  assert.equal(g.roundTeam, null);
+  assert.equal(g.roundWinner, "a");
+  for (let i = 0; i < 400 && g.phase !== "count"; i++) g.step();
+  assert.equal(g.phase, "count");
+  assert.equal(g.team, true);
+  assert.equal(g.round, 1, "the score starts again in the new mode");
+  assert.deepEqual([...g.seats.values()].map((s) => s.team).sort(), [0, 0, 1, 1]);
+  g.configure({ mode: "ffa" });
+  assert.equal(g.team, true, "team brawl until the next round");
+});
+
 test("a match ends when someone has the wins, and restarts", () => {
   const g = playing(["a", "b"], 2, { wins: 3, arena: "blanket" });
   for (let r = 0; r < 3; r++) {

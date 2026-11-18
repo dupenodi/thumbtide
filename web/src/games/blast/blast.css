@@ -54,6 +54,13 @@
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 700 calc(var(--u) * 28) / 1.1 var(--sans);
 }
+.blt-chips.dense li { gap: calc(var(--u) * 8); padding: 0 calc(var(--u) * 10); }
+.team .blt-chips.dense li { padding-left: calc(var(--u) * 20); }
+.blt-chips.dense .blt-dot { width: calc(var(--u) * 20); height: calc(var(--u) * 20); }
+.blt-chips.dense .blt-nm { font-size: calc(var(--u) * 24); }
+.blt-chips.dense .blt-pips { gap: calc(var(--u) * 3); }
+.blt-chips.dense .blt-pip { width: calc(var(--u) * 13); height: calc(var(--u) * 13); }
+.blt-chips.dense .blt-tag { font-size: calc(var(--u) * 16); }
 .blt-tag { flex: none; font: 700 calc(var(--u) * 20) / 1 var(--sans); font-style: normal; color: #7b7466; }
 .blt-chips li.out { opacity: 0.42; }
 .blt-chips li.next { opacity: 0.6; }

@@ -83,7 +83,7 @@ const mount: HostMount = (ctx) => {
       phase: game.phase,
       round: game.round,
       target: game.opts.wins,
-      mode: game.opts.mode,
+      mode: game.team ? "team" : "ffa",
       roundWinner: round ? (game.roundTeam !== null ? teamWho(game.roundTeam) : nameOf(game.roundWinner)) : null,
       winner: match ? (game.winTeam !== null ? teamWho(game.winTeam) : nameOf(game.winner)) : null,
       roundTeam: round ? game.roundTeam : null,
