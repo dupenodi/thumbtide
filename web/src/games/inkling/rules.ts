@@ -122,12 +122,9 @@ export function judgeGuess(guess: string, word: Word): "right" | "close" | "wron
   const words = ` ${norm(guess)} `;
   if ([word.w, ...word.same].some((f) => words.includes(` ${norm(f)} `))) return "right";
   if (word.near.map(squash).some((f) => plural(g, f))) return "close";
-  // forgiving: a one-letter slip in a word of 5+ letters (two in 9+) counts as right; shorter words get "close"
+  // typos never count (only case is ignored): a one-letter slip (two in 9+ letter words) gets a private "close" hint
   for (const f of forms) {
-    if (f.length >= 9 && lev(g, f, 2) <= 2) return "right";
-    if (f.length >= 5 && lev(g, f, 1) <= 1) return "right";
-  }
-  for (const f of forms) {
+    if (f.length >= 9 && lev(g, f, 2) <= 2) return "close";
     if (f.length >= 4 && lev(g, f, 1) <= 1) return "close";
   }
   return "wrong";

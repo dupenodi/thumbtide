@@ -239,12 +239,15 @@ const mount: HostMount = (ctx) => {
         break;
       case "crash":
         view.crash(game, e, now);
-        hud.result(game, e.height, e.best, e.lost);
+        hud.result(game, e.height, e.best, e.cause);
         for (const p of flyingHumans()) host.send(p.id, { type: "crash" });
         if (e.best && flyingHumans().length) {
           records[game.opts.difficulty] = e.height;
           saveRecords();
         }
+        break;
+      case "bump":
+        view.bump(e, now);
         break;
       case "crew":
         publish();

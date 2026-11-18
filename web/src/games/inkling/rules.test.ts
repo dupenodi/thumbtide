@@ -69,11 +69,12 @@ test("guesses: right ignores case, spaces, plurals, articles and other spellings
   assert.equal(judgeGuess("a red bicycle", W("bicycle")), "right");
 });
 
-test("guesses: a slip in a long word is right, a near miss is close, the rest is wrong", () => {
-  assert.equal(judgeGuess("bicyle", W("bicycle")), "right");
-  assert.equal(judgeGuess("BICYLE", W("bicycle")), "right");
+test("guesses: case is ignored but typos never count (a slip is close), the rest is wrong", () => {
+  assert.equal(judgeGuess("bicyle", W("bicycle")), "close");
+  assert.equal(judgeGuess("BICYLE", W("bicycle")), "close");
+  assert.equal(judgeGuess("BiCyClE", W("bicycle")), "right");
   assert.equal(judgeGuess("sofa", W("couch")), "close");
-  assert.equal(judgeGuess("lighthuose", W("lighthouse")), "right"); // long words allow two slips
+  assert.equal(judgeGuess("lighthuose", W("lighthouse")), "close"); // long words: two slips are still only close
   assert.equal(judgeGuess("cat", W("car")), "wrong"); // short words: no "close"
   assert.equal(judgeGuess("teapot", W("bicycle")), "wrong");
   assert.equal(judgeGuess("", W("bicycle")), "wrong");
