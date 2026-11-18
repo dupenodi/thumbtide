@@ -71,15 +71,14 @@ const SCENARIOS = {
   cult: { game: "cult", params: {}, note: "5 computers play by themselves" },
   "hammer-melka": { game: "hammer", params: { bots: 7, arena: "melka" }, note: "Rotor Brawl, 7 bots" },
   "hammer-classic": { game: "hammer", params: { bots: 7, arena: "classic" }, note: "Rotor Brawl, 7 bots" },
-  // Blast 3D performance spike: A/B arms (8 proxy fighters, 3 bombs). `spike`: only run when asked for by name.
-  "blast3d-sep": { game: "blast3d", spike: true, params: { mesh: "separate", physics: "capsule", res: 0.66 }, note: "120 draws" },
-  "blast3d-merged": { game: "blast3d", spike: true, params: { mesh: "merged", physics: "capsule", res: 0.66 }, note: "8 draws, rigid skinning" },
-  "blast3d-inst": { game: "blast3d", spike: true, params: { mesh: "instanced", physics: "capsule", res: 0.66 }, note: "9 instanced draws" },
-  "blast3d-merged-rag": { game: "blast3d", spike: true, params: { mesh: "merged", physics: "ragdoll", res: 0.66 }, note: "recommended arm" },
-  "blast3d-rag": { game: "blast3d", spike: true, params: { mesh: "instanced", physics: "ragdoll", res: 0.66 }, note: "ragdoll physics" },
-  "blast3d-res50": { game: "blast3d", spike: true, params: { mesh: "instanced", physics: "capsule", res: 0.5 }, note: "960×540" },
-  "blast3d-res100": { game: "blast3d", spike: true, params: { mesh: "instanced", physics: "capsule", res: 1 }, note: "1920×1080" },
-  "blast3d-stress": { game: "blast3d", spike: true, params: { mesh: "instanced", physics: "ragdoll", res: 0.66, chars: 16, bombs: 6 }, note: "16 fighters" },
+  // Blast Party 3D (the game; the spike's A/B arms are gone with the spike). `spike`: only run when asked for by name,
+  // while the game is hidden in the lobby. `blast3d-game` runs the first two; `blast3d` runs them all.
+  // fighters=8: eight computer fighters; stress: nobody runs out of lives, so the load stays for the whole test.
+  "blast3d-game-fight": { game: "blast3d", spike: true, params: { fighters: 8, stress: "fight", res: 0.66 }, note: "8 fighters mid-round" },
+  "blast3d-game-heavy": { game: "blast3d", spike: true, params: { fighters: 8, stress: "heavy", res: 0.66 }, note: "8 fighters, a blast every 1/3 s" },
+  "blast3d-auto": { game: "blast3d", spike: true, params: { fighters: 8, stress: "heavy" }, note: "as shipped: 0.66, drops to 0.5 by itself" },
+  "blast3d-res50": { game: "blast3d", spike: true, params: { fighters: 8, stress: "heavy", res: 0.5, lite: 1 }, note: "960×540, lite particles" },
+  "blast3d-res100": { game: "blast3d", spike: true, params: { fighters: 8, stress: "heavy", res: 1 }, note: "1920×1080" },
 };
 function pickScenarios(names) {
   if (!names.length) return Object.keys(SCENARIOS).filter((k) => !SCENARIOS[k].spike);

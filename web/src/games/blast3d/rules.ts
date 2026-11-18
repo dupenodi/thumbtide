@@ -61,7 +61,7 @@ export const GRAVITY = 20;
 export const RUN = 5.4;
 export const JUMP_V = 6.6;
 export const RADIUS = 0.36;
-export const HEIGHT = 1.6;
+export const HEIGHT = 2.0;
 export const BOMB_R = 0.24;
 export const TNT_R = 0.45;
 export const BOX_R = 0.36;
@@ -659,7 +659,7 @@ export class Game {
     for (const f of this.seats.values()) {
       if (f.gone || !f.inRound) continue;
       // the nearest point of the body (its axis from the hips to the head), as the engine sums over the body's parts
-      const p = push(f, clamp(y, f.y + 0.4, f.y + 1.4), 1);
+      const p = push(f, clamp(y, f.y + 0.5, f.y + HEIGHT - 0.2), 1);
       if (p === -1) continue;
       if (f.alive) this.hurt(f, Game.blastDamage(p.d, radius, kind), by, "blast", p.dvx, p.dvy, p.dvz, x, y, z);
       else {

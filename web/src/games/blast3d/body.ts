@@ -1,7 +1,7 @@
-// Proxy body for the Blast 3D performance spike: plain capsules, boxes and spheres in the layout of a BombSquad
-// "spaz" (Ballistica's spazappearance.py lists 9 meshes: head, torso, pelvis, upper arm, forearm, hand, upper leg,
-// lower leg, toes; arms and legs are mirrored, so a full body is 15 parts). No BombSquad art is drawn here.
-// Plain TypeScript (no three.js): the simulation uses it too.
+// The fighters' rig for Blast Party 3D: 15 joints and 15 rigid parts (head, torso, pelvis, and per side upper arm,
+// forearm, hand, upper leg, lower leg, toes), the animated pose (run cycle, punch, carry, knocked down) and each
+// part's matrix from the joints. The part count follows Ballistica's spaz (spazappearance.py lists the same nine
+// meshes, mirrored); the proportions, the pose code and the models (meshes.ts) are ours. No three.js here.
 
 export interface V3 {
   x: number;
@@ -9,6 +9,9 @@ export interface V3 {
   z: number;
 }
 export const v3 = (x = 0, y = 0, z = 0): V3 => ({ x, y, z });
+
+/** How much bigger the fighters are drawn than the rig's own measures (chunky, readable from a sofa). */
+export const SCALE = 1.25;
 
 /** Joints (also the ragdoll's particles). Local frame: +y up, +z forward, feet on y = 0. */
 export const J = { head: 0, neck: 1, pelvis: 2, lSh: 3, rSh: 4, lEl: 5, rEl: 6, lHa: 7, rHa: 8, lHip: 9, rHip: 10, lKn: 11, rKn: 12, lFt: 13, rFt: 14 } as const;
@@ -69,15 +72,9 @@ export const PARTS15: PartDef[] = [
   { kind: "toes", shape: "box", size: [0.13, 0.08, 0.24], a: -1, b: -1, at: J.rFt, fwd: 0.06 },
 ];
 
-/** A reduced body (the fallback arm): head, torso, one piece per arm and leg. */
-export const PARTS6: PartDef[] = [
-  PARTS15[0]!,
-  PARTS15[1]!,
-  seg("arm", 0.075, J.lSh, J.lHa),
-  seg("arm", 0.075, J.rSh, J.rHa),
-  seg("leg", 0.09, J.lHip, J.lFt),
-  seg("leg", 0.09, J.rHip, J.rFt),
-];
+export const P = { head: 0, torso: 1, pelvis: 2, lUpperArm: 3, rUpperArm: 4, lForearm: 5, rForearm: 6, lHand: 7, rHand: 8, lUpperLeg: 9, rUpperLeg: 10, lLowerLeg: 11, rLowerLeg: 12, lToes: 13, rToes: 14 } as const;
+/** The length of a part along its bone. */
+export const boneLength = (d: PartDef) => (d.a >= 0 && d.b >= 0 ? dist(d.a, d.b) : 0);
 
 /** What the pose needs from a character. */
 export interface Poser {
@@ -95,6 +92,10 @@ export interface Poser {
   held: boolean;
   carry: boolean;
   t: number;
+  /** 0 standing … 1 flat on its back (knocked out, carried, dead). */
+  down: number;
+  /** In the air on its own feet: legs tucked. */
+  air: boolean;
 }
 
 /** The animated pose (run cycle + punch swing), in world space, into `out` (15 joints). */
@@ -111,8 +112,8 @@ export function pose(c: Poser, out: V3[]) {
     const sx = side ? -1 : 1;
     const p = ph + side * Math.PI;
     // legs
-    const swing = c.held ? Math.sin(c.t * 9 + side) * 0.5 : Math.sin(p) * 0.75 * s;
-    const bend = c.held ? 0.4 : (0.2 + 0.9 * Math.max(0, Math.cos(p))) * s;
+    const swing = c.held ? Math.sin(c.t * 9 + side) * 0.5 : c.air ? 0.5 - side * 0.9 : Math.sin(p) * 0.75 * s;
+    const bend = c.held ? 0.4 : c.air ? 0.9 : (0.2 + 0.9 * Math.max(0, Math.cos(p))) * s;
     const hip = L[J.lHip + side]!;
     set(hip, 0.11 * sx, 0.8 + bob, 0);
     const knee = L[J.lKn + side]!;
@@ -138,11 +139,22 @@ export function pose(c: Poser, out: V3[]) {
       set(ha, 0.28 * sx, el.y - Math.cos(a + eb) * 0.24, el.z + Math.sin(a + eb) * 0.24);
     }
   }
-  // local → world: turn by yaw, then move to the character's feet
+  // local → world: tip over backwards when down, turn by yaw, then move to the character's feet
   const cs = Math.cos(c.yaw);
   const sn = Math.sin(c.yaw);
+  const tip = c.down * (Math.PI / 2);
+  const ct = Math.cos(tip);
+  const st = Math.sin(tip);
   for (let j = 0; j < NJ; j++) {
     const p = L[j]!;
+    p.x *= SCALE;
+    p.y *= SCALE;
+    p.z *= SCALE;
+    if (tip > 0) {
+      const y = p.y * ct + p.z * st + 0.17 * c.down;
+      p.z = -p.y * st + p.z * ct + 0.85 * c.down;
+      p.y = y;
+    }
     const x = p.x * cs + p.z * sn;
     const z = -p.x * sn + p.z * cs;
     p.x = c.x + x;
@@ -159,17 +171,45 @@ function set(p: V3, x: number, y: number, z: number) {
 
 /**
  * Each part's world matrix (column-major, three.js order) from the joints, into `out` at `base` (16 per part).
- * The part's y axis runs along its bone; its x axis stays close to the body's side.
+ * The part's y axis runs along its bone; its x axis stays close to the body's side (the line through the shoulders,
+ * so a tumbling ragdoll turns its parts with it). The bottom row is left alone: the view keeps each part's tint there.
  */
 export function partMatrices(joints: V3[], yaw: number, parts: PartDef[], out: Float32Array, base: number) {
-  const rx = Math.cos(yaw);
-  const rz = -Math.sin(yaw);
-  const fx = Math.sin(yaw);
-  const fz = Math.cos(yaw);
+  const ls = joints[J.lSh]!;
+  const rs = joints[J.rSh]!;
+  const nk = joints[J.neck]!;
+  const pv = joints[J.pelvis]!;
+  let rx = ls.x - rs.x, ry = ls.y - rs.y, rz = ls.z - rs.z;
+  const rl = Math.hypot(rx, ry, rz);
+  if (rl > 1e-3) {
+    rx /= rl;
+    ry /= rl;
+    rz /= rl;
+  } else {
+    rx = Math.cos(yaw);
+    ry = 0;
+    rz = -Math.sin(yaw);
+  }
+  // forward = side × spine
+  let ux = nk.x - pv.x, uy = nk.y - pv.y, uz = nk.z - pv.z;
+  const ul = Math.hypot(ux, uy, uz) || 1;
+  ux /= ul;
+  uy /= ul;
+  uz /= ul;
+  let fx = ry * uz - rz * uy, fy = rz * ux - rx * uz, fz = rx * uy - ry * ux;
+  const fl = Math.hypot(fx, fy, fz) || 1;
+  fx /= fl;
+  fy /= fl;
+  fz /= fl;
   for (let i = 0; i < parts.length; i++) {
     const d = parts[i]!;
     let yx = 0, yy = 1, yz = 0;
-    if (d.a >= 0) {
+    if (d.a < 0) {
+      // toes: upright along the spine
+      yx = ux;
+      yy = uy;
+      yz = uz;
+    } else {
       const a = joints[d.a]!;
       const b = joints[d.b]!;
       yx = b.x - a.x;
@@ -181,13 +221,13 @@ export function partMatrices(joints: V3[], yaw: number, parts: PartDef[], out: F
       yz /= l;
     }
     // x: the body's side, without its part along y
-    const dot = rx * yx + rz * yz;
-    let xx = rx - dot * yx, xy = -dot * yy, xz = rz - dot * yz;
+    const dot = rx * yx + ry * yy + rz * yz;
+    let xx = rx - dot * yx, xy = ry - dot * yy, xz = rz - dot * yz;
     let xl = Math.hypot(xx, xy, xz);
-    if (xl < 1e-4) {
-      const d2 = fx * yx + fz * yz;
+    if (xl < 1e-3) {
+      const d2 = fx * yx + fy * yy + fz * yz;
       xx = fx - d2 * yx;
-      xy = -d2 * yy;
+      xy = fy - d2 * yy;
       xz = fz - d2 * yz;
       xl = Math.hypot(xx, xy, xz) || 1;
     }
@@ -201,9 +241,10 @@ export function partMatrices(joints: V3[], yaw: number, parts: PartDef[], out: F
     let px: number, py: number, pz: number;
     if (d.at >= 0) {
       const p = joints[d.at]!;
-      px = p.x + fx * (d.fwd ?? 0);
-      py = p.y;
-      pz = p.z + fz * (d.fwd ?? 0);
+      const fw = (d.fwd ?? 0) * SCALE;
+      px = p.x + fx * fw;
+      py = p.y + fy * fw;
+      pz = p.z + fz * fw;
     } else {
       const a = joints[d.a]!;
       const b = joints[d.b]!;
@@ -212,18 +253,15 @@ export function partMatrices(joints: V3[], yaw: number, parts: PartDef[], out: F
       pz = (a.z + b.z) / 2;
     }
     const o = base + i * 16;
-    out[o] = xx;
-    out[o + 1] = xy;
-    out[o + 2] = xz;
-    out[o + 3] = 0;
-    out[o + 4] = yx;
-    out[o + 5] = yy;
-    out[o + 6] = yz;
-    out[o + 7] = 0;
-    out[o + 8] = zx;
-    out[o + 9] = zy;
-    out[o + 10] = zz;
-    out[o + 11] = 0;
+    out[o] = xx * SCALE;
+    out[o + 1] = xy * SCALE;
+    out[o + 2] = xz * SCALE;
+    out[o + 4] = yx * SCALE;
+    out[o + 5] = yy * SCALE;
+    out[o + 6] = yz * SCALE;
+    out[o + 8] = zx * SCALE;
+    out[o + 9] = zy * SCALE;
+    out[o + 10] = zz * SCALE;
     out[o + 12] = px;
     out[o + 13] = py;
     out[o + 14] = pz;
