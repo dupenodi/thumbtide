@@ -204,6 +204,21 @@ export const GAMES: GameDef[] = applyThumbs([
         default: "round",
         advanced: true,
       },
+      // the two warm-ups (user, 2026-11-18): with "Each match only" picks there is none between rounds at all
+      {
+        key: "roundWarmup",
+        label: "Warm-up between rounds",
+        options: [3, 5, 8, 10].map((n) => ({ value: n, label: `${n} s` })),
+        default: 5,
+        advanced: true,
+      },
+      {
+        key: "matchWarmup",
+        label: "Warm-up before a match",
+        options: [5, 10, 15, 20].map((n) => ({ value: n, label: `${n} s` })),
+        default: 10,
+        advanced: true,
+      },
       {
         key: "bots",
         label: "Computer players",

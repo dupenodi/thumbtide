@@ -59,13 +59,16 @@ export type WeaponKind =
   | "shuriken"
   | "clawmace";
 
-/** In card order: grouped by class, light → heavy. */
+/**
+ * In card order: grouped by class, light → heavy. Only these can be picked, given to bots or dropped.
+ * 2026-11-18 (user): the dual weapons (twin, tribune: they set the machine spinning endlessly), the cyclone and the
+ * spiked flail are out of the game; their specs stay below for the physics tests only.
+ */
 export const WEAPON_KINDS: WeaponKind[] = [
   "mallet", "kolotun", "hammer", "klevec", "warhammer", "maul", "krankhammer", "goldhammer",
   "bagor", "axis", "mamba", "eclipse", "axe", "pike", "berdish", "goldaxe",
-  "flail", "chainball", "orbmace", "starmace", "stixmace", "shuriken", "silvermace", "bladeflail", "spikedflail", "clawmace", "krankmace",
-  "kathib", "claw", "sword", "imperia", "cyclone", "severn", "innata", "liberia", "broadblade", "saian", "silverblade", "palash", "hisaian", "sunblade", "goldblade",
-  "twin", "tribune",
+  "flail", "chainball", "orbmace", "starmace", "stixmace", "shuriken", "silvermace", "bladeflail", "clawmace", "krankmace",
+  "kathib", "claw", "sword", "imperia", "severn", "innata", "liberia", "broadblade", "saian", "silverblade", "palash", "hisaian", "sunblade", "goldblade",
 ];
 
 /** The convex hull of a polygon (x,y pairs). Collisions need convex shapes; one original axe head is hook-shaped. */

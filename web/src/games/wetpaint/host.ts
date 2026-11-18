@@ -73,6 +73,8 @@ const mount: HostMount = (ctx) => {
   let lastResults: ResultRow[] | undefined;
   let lastTitle: string | undefined;
   let paused = false;
+  /** The paused picture is on the canvas (see frame). */
+  let pausedDrawn = false;
 
   // ------------------------------------------------------------ players
   const ownFor = (slot: number): WetPaintOwn => ({
@@ -333,7 +335,10 @@ const mount: HostMount = (ctx) => {
       }
     }
 
-    view.render(paused ? 0 : dt);
+    // Paused (Back on the TV remote, or the VIP's phone): one last frame, then the canvas keeps its picture and only
+    // the HUD goes on (drawing on under the pause menu redrew the full-screen canvas every frame on the TV)
+    if (!paused || !pausedDrawn) view.render(paused ? 0 : dt);
+    pausedDrawn = paused;
     fx.update(sim, now);
     wrap.classList.toggle("frenzy", sim.frenzy && sim.phase === "play");
     hud.update();

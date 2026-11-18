@@ -274,7 +274,7 @@ function join(room: string, name: string) {
         </div>`;
     } else if (sheetKind === "help") {
       sheetPanel.innerHTML = `${head(esc(def && def.id !== "lobby" ? def.title : "Controller"))}
-        <div class="sh-body" data-scroll>${def && def.id !== "lobby" ? `<section>${controlsHtml(def)}</section>` : ""}${controllerPrefsHtml()}</div>`;
+        <div class="sh-body">${def && def.id !== "lobby" ? `<section>${controlsHtml(def)}</section>` : ""}${controllerPrefsHtml()}</div>`;
     } else {
       if (!isVip()) return closeSheet();
       const s = state;
@@ -284,7 +284,7 @@ function join(room: string, name: string) {
       // players, End game last, and Pause / Restart pinned to the bottom under the thumb.
       const scroll = sheetPanel.scrollTop;
       sheetPanel.innerHTML = `${head(inGame ? esc(def?.title ?? "Game") : "Host controls")}
-        <div class="sh-body sh-host" data-scroll>
+        <div class="sh-body sh-host">
           ${inGame && def?.settings?.length ? `<section><h3>Settings</h3>${settingsHtml(def, s?.settings ?? {})}</section>` : ""}
           <section><h3>Room ${esc(room)}<span class="sh-count">${others.length + 1} ${others.length ? "players" : "player"}</span></h3>
             ${inGame ? `<button class="sh-toggle sh-lock" data-cmd="lock"><span>Lock the room<small>New players can't join mid-game</small></span><i class="sh-switch ${s?.locked ? "on" : ""}"></i></button>` : ""}

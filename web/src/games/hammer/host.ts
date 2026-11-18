@@ -12,7 +12,7 @@ import { makeTour } from "./tour.ts";
 import { createGameAudio } from "./audio.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount } from "../types.ts";
-import { applyArenaKind, openSideRows, relaunchLost, spawnPoint, waveRoom, waveSeconds, wormSpawn, STICK_DEFAULTS, type StickTune, stickPush as stickPushFor } from "./arenas.ts";
+import { ARENA_NAME, applyArenaKind, openSideRows, relaunchLost, spawnPoint, waveRoom, waveSeconds, wormSpawn, STICK_DEFAULTS, type StickTune, stickPush as stickPushFor } from "./arenas.ts";
 import { type Bot, driveBot, makeBot, newRound, PROFILES, type ProfileId, profileLoadout, ROSTER } from "./bots.ts";
 import "./hammer.css";
 import { loadGameFont } from "./font.ts";
@@ -41,10 +41,10 @@ const MONSTER_TEAM = 9;
 const MONSTER_COLOR = "#c8995a";
 // The warm-up (weapon pick, no damage). Shorter after the play test: with ~15 s rounds, 4 s of result and 8 s of
 // pick were nearly half the session.
+// 2026-11-18 (user): the host picks both lengths (Settings: roundWarmup, matchWarmup); with "Each match only" picks
+// the next round starts straight after the result, no warm-up at all.
 const PICK_S = 5;
 const FIRST_PICK_S = 10;
-/** Between the rounds of a match when the weapon pick is "Each match only": just the 3-2-1. */
-const READY_S = 3;
 const RESULT_S = 4;
 const MATCH_S = 7;
 /** Real seconds after the last KO before the round is called (let the wreck fall). */
@@ -429,6 +429,9 @@ const mount: HostMount = (ctx) => {
   let paused = false;
   let hudDirty = true;
   const winsToMatch = () => Number(ctx.settings().wins) || 3;
+  /** The warm-up lengths the host picked (s). */
+  const roundWarm = () => Number(ctx.settings().roundWarmup) || PICK_S;
+  const matchWarm = () => Number(ctx.settings().matchWarmup) || FIRST_PICK_S;
 
   const pushOwn = (s: Seat) => {
     if (!s.human || !host.players.has(s.id)) return;
@@ -471,10 +474,12 @@ const mount: HostMount = (ctx) => {
   const applyArena = () => {
     arenaKind = String(ctx.settings().arena ?? "classic");
     const { w, h } = applyArenaKind(arena, arenaKind);
+    hud.setLevel(ARENA_NAME[arenaKind] ?? ARENA_NAME.classic!);
     fx.coins.w = w;
     fx.coins.h = h;
   };
-  const startPick = (seconds = PICK_S) => {
+  /** `ready`: the next round of a match with "Each match only" picks (everyone keeps their weapon; `seconds` is 0). */
+  const startPick = (seconds: number, ready = false) => {
     phase = "pick";
     arena.suddenDeath = false;
     clearMonsters();
@@ -499,7 +504,7 @@ const mount: HostMount = (ctx) => {
     tuning.damage = 0; // warm-up: fly and swing, no damage
     tuning.slomo = 0;
     applyToggles();
-    readyOnly = seconds === READY_S && round > 1;
+    readyOnly = ready && round > 1;
     if (round === 1) for (const s of seats.values()) s.fought = false;
     // bots take their personality's loadout (mostly its first weapon); a new round gives them a new mood
     for (const s of bots()) {
@@ -662,11 +667,13 @@ const mount: HostMount = (ctx) => {
     }
     if (left > 0) return;
     if (phase === "pick") startFight();
-    else if (phase === "result") startPick(ctx.settings().warmup === "match" ? READY_S : PICK_S);
-    else {
+    else if (phase === "result") {
+      if (ctx.settings().warmup === "match") startPick(0, true);
+      else startPick(roundWarm());
+    } else {
       for (const s of seats.values()) s.wins = 0;
       round = 0;
-      startPick();
+      startPick(matchWarm());
     }
   };
 
@@ -927,7 +934,7 @@ const mount: HostMount = (ctx) => {
       const waiting = teamsSeated().size < 2;
       hud.warmup(
         waiting ? "Warm-up · waiting for a second player (or add computer players in Settings)" : "Warm-up · pick your weapon on your phone",
-        waiting ? null : left / pickTotal,
+        waiting ? null : left / (pickTotal || 1),
       );
     } else if (phase === "fight" && mode === "pvm" && waveTotal > 0 && callAt < 0 && !abWaveBarOff) {
       // the wave timer: text and bar change once a second; red for the last 5 s
@@ -1061,7 +1068,7 @@ const mount: HostMount = (ctx) => {
     }
   };
 
-  startPick(FIRST_PICK_S);
+  startPick(matchWarm());
   raf = requestAnimationFrame(frame);
   if (import.meta.env.DEV) (window as unknown as { __rotor: unknown }).__rotor = { host, arena, seats, phase: () => phase, sound, fx, audioCtx: audio() };
 
@@ -1088,7 +1095,7 @@ const mount: HostMount = (ctx) => {
     restart() {
       for (const s of seats.values()) s.wins = 0;
       round = 0;
-      startPick(FIRST_PICK_S);
+      startPick(matchWarm());
     },
   };
 };

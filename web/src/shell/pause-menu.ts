@@ -16,7 +16,8 @@ interface Actions {
 
 export function createPauseMenu(a: Actions) {
   const el = document.createElement("div");
-  el.className = "pm";
+  // on the TV no backdrop blur: blurring the full 4K frame behind the menu is the costliest thing the compositor does
+  el.className = isWebOS ? "pm pm-lite" : "pm";
   el.hidden = true;
   document.body.appendChild(el);
 

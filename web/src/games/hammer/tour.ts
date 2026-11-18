@@ -35,9 +35,9 @@ function tourSets(kind: TourKind, seats: number): TourSet[] {
       const plates = Array.from({ length: seats }, () => PLATE_KINDS[p++ % PLATE_KINDS.length]!);
       sets.push({ weapons, sidearms: Array<GunKind>(seats).fill(g), plates });
     }
-    // mixed guns, and the tribune (its back blade is a gun of its own)
+    // mixed guns
     const mixed = Array.from({ length: seats }, (_, i) => GUN_KINDS[i % GUN_KINDS.length]!);
-    sets.push({ weapons: Array.from({ length: seats }, (_, i) => (i === 0 ? "tribune" : GUN_CARRIERS[i % GUN_CARRIERS.length]!)), sidearms: mixed.map((g, i) => (i === 0 ? null : g)), plates: Array.from({ length: seats }, () => PLATE_KINDS[p++ % PLATE_KINDS.length]!) });
+    sets.push({ weapons: Array.from({ length: seats }, (_, i) => GUN_CARRIERS[i % GUN_CARRIERS.length]!), sidearms: mixed, plates: Array.from({ length: seats }, () => PLATE_KINDS[p++ % PLATE_KINDS.length]!) });
     return sets;
   }
   for (let i = 0; i < WEAPON_KINDS.length; i += seats) {
