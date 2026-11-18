@@ -1,0 +1,60 @@
+# Blast Party 3D: a stick to move and four buttons: Bomb, Punch, Jump and Grab.
+# Syntax and every setting: web/src/games/kit/pad.ts
+
+controller
+  orientation  any
+  send-rate    40hz
+
+stick move
+  label        "Move"
+  mode         floating
+  follow       yes
+  travel       44px
+  full-at      82%
+  deadzone     8%
+  curve        0.9
+  directions   any
+  haptic       8ms
+  rim-haptic   0ms
+
+button bomb
+  label        "Bomb"
+  hint         "Light a bomb in your hands, then press again to throw it the way you push the stick. Push further to throw further."
+  icon         action
+  style        primary
+  shape        rounded
+  haptic       16ms
+  fires        press
+
+button punch
+  label        "Punch"
+  hint         "Punch in front of you. A run-up hits much harder. With something in your hands, it throws."
+  icon         splat
+  style        secondary
+  shape        rounded
+  haptic       12ms
+  fires        press
+
+button jump
+  label        "Jump"
+  hint         "Hop over a bomb or onto a block."
+  icon         jump
+  style        secondary
+  shape        rounded
+  haptic       10ms
+  fires        press
+
+button grab
+  label        "Grab"
+  hint         "Pick up a bomb, the TNT crate or a knocked-out fighter in front of you. Press again to throw."
+  icon         special
+  style        secondary
+  shape        rounded
+  haptic       12ms
+  fires        press
+
+buzz
+  go           40
+  hit          60 30 90
+  out          90 50 160
+  pick         25

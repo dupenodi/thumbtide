@@ -71,9 +71,17 @@ const SCENARIOS = {
   cult: { game: "cult", params: {}, note: "5 computers play by themselves" },
   "hammer-melka": { game: "hammer", params: { bots: 7, arena: "melka" }, note: "Rotor Brawl, 7 bots" },
   "hammer-classic": { game: "hammer", params: { bots: 7, arena: "classic" }, note: "Rotor Brawl, 7 bots" },
+  // Blast Party 3D (the game; the spike's A/B arms are gone with the spike). `spike`: only run when asked for by name,
+  // while the game is hidden in the lobby. `blast3d-game` runs the first two; `blast3d` runs them all.
+  // fighters=8: eight computer fighters; stress: nobody runs out of lives, so the load stays for the whole test.
+  "blast3d-game-fight": { game: "blast3d", spike: true, params: { fighters: 8, stress: "fight", res: 0.66 }, note: "8 fighters mid-round" },
+  "blast3d-game-heavy": { game: "blast3d", spike: true, params: { fighters: 8, stress: "heavy", res: 0.66 }, note: "8 fighters, a blast every 1/3 s" },
+  "blast3d-auto": { game: "blast3d", spike: true, params: { fighters: 8, stress: "heavy" }, note: "as shipped: 0.66, drops to 0.5 by itself" },
+  "blast3d-res50": { game: "blast3d", spike: true, params: { fighters: 8, stress: "heavy", res: 0.5, lite: 1 }, note: "960×540, lite particles" },
+  "blast3d-res100": { game: "blast3d", spike: true, params: { fighters: 8, stress: "heavy", res: 1 }, note: "1920×1080" },
 };
 function pickScenarios(names) {
-  if (!names.length) return Object.keys(SCENARIOS);
+  if (!names.length) return Object.keys(SCENARIOS).filter((k) => !SCENARIOS[k].spike);
   const out = [];
   for (const n of names) {
     const hits = Object.keys(SCENARIOS).filter((k) => k === n || SCENARIOS[k].game === n || k.startsWith(`${n}-`));
@@ -445,7 +453,27 @@ function summarise(reports) {
     minScale: scales.length ? scales[0] : null,
     heapMB: heap.length ? heap[heap.length - 1] : null,
     error: reports.find((r) => r.error)?.error ?? null,
+    extras: extrasOf(reports),
   };
+}
+
+/** The game's own numbers (setPerfExtras): the mean of each numeric one, the last value of the others. */
+const MONITOR_KEYS = new Set(["fps", "p50", "p95", "worst", "long", "frames", "t", "hidden", "heapMB", "error", "phase"]);
+function extrasOf(reports) {
+  const out = {};
+  for (const k of new Set(reports.flatMap((r) => Object.keys(r)))) {
+    if (MONITOR_KEYS.has(k)) continue;
+    const vals = reports.map((r) => r[k]).filter((v) => v !== undefined && v !== null);
+    if (!vals.length) continue;
+    out[k] = vals.every((v) => typeof v === "number") ? Math.round((vals.reduce((a, v) => a + v, 0) / vals.length) * 1000) / 1000 : vals[vals.length - 1];
+  }
+  return Object.keys(out).length ? out : null;
+}
+function printExtras(results) {
+  const rows = results.filter((r) => r?.extras);
+  if (!rows.length) return;
+  console.log("\nThe games' own numbers (mean over the measured reports):");
+  for (const r of rows) console.log(`  ${r.name}: ${Object.entries(r.extras).map(([k, v]) => `${k}=${v}`).join(" ")}`);
 }
 
 function judge(s) {
@@ -900,6 +928,7 @@ if (command === "run" && flags.has("--tv")) {
   else {
     console.log("");
     resultTable(results);
+    printExtras(results);
   }
   site.close();
   process.exit(results.every((r) => r.verdict === "PASS") ? 0 : 1);
@@ -933,6 +962,7 @@ if (json) {
 } else {
   console.log("");
   resultTable(results, profile.calibration?.tv);
+  printExtras(results);
   const failed = results.filter((r) => r.verdict !== "PASS");
   console.log(failed.length ? `\n${failed.length} of ${results.length} below a steady ${target}fps.` : `\nAll ${results.length} hold ${target}fps.`);
 }
