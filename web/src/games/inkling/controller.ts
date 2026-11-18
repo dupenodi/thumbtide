@@ -487,7 +487,8 @@ const mount: ControllerMount = (ctx) => {
     ctl.on("message", (m) => {
       if (!m || typeof m !== "object") return;
       if (m.type === "said") {
-        const g = mine.find((x) => x.how === "wait" && x.text === m.text) ?? mine.find((x) => x.how === "wait");
+        // match the reply to the same guess only (never to an older one still waiting)
+        const g = mine.find((x) => x.how === "wait" && x.text === m.text);
         if (g) g.how = m.how;
         else mine.push({ text: m.text, how: m.how, at: performance.now() });
         drawSaid();

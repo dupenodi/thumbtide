@@ -69,10 +69,11 @@ test("guesses: right ignores case, spaces, plurals, articles and other spellings
   assert.equal(judgeGuess("a red bicycle", W("bicycle")), "right");
 });
 
-test("guesses: one letter off or a known near miss is close; the rest is wrong", () => {
-  assert.equal(judgeGuess("bicyle", W("bicycle")), "close");
+test("guesses: a slip in a long word is right, a near miss is close, the rest is wrong", () => {
+  assert.equal(judgeGuess("bicyle", W("bicycle")), "right");
+  assert.equal(judgeGuess("BICYLE", W("bicycle")), "right");
   assert.equal(judgeGuess("sofa", W("couch")), "close");
-  assert.equal(judgeGuess("lighthuose", W("lighthouse")), "close"); // long words allow two
+  assert.equal(judgeGuess("lighthuose", W("lighthouse")), "right"); // long words allow two slips
   assert.equal(judgeGuess("cat", W("car")), "wrong"); // short words: no "close"
   assert.equal(judgeGuess("teapot", W("bicycle")), "wrong");
   assert.equal(judgeGuess("", W("bicycle")), "wrong");
@@ -145,12 +146,12 @@ test("right guesses score by speed and order; the artist scores per right guess;
 test("close and wrong guesses are events of their own; a close one is never a wrong one", () => {
   const g = drawing(["a", "b"], {}, 3);
   const x = others(g)[0]!;
-  g.word = W("bicycle");
-  assert.equal(g.guess(x, "bicyle"), "close");
+  g.word = W("couch");
+  assert.equal(g.guess(x, "sofa"), "close");
   run(g, GUESS_GAP);
   assert.equal(g.guess(x, "teapot"), "wrong");
   const ev = g.drainEvents();
-  assert.deepEqual(of(ev, "close").map((e) => e.text), ["bicyle"]);
+  assert.deepEqual(of(ev, "close").map((e) => e.text), ["sofa"]);
   assert.deepEqual(of(ev, "wrong").map((e) => e.text), ["teapot"]);
 });
 

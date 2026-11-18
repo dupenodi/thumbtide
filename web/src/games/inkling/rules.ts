@@ -25,7 +25,7 @@ export const ARTIST_PER_GUESS = 40;
 /** Hints come at these fractions of the draw time. */
 export const HINTS = [0.5, 0.75];
 /** Minimum gap between one player's guesses (steps): typing faster than this is spam. */
-export const GUESS_GAP = 24;
+export const GUESS_GAP = 6;
 export const MAX_GUESS = 40;
 
 // stroke limits (also what a phone may send)
@@ -122,9 +122,13 @@ export function judgeGuess(guess: string, word: Word): "right" | "close" | "wron
   const words = ` ${norm(guess)} `;
   if ([word.w, ...word.same].some((f) => words.includes(` ${norm(f)} `))) return "right";
   if (word.near.map(squash).some((f) => plural(g, f))) return "close";
+  // forgiving: a one-letter slip in a word of 5+ letters (two in 9+) counts as right; shorter words get "close"
+  for (const f of forms) {
+    if (f.length >= 9 && lev(g, f, 2) <= 2) return "right";
+    if (f.length >= 5 && lev(g, f, 1) <= 1) return "right";
+  }
   for (const f of forms) {
     if (f.length >= 4 && lev(g, f, 1) <= 1) return "close";
-    if (f.length >= 8 && lev(g, f, 2) <= 2) return "close";
   }
   return "wrong";
 }
