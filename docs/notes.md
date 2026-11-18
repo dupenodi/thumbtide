@@ -14,9 +14,10 @@ These come from playtesting and the owner's feedback. Follow them unless you've 
   board games.
   - The one exception is **Rotor Brawl**, a prototype of an official, licensed port of Hammerfight. It may use
     Hammerfight's sounds, music, weapons and physics.
-  - The second exception is **Blast Party**, being rebuilt (2026-11-18) as a 3D adaptation of BombSquad. Ballistica's
-    code (github efroemling/ballistica, engine and game scripts) is MIT; BombSquad's characters, models, textures,
-    sounds and music are used with the consent of BombSquad's author, as the owner confirmed.
+  - **Blast Party** is being rebuilt (2026-11-18) as a 3D party brawler that plays like BombSquad: its rules and
+    numbers are ported from Ballistica's MIT game scripts (github efroemling/ballistica). BombSquad's own assets
+    (characters, models, textures, sounds, music) are not open source and are not used: all of Blast Party's art and
+    sound is original, in a chunky low-poly cartoon style.
 - **Removed games (2026-11-18):** Trails, Stack Attack, Shove, Lift-off, Spyline, Bridge Panic and Boomtown are paused
   and removed from the app to keep it small. Their code is in git history (branch `party-games` before the removal,
   and branches `game-<id>`). Active: Inkling, Punchline, Blast Party and the older games.
