@@ -33,6 +33,8 @@ function hold(a: Arena, m: Machine, x: number, y: number): void {
 // ---------------------------------------------------------------- projectile fates
 /** Per projectile of the watched shooter: 1 blocked by an enemy's weapon or plate, 2 landed on an enemy. */
 let fate = new Map<object, number>();
+/** Per rocket of the watched shooter: its contacts with an enemy's weapon, gun or plate. */
+let pings = new Map<object, number>();
 let owner: Machine | null = null;
 // biome-ignore lint/suspicious/noExplicitAny: wrapping private methods (bench only)
 const ArenaP = Arena.prototype as unknown as Record<string, (...a: any[]) => unknown>;
@@ -54,6 +56,8 @@ function watch(): () => void {
     const sh = st.shot;
     if (owner && st.m === owner && ot.m !== owner && ot.m.team !== owner.team && ot.m.alive && sh.contacts < sh.maxContacts && !ot.loose) {
       fate.set(sh, Math.max(fate.get(sh) ?? 0, ot.hull ? 2 : 1));
+      // a rocket that meets a held weapon bounces (a "ping") and may come back to it
+      if ((sh as { blast?: unknown }).blast && !ot.hull) pings.set(sh, (pings.get(sh) ?? 0) + 1);
     }
     return shotHit.call(this, sBody, st, oBody, ot, c);
   };
@@ -243,6 +247,9 @@ test("guns in bot duels", { skip: !FIGHT }, () => {
       fate = new Map();
       let landed = 0;
       let blocked = 0;
+      let pinged = 0;
+      let pingSum = 0;
+      let pingMax = 0;
       let wins = 0;
       let secs = 0;
       let dealt = 0;
@@ -262,6 +269,12 @@ test("guns in bot duels", { skip: !FIGHT }, () => {
           const [l, b] = fates();
           landed += l;
           blocked += b;
+          for (const k of pings.values()) {
+            pinged++;
+            pingSum += k;
+            pingMax = Math.max(pingMax, k);
+          }
+          pings = new Map();
           const i = shooterId - 1;
           if (res.winner === i) wins++;
           secs += res.seconds;
@@ -272,7 +285,8 @@ test("guns in bot duels", { skip: !FIGHT }, () => {
       const P = tally.proj || 1;
       out.push(
         `${label.padEnd(13)} ${((100 * wins) / n).toFixed(0).padStart(4)}%  ${(secs / n).toFixed(1).padStart(4)}  ${(tally.volleys / n).toFixed(1).padStart(11)}  ${(tally.proj / n).toFixed(1).padStart(8)}` +
-          `  ${((100 * landed) / P).toFixed(0).padStart(4)}%  ${((100 * blocked) / P).toFixed(0).padStart(5)}%  ${(tally.dmg / n).toFixed(1).padStart(12)}  ${(tally.dmg / P).toFixed(2).padStart(8)}  ${(dealt / n).toFixed(0).padStart(11)}  ${(tally.self / n).toFixed(1).padStart(12)}`,
+          `  ${((100 * landed) / P).toFixed(0).padStart(4)}%  ${((100 * blocked) / P).toFixed(0).padStart(5)}%  ${(tally.dmg / n).toFixed(1).padStart(12)}  ${(tally.dmg / P).toFixed(2).padStart(8)}  ${(dealt / n).toFixed(0).padStart(11)}  ${(tally.self / n).toFixed(1).padStart(12)}` +
+          (pinged ? `  rockets that met a weapon: ${pinged}, its contacts mean ${(pingSum / pinged).toFixed(1)} max ${pingMax}` : ""),
       );
     }
   } finally {

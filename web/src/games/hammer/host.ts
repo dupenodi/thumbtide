@@ -805,11 +805,12 @@ const mount: HostMount = (ctx) => {
         fx.shake = Math.min(12, fx.shake + 7);
       } else if (e.type === "shot") {
         sound?.shot(e.kind);
-        // a bullet stays as it was (no shake, no flash); the heavier guns shake with their kick (mortar 300 → 3,
-        // heavy mortar 320 → 3.2; a rocket pushes nothing but gets a small one) and flash at the muzzle
+        // a bullet stays as it was (no shake, no flash); the heavier guns shake with their kick (mortar 300 → 3; a
+        // rocket pushes nothing but gets a small one; the heavy mortar's one big ball shakes most) and flash at the muzzle
         if (e.kind !== "bullet") {
-          fx.shake = Math.min(12, fx.shake + Math.max(1.5, e.kick / 100));
-          fx.burst(e.x, e.y, lite ? 4 : 8, e.kind === "rocket" ? 160 : 260, e.kind === "rocket" ? "#ffb347" : "#fff3c4", 2);
+          const cannon = e.kind === "cannon";
+          fx.shake = Math.min(12, fx.shake + (cannon ? 5 : Math.max(1.5, e.kick / 100)));
+          fx.burst(e.x, e.y, (lite ? 4 : 8) * (cannon ? 2 : 1), e.kind === "rocket" ? 160 : cannon ? 340 : 260, e.kind === "rocket" ? "#ffb347" : "#fff3c4", 2);
         }
       } else if (e.type === "ping") {
         // a shot spent on a weapon, plate or gun: a spark (and a clank for a heavy one); the bullets of a burst

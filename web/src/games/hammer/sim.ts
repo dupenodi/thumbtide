@@ -187,6 +187,8 @@ const PUSH_MASS = 66000;
 const RECOIL_SHARE = 0.5;
 /** A rocket regains its speed after a bounce at this rate, 1/s (OURS, RE_GUNS.md §2.5). */
 const ROCKET_THRUST = 5;
+/** A rocket pressed against a held weapon by its thrust clanks (a ping) at most once per this many seconds. */
+const ROCKET_PING_GAP = 0.3;
 /** Seconds a shot flies through a teammate it touched (a bullet covers 80 px, a mortar ball 44). */
 const SHOT_GHOST = 0.04;
 /** A shot's push can't make a light part (a claw, a link) jump faster than this, px/s. */
@@ -290,6 +292,8 @@ export interface Shot {
   /** Rockets: the launch heading their thrust drives along (a unit vector). */
   hx: number;
   hy: number;
+  /** Rockets: when it last clanked off a held weapon (a ping event). */
+  pingAt?: number;
 }
 
 export interface Machine {
@@ -1297,7 +1301,11 @@ export class Arena {
     // a rocket against a live machine's weapon, gun or plate: the exe's rocket takes no damage from a held weapon
     // (0x410540–0x410575), so it doesn't go off; it bounces and pushes itself on (ageShots). On a hull it goes off.
     if (sh.blast && v.alive && this.enemies(st.m, v) && !ot.hull && !ot.loose && ot.gibUntil === undefined && (ot.plate || v.armed)) {
-      this.events.push({ type: "ping", m: v, heavy: true, x: c.x, y: c.y });
+      // its thrust drives it back onto the weapon (ageShots): one clank per ROCKET_PING_GAP, not one per contact
+      if (this.t >= (sh.pingAt ?? -1) + ROCKET_PING_GAP) {
+        sh.pingAt = this.t;
+        this.events.push({ type: "ping", m: v, heavy: true, x: c.x, y: c.y });
+      }
       return;
     }
     // a teammate with friendly fire off: the shot flies on through (with team collision off they never touch; with
