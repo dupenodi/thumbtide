@@ -174,19 +174,19 @@
 .ikp-tool.pressed { transform: scale(0.95); }
 
 /* picking a word */
-.ikp-pick { padding: 18px 16px 16px; gap: 12px; }
+.ikp-pick { padding: 18px 16px 16px; gap: 12px; overflow-y: auto; }
 .ikp-pick h2, .ikp-info h2 { margin: 0; font: 700 24px/1.2 Inter, system-ui, sans-serif; }
 .ikp-pick > p, .ikp-info p { margin: 0; font: 500 16px/1.4 Inter, system-ui, sans-serif; color: rgba(238, 241, 242, 0.7); }
 .ikp-cards { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
 .ikp-card {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 76px; padding: 0 18px; border: 0;
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 76px; padding: 0 18px; border: 0;
   border-radius: 14px; background: #fbfaf6; color: #1a1a1a; text-align: left; box-shadow: inset 0 0 0 3px transparent;
   -webkit-tap-highlight-color: transparent;
 }
 .ikp-card b { font: 700 24px/1.15 Inter, system-ui, sans-serif; }
 .ikp-card small { flex: none; font: 600 14px/1.3 Inter, system-ui, sans-serif; color: #5b676d; text-align: right; }
 .ikp-card.on { box-shadow: inset 0 0 0 4px var(--c); background: #fff; }
-.ikp-pick .ikp-btn { margin-top: auto; }
+.ikp-pick .ikp-btn { flex: none; margin-top: auto; position: sticky; bottom: 0; }
 
 /* guessing */
 .ikp-guess { padding: 14px 14px 12px; gap: 14px; }
@@ -228,3 +228,28 @@
 .ink-final.many li { height: 54px; }
 .ink-final.many li span { font-size: 40px; }
 .ink-final h2 { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* ================================================================== short phones (keyboard up, landscape)
+   The pick list scrolls with its button always in reach; the sheet keeps a usable size and the page scrolls if it must. */
+@media (max-height: 520px) {
+  .ikp-draw { overflow-y: auto; padding: 8px 10px 10px; gap: 8px; }
+  .ikp-pad { flex: 1 1 200px; min-height: 200px; }
+  .ikp-tools { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
+  .ikp-tools .ikp-row:nth-child(-n + 2) { display: contents; }
+  .ikp-tools .ikp-row:nth-child(3) { grid-column: 1 / -1; gap: 6px; }
+  .ikp-sw { height: 36px; border-radius: 10px; }
+  .ikp-sw.on { box-shadow: 0 0 0 2px #222a2e, 0 0 0 4px #fff; }
+  .ikp-tool { height: 44px; }
+  .ikp-pick { padding: 10px 14px 12px; gap: 8px; }
+  .ikp-pick h2 { font-size: 20px; }
+  .ikp-card { min-height: 60px; }
+  .ikp-pick .ikp-btn { box-shadow: 0 -8px 0 #222a2e; }
+  .ikp-pick .ikp-btn:disabled { opacity: 1; background: #3a4a42; color: rgba(238, 241, 242, 0.55); }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  .ikp-draw { flex-direction: row; overflow: hidden; align-items: stretch; }
+  .ikp-pad { flex: 1 1 auto; min-width: 0; min-height: 0; }
+  .ikp-tools { flex: 0 0 300px; align-self: center; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .ikp-sw { height: 40px; }
+  .ikp-tool { height: 48px; }
+}
