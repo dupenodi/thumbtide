@@ -223,7 +223,7 @@ const mount: ControllerMount = (ctx) => {
         const clean = letters.replace(/^ +/, "").replace(/ {2,}/g, " ").slice(0, 18);
         if (clean !== typed) input.value = clean;
         draft = clean;
-        localErr = letters.length < typed.length ? "Letters only, please" : /S +S/.test(clean) ? "One word only" : "";
+        localErr = letters.length < typed.length ? "Letters only, please" : /\S +\S/.test(clean) ? "One word only" : "";
         refresh();
       };
       const onKey = (e: KeyboardEvent) => {
