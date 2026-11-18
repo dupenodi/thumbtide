@@ -1,5 +1,5 @@
-// The phone in the lobby. The VIP steps through the games with big Left / Right buttons (every tap goes to the TV
-// at once), sees the game's card and settings, and presses Play. Everyone else sees who is picking and what.
+// The phone in the lobby. The VIP taps a game in a grid of cards (every tap goes to the TV at once; the TV shows
+// that game until Play), sees its settings, and presses Play. Everyone else sees who is picking and what.
 import { button } from "@thumbtide/sdk/ui";
 import { settingsHtml, syncSettings, wireSettings } from "../../shell/settings-ui.ts";
 import { gameById, pickableGames } from "../registry.ts";
@@ -7,9 +7,6 @@ import type { ControllerMount } from "../types.ts";
 import { coverHtml, esc, gameColors, playersText } from "./library.ts";
 import type { LobbyOwn } from "./shared.ts";
 import "./lobby.css";
-
-const chev = (d: "l" | "r") =>
-  `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d === "l" ? "M15 5l-7 7 7 7" : "M9 5l7 7-7 7"}" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 const mount: ControllerMount = (ctx) => {
   const { ctl, root, isVip, startGame } = ctx;
@@ -54,23 +51,19 @@ const mount: ControllerMount = (ctx) => {
       el.classList.add("lp-vip");
       el.innerHTML = `
         <header class="lp-head"><h1>Pick a game</h1><span class="lp-count"></span></header>
-        <div class="lp-card"></div>
-        <div class="lp-info">
-          <div class="lp-title"><h2 class="lp-gt"></h2><span class="lp-gp"></span></div>
-          <p class="lp-tagline"></p>
-        </div>
-        <div class="lp-nav">
-          <button class="lp-lr" data-d="-1" aria-label="Previous game">${chev("l")}<span>Left</span></button>
-          <span class="lp-pos"></span>
-          <button class="lp-lr" data-d="1" aria-label="Next game"><span>Right</span>${chev("r")}</button>
-        </div>
-        <section class="lp-settings"><h2>Settings</h2><div class="lp-st"></div></section>
+        <ul class="lp-grid">${games
+          .map((g) => `<li><button class="lp-gc" data-id="${esc(g.id)}" style="--ga:${gameColors(g)[0]}">${coverHtml(g, { title: false })}<b>${esc(g.title)}</b><small>${playersText(g)}</small></button></li>`)
+          .join("")}</ul>
+        <section class="lp-settings"><h2 class="lp-sh">Settings</h2><div class="lp-st"></div></section>
         <section class="lp-players"><h2>Players</h2><ul class="lp-pl"></ul></section>
         <div class="lp-go"><button class="lp-start"></button></div>`;
-      for (const b of el.querySelectorAll<HTMLButtonElement>(".lp-lr")) {
-        // "press": goes out on touch-down, not on release
-        cleanups.push(button(b, { mode: "press", haptic: 15, onPress: () => step(Number(b.dataset.d)) }));
-      }
+      const grid = el.querySelector(".lp-grid") as HTMLElement;
+      const onGrid = (e: Event) => {
+        const b = (e.target as HTMLElement).closest<HTMLElement>(".lp-gc");
+        if (b?.dataset.id) pick(b.dataset.id);
+      };
+      grid.addEventListener("click", onGrid);
+      cleanups.push(() => grid.removeEventListener("click", onGrid));
       const start = el.querySelector(".lp-start") as HTMLButtonElement;
       cleanups.push(button(start, { mode: "tap", haptic: 25, onPress: () => !start.disabled && startGame(sel) }));
       patch(players);
@@ -95,10 +88,10 @@ const mount: ControllerMount = (ctx) => {
       </div>`;
   }
 
-  /** Left / Right: show it here at once and tell the TV straight away (no debounce). */
-  function step(d: number) {
-    const i = games.findIndex((g) => g.id === sel);
-    sel = games[(i + d + games.length) % games.length]!.id;
+  /** A tap on a card: show it here at once and tell the TV straight away (no debounce). */
+  function pick(id: string) {
+    if (id === sel || !gameById(id)) return;
+    sel = id;
     pendingUntil = performance.now() + 600;
     ctx.sys({ $sys: "select", game: sel });
     patch(ctx.shell()?.players.filter((p) => p.connected).length ?? 1);
@@ -115,11 +108,7 @@ const mount: ControllerMount = (ctx) => {
       shownSel = g.id;
       el.style.setProperty("--ga", gameColors(g)[0]);
       el.style.setProperty("--gb", gameColors(g)[1]);
-      el.querySelector(".lp-card")!.innerHTML = coverHtml(g, { title: false });
-      el.querySelector(".lp-gt")!.textContent = g.title;
-      el.querySelector(".lp-gp")!.textContent = playersText(g);
-      el.querySelector(".lp-tagline")!.textContent = g.tagline;
-      el.querySelector(".lp-pos")!.textContent = `${games.indexOf(g) + 1} of ${games.length}`;
+      el.querySelector(".lp-sh")!.textContent = `${g.title} settings`;
       const st = el.querySelector(".lp-settings") as HTMLElement;
       st.hidden = !g.settings?.length;
       // the TV's settings for this game arrive with its confirmation; until then show the defaults
@@ -139,6 +128,12 @@ const mount: ControllerMount = (ctx) => {
           return `<li class="${here ? "" : "away"}">${esc(p.name)}${p.id === ctl.me?.id ? " <small>(you)</small>" : here ? "" : " <small>(away)</small>"}</li>`;
         })
         .join("");
+    }
+    for (const b of el.querySelectorAll<HTMLElement>(".lp-gc")) {
+      const on = b.dataset.id === g.id;
+      b.classList.toggle("sel", on);
+      b.setAttribute("aria-pressed", String(on));
+      b.classList.toggle("locked", players < (gameById(b.dataset.id!)?.minPlayers ?? 1));
     }
     const start = el.querySelector(".lp-start") as HTMLButtonElement | null;
     if (start) {

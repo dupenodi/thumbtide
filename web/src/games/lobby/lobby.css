@@ -37,21 +37,35 @@
   font-size: min(1.25vw, 2.2vh); position: relative; isolation: isolate; overflow: hidden; background: var(--bg);
 }
 
-/* background: the selected game's 160x90 image, stretched over the screen (bilinear scaling is the blur),
-   under a dark gradient so the text always reads. Two layers only so one can fade into the other. */
-.lb-bg { position: absolute; inset: 0; z-index: -1; background: #0b0b12; }
+/* background, three composited layers at most:
+   1. .lb-drift: a precomputed gradient image (96x54, see driftImage in host.ts) scaled far past the screen and moved
+      by a CSS transform animation only (slow translate / rotate / scale). Moving a cached texture is a GPU composite:
+      no repaint, no filter, no per-frame script. The animation runs on the compositor thread.
+   2. .lb-bgl: the selected game's 160x90 image at half opacity (bilinear scaling is the blur); a second one exists
+      only for the 420 ms crossfade when the game changes.
+   3. .lb-bg::after: a static dark gradient so the text always reads. */
+.lb-bg { position: absolute; inset: 0; z-index: -1; background: #0d0b1f; overflow: hidden; }
+.lb-drift {
+  position: absolute; left: -30%; top: -30%; width: 160%; height: 160%; background-size: 100% 100%;
+  will-change: transform; animation: lb-drift 90s ease-in-out infinite alternate;
+}
+@keyframes lb-drift {
+  from { transform: translate3d(-4%, -3%, 0) rotate(-4deg) scale(1); }
+  to { transform: translate3d(4%, 3%, 0) rotate(4deg) scale(1.12); }
+}
+@media (prefers-reduced-motion: reduce) { .lb-drift { animation: none; will-change: auto; } }
 .lb-bgl {
   position: absolute; inset: 0; opacity: 0; transition: opacity 420ms ease-out;
   background: linear-gradient(135deg, var(--ga), var(--gb));
 }
 .lb-bgl[hidden] { display: none; }
-.lb-bgl.on { opacity: 1; }
+.lb-bgl.on { opacity: 0.5; }
 .lb-bgl img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; image-rendering: auto; }
 .lb-bg::after {
   content: ""; position: absolute; inset: 0;
   background:
-    linear-gradient(90deg, rgba(8, 8, 14, 0.82), rgba(8, 8, 14, 0.5) 55%, rgba(8, 8, 14, 0.62)),
-    linear-gradient(0deg, rgba(8, 8, 14, 0.9), rgba(8, 8, 14, 0) 48%);
+    linear-gradient(90deg, rgba(8, 8, 14, 0.7), rgba(8, 8, 14, 0.38) 55%, rgba(8, 8, 14, 0.5)),
+    linear-gradient(0deg, rgba(8, 8, 14, 0.8), rgba(8, 8, 14, 0) 48%);
 }
 
 /* how to join */
@@ -84,25 +98,11 @@
 .lb-pl { padding: 0.35em 0.9em; border-radius: 2em; background: rgba(255, 255, 255, 0.14); }
 .lb-play { display: inline-flex; align-items: center; gap: 0.5em; color: #fff; }
 .lb-play.short { color: #ffb4a8; }
-.lb kbd {
-  min-width: 2em; height: 2em; padding: 0 0.55em; display: inline-grid; place-items: center; border-radius: 0.5em;
-  font: 700 0.8em var(--font); color: #111; background: #fff;
-}
+.lb-play:empty { display: none; }
+.lb-stats { margin: 1em 0 0; display: flex; flex-wrap: wrap; gap: 0.3em 1.6em; color: rgba(255, 255, 255, 0.78); font-size: 1.05em; font-weight: 500; }
+.lb-stats span:empty { display: none; }
 .lb-card { flex: none; width: 28em; }
 .lb-card .cv { border-radius: 1.2em; box-shadow: 0 1.4em 3.2em rgba(0, 0, 0, 0.5), 0 0 0 0.15em rgba(255, 255, 255, 0.9); animation: lb-in 320ms ease-out; }
-
-/* the rest of the library: small cards, the selected one lit */
-.lb-strip { margin: 0 -3em 0 -0.6em; overflow: hidden; padding: 0.8em 0.6em 0.5em; }
-.lb-rail { list-style: none; margin: 0; padding: 0; display: flex; gap: 1.1em; width: max-content; transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-.lb-tile { flex: none; width: 9.6em; cursor: pointer; opacity: 0.5; transition: opacity 240ms; }
-.lb-tile .cv { font-size: 0.6em; border-radius: 1.2em; box-shadow: none; }
-.lb-tile.focus { opacity: 1; }
-.lb-tile.focus .cv { box-shadow: 0 0 0 0.3em var(--bg), 0 0 0 0.55em #fff; }
-.lb-tile.locked:not(.focus) { opacity: 0.3; }
-.lb-tn {
-  display: block; margin-top: 0.7em; font-size: 0.95em; font-weight: 600; text-align: center; color: rgba(255, 255, 255, 0.9);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 
 /* everyone's seat */
 .lb-foot { margin-top: 1.1em; display: flex; align-items: flex-end; justify-content: space-between; gap: 2em; }
@@ -146,27 +146,28 @@
 .lp-label b { color: var(--fg); font-weight: 600; }
 .lp-next .cv { animation: lb-in 380ms ease-out; }
 
-/* the host: one game at a time, Left / Right, Play */
+/* the host: a grid of games, the settings of the chosen one, Play */
 .lp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-top: 2px; }
 .lp-count { color: var(--muted); font-size: 14px; font-weight: 500; white-space: nowrap; }
-.lp-card .cv { border-radius: 16px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4); animation: lb-in 220ms ease-out; }
-/* the card gives way to the settings on short screens */
-.lp-card { display: grid; place-items: center; }
-.lp-card .cv { width: min(100%, 24vh * 1.78); }
-.lp-info { display: flex; flex-direction: column; gap: 6px; }
-.lp-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.lp-title h2 { font: 700 26px/1.1 var(--font-display); letter-spacing: -0.02em; }
-.lp-title span { color: var(--muted); font-size: 14px; white-space: nowrap; }
-.lp-tagline { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.45; min-height: 2.9em; }
-.lp-nav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
-.lp-pos { color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
-.lp-lr {
-  height: 68px; border: 0; border-radius: 18px; padding: 0; display: flex; align-items: center; justify-content: center; gap: 8px;
-  background: var(--bg-3); color: var(--fg); font: 700 20px var(--font); -webkit-tap-highlight-color: transparent;
-  transition: transform 80ms, background 120ms;
+.lp-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.lp-gc {
+  display: block; width: 100%; padding: 6px 6px 8px; border: 0; border-radius: 18px; text-align: left; color: var(--fg);
+  background: var(--bg-3); font: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  box-shadow: inset 0 0 0 2px transparent; transition: transform 80ms, box-shadow 120ms, background 120ms;
 }
-.lp-lr svg { width: 26px; height: 26px; flex: none; }
-.lp-lr.pressed { transform: scale(0.96); background: color-mix(in srgb, var(--ga) 55%, var(--bg-3)); }
+.lp-gc .cv { font-size: 12px; border-radius: 13px; box-shadow: none; }
+.lp-gc:active { transform: scale(0.97); }
+.lp-gc b { display: block; margin: 8px 4px 0; font: 700 15px/1.15 var(--font-display); letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-gc small { display: block; margin: 2px 4px 0; color: var(--muted); font-size: 12.5px; font-weight: 500; }
+.lp-gc.sel { background: color-mix(in srgb, var(--ga) 22%, var(--bg-3)); box-shadow: inset 0 0 0 2.5px #fff, 0 6px 18px color-mix(in srgb, var(--ga) 35%, transparent); }
+.lp-gc.sel::after {
+  content: ""; position: absolute; top: 12px; right: 12px; width: 22px; height: 22px; border-radius: 50%; background: #fff
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12.5l4 4 8-9' fill='none' stroke='%230b0b12' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat;
+}
+.lp-gc { position: relative; }
+.lp-gc.locked:not(.sel) { opacity: 0.6; }
+.lp-pick { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
+.lp-pick b { color: var(--fg); font-weight: 600; }
 .lp-settings h2, .lp-players h2 { margin: 6px 0 12px; font: 600 13px var(--font); color: var(--muted); letter-spacing: 0.04em; }
 .lp-pl { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .lp-pl li {

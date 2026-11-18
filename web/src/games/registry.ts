@@ -2,19 +2,12 @@ import { parsePad } from "./kit/pad.ts";
 import { applyThumbs } from "./thumbs.ts";
 import type { GameDef } from "./types.ts";
 import blastPad from "./blast/blast.pad?raw";
-import boomtownPad from "./boomtown/boomtown.pad?raw";
-import bridgePad from "./bridge/bridge.pad?raw";
 import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
 import hammerPad from "./hammer/hammer.pad?raw";
 import sandboxPad from "./sandbox/sandbox.pad?raw";
 import inklingPad from "./inkling/inkling.pad?raw";
-import spylinePad from "./spyline/spyline.pad?raw";
 import punchlinePad from "./punchline/punchline.pad?raw";
-import liftoffPad from "./liftoff/liftoff.pad?raw";
-import shovePad from "./shove/shove.pad?raw";
-import stackPad from "./stack/stack.pad?raw";
-import trailsPad from "./trails/trails.pad?raw";
 import wetpaintPad from "./wetpaint/wetpaint.pad?raw";
 
 /** Every game on the platform. Modules are lazy-loaded so phones only download what they need. */

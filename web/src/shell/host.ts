@@ -13,6 +13,7 @@ import { defaultSettings, isSys, type GameHandle, type Settings, type ShellState
 import { shell } from "./host-state.ts";
 import { createPauseMenu } from "./pause-menu.ts";
 import { audio, blip, soundHint } from "./sound.ts";
+import * as playStats from "../games/lobby/stats.ts";
 
 const root = document.getElementById("app")!;
 const banner = document.getElementById("banner")!;
@@ -75,6 +76,7 @@ async function mount(id: string) {
   const seq = ++mountSeq;
   handle?.dispose();
   handle = null;
+  playStats.begin(def.id); // closes the previous game's time, opens this one (the lobby is not counted)
   settingsListeners.clear();
   root.replaceChildren();
   mounted = def.id;

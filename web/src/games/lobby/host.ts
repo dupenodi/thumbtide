@@ -1,6 +1,7 @@
 // The TV lobby. The selected game fills the screen: its tiny background image scaled up (a free blur), its title,
 // tagline and card in front, the rest of the library as a strip of small cards, and everyone's seat below.
-// The VIP picks with Left / Right on their phone; a TV remote (arrows + OK) or a mouse works too.
+// The VIP picks from a grid of cards on their phone; the TV shows that game until it starts (it never cycles by
+// itself). A TV remote (arrows + OK) still works, without any hint on screen.
 // The selection lives in the shell (ShellState.selected): the phone's tap, the remote and this screen all go through it.
 import { qrSvg } from "@thumbtide/sdk/qr";
 import { colorFor, joinBase, joinDisplay } from "../../config.ts";
@@ -9,10 +10,45 @@ import { blip } from "../../shell/sound.ts";
 import { pickableGames } from "../registry.ts";
 import type { HostMount } from "../types.ts";
 import { coverHtml, esc, gameColors, playersText } from "./library.ts";
+import { playedText } from "./stats.ts";
 import type { LobbyOwn } from "./shared.ts";
 import "./lobby.css";
 
 const CROWN = `<svg viewBox="0 0 64 44" aria-hidden="true"><path d="M4 40 L8 10 L22 24 L32 4 L42 24 L56 10 L60 40 Z" fill="#ffd23f" stroke="#0b0b12" stroke-width="5" stroke-linejoin="round"/></svg>`;
+
+/**
+ * The animated background, precomputed: a soft multi-colour gradient drawn ONCE into a 96×54 canvas and kept as a
+ * data URL. The page scales it up (the browser's bilinear scaling is free) as one oversized layer, and CSS moves
+ * that layer with transform only (see .lb-drift). No per-frame JS, canvas or gradient work, no filter: the LG's
+ * 4K screen repaints at ~1 s per full-screen frame, but moving an existing GPU texture costs only a composite.
+ */
+let driftUrl = "";
+function driftImage(): string {
+  if (driftUrl) return driftUrl;
+  try {
+    const c = document.createElement("canvas");
+    c.width = 96;
+    c.height = 54;
+    const g = c.getContext("2d")!;
+    g.fillStyle = "#0d0b1f";
+    g.fillRect(0, 0, 96, 54);
+    const blob = (x: number, y: number, r: number, col: string) => {
+      const rg = g.createRadialGradient(x, y, 0, x, y, r);
+      rg.addColorStop(0, col);
+      rg.addColorStop(1, "rgba(0,0,0,0)");
+      g.fillStyle = rg;
+      g.fillRect(0, 0, 96, 54);
+    };
+    blob(18, 12, 46, "rgba(124,92,255,0.75)");
+    blob(80, 16, 40, "rgba(45,226,201,0.5)");
+    blob(60, 50, 48, "rgba(255,90,150,0.5)");
+    blob(8, 50, 34, "rgba(40,110,255,0.5)");
+    driftUrl = c.toDataURL("image/png");
+  } catch {
+    /* no canvas: the dark base colour of .lb-bg stays */
+  }
+  return driftUrl;
+}
 
 let lastPick: string | null = null; // the lobby opens on the game picked last (End game comes back here)
 
@@ -23,7 +59,7 @@ const mount: HostMount = ({ host, root }) => {
 
   root.innerHTML = `
     <div class="lb">
-      <div class="lb-bg" aria-hidden="true"><div class="lb-bgl" hidden></div><div class="lb-bgl" hidden></div></div>
+      <div class="lb-bg" aria-hidden="true"><div class="lb-drift"></div><div class="lb-bgl" hidden></div><div class="lb-bgl" hidden></div></div>
       <aside class="lb-join">
         <div class="logo lb-logo">thumb<span>tide</span></div>
         <div class="lb-join-body">
@@ -39,24 +75,18 @@ const mount: HostMount = ({ host, root }) => {
             <h1 class="lb-title"></h1>
             <p class="lb-tagline"></p>
             <p class="lb-meta"><span class="lb-pl"></span><span class="lb-play"></span></p>
+            <p class="lb-stats"><span class="lb-played"></span><span class="lb-last"></span></p>
           </div>
           <div class="lb-card"></div>
         </section>
-        <nav class="lb-strip" aria-label="Games"><ul class="lb-rail">
-          ${games
-            .map((g, i) => `<li class="lb-tile" data-i="${i}">${coverHtml(g, { title: false, lazy: true })}<span class="lb-tn">${esc(g.title)}</span></li>`)
-            .join("")}
-        </ul></nav>
         <footer class="lb-foot">
           <ul class="lb-seats"></ul>
           <p class="lb-status"></p>
         </footer>
       </main>
     </div>`;
-  const lb = root.firstElementChild as HTMLElement;
   const $ = <T extends Element>(sel: string) => root.querySelector(sel) as T;
-  const tiles = [...root.querySelectorAll<HTMLElement>(".lb-tile")];
-  const rail = $<HTMLElement>(".lb-rail");
+  if (driftImage()) $<HTMLElement>(".lb-drift").style.backgroundImage = `url(${driftImage()})`;
   const layers = [...root.querySelectorAll<HTMLElement>(".lb-bgl")];
 
   let lastQrFor = "";
@@ -139,19 +169,14 @@ const mount: HostMount = ({ host, root }) => {
       text.classList.remove("swap");
       void text.offsetWidth;
       text.classList.add("swap");
-      // keep the selected card in the middle of the strip (a transform: no layout, no repaint of the page)
-      const t = tiles[i]!;
-      const view = rail.parentElement!.clientWidth;
-      const max = Math.max(0, rail.scrollWidth - view);
-      const x = Math.min(max, Math.max(0, t.offsetLeft + t.offsetWidth / 2 - view / 2));
-      rail.style.transform = `translate3d(${-x}px,0,0)`;
-      tiles.forEach((tile, k) => tile.classList.toggle("focus", k === i));
+      const st = playedText(g.id);
+      $(".lb-played").textContent = st.played;
+      $(".lb-last").textContent = st.last;
     }
-    tiles.forEach((tile, k) => tile.classList.toggle("locked", connected < games[k]!.minPlayers));
     $(".lb-eyebrow").innerHTML = vip
       ? `<i class="crown">${CROWN}</i><span><b>${esc(vip.name)}</b> is picking</span>`
       : `<span>${host.list.length ? "Waiting for the host" : "Pick a game"}</span>`;
-    $(".lb-play").innerHTML = enough ? `<kbd>OK</kbd> Play` : `Needs ${g.minPlayers} players`;
+    $(".lb-play").textContent = enough ? "" : `Needs ${g.minPlayers} players`;
     $(".lb-play").classList.toggle("short", !enough);
   }
 
@@ -209,15 +234,6 @@ const mount: HostMount = ({ host, root }) => {
     e.preventDefault();
   };
   window.addEventListener("keydown", onKey);
-  // mouse: click a card to choose it, click the chosen one again to play
-  const onClick = (e: MouseEvent) => {
-    const t = (e.target as HTMLElement).closest<HTMLElement>(".lb-tile");
-    if (!t) return;
-    const i = Number(t.dataset.i);
-    if (i === current()) start();
-    else pick(games[i]!.id);
-  };
-  lb.addEventListener("click", onClick);
 
   const offs = [
     host.on("room", render),
