@@ -46,7 +46,9 @@ shadows), and Jackbox's practice of a shared structure with art that sets each g
   pull between rounds.
 
 ### Lift-off (co-op one-tap, 1–8)
-- **Look:** space-age mission poster. Crisp flat vector rocket in a tunnel of slabs, night sky with a few stars.
+- **Look:** space-age mission poster. Crisp flat vector rocket in a wide tunnel, night sky with a few stars. Walls
+  and slabs only bump the rocket; the dangers are hazards (spiked mines with a blinking light, drifting meteors,
+  slowly rotating spiked bars, sweeping laser gates), drawn from baked sprites.
 - **Shapes:** the rocket is built from simple geometry; each thruster carries its player's colour chip and name.
 - **Palette:** night navy `#0b1530`, signal orange `#ff6a2b`, chalk `#eef2f7`, teal `#29b3a8`, slate `#3a4766`.
 - **Type:** Chakra Petch, Inter.
