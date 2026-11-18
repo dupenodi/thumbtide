@@ -75,6 +75,7 @@ const SCENARIOS = {
   "blast3d-sep": { game: "blast3d", spike: true, params: { mesh: "separate", physics: "capsule", res: 0.66 }, note: "120 draws" },
   "blast3d-merged": { game: "blast3d", spike: true, params: { mesh: "merged", physics: "capsule", res: 0.66 }, note: "8 draws, rigid skinning" },
   "blast3d-inst": { game: "blast3d", spike: true, params: { mesh: "instanced", physics: "capsule", res: 0.66 }, note: "9 instanced draws" },
+  "blast3d-merged-rag": { game: "blast3d", spike: true, params: { mesh: "merged", physics: "ragdoll", res: 0.66 }, note: "recommended arm" },
   "blast3d-rag": { game: "blast3d", spike: true, params: { mesh: "instanced", physics: "ragdoll", res: 0.66 }, note: "ragdoll physics" },
   "blast3d-res50": { game: "blast3d", spike: true, params: { mesh: "instanced", physics: "capsule", res: 0.5 }, note: "960×540" },
   "blast3d-res100": { game: "blast3d", spike: true, params: { mesh: "instanced", physics: "capsule", res: 1 }, note: "1920×1080" },

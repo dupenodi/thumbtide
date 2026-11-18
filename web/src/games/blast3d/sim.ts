@@ -230,7 +230,7 @@ export class Sim {
         c.holdT = 0;
         c.carry = true;
       }
-      if (this.bombs.length < this.o.bombs && c.bombCd <= 0 && d > 2.5 && d < 10) this.throwBomb(c, best);
+      if (this.bombs.length < this.o.bombs && c.bombCd <= 0) this.throwBomb(c, best);
     }
     // stay on the platform
     const edge = HALF - 1.2;
@@ -268,8 +268,14 @@ export class Sim {
   private throwBomb(c: Fighter, at: Fighter) {
     const T = 0.9;
     const sx = c.x, sy = c.y + 1.5, sz = c.z;
-    this.bombs.push({ x: sx, y: sy, z: sz, vx: (at.x - sx) / T, vy: (at.y + 0.2 - sy + 0.5 * G * T * T) / T, vz: (at.z - sz) / T, fuse: 1.6 + this.r() * 0.6 });
-    c.bombCd = 2 + this.r() * 2.5;
+    // a rival too close for a lob: throw past them instead
+    let tx = at.x, tz = at.z;
+    if (Math.hypot(tx - sx, tz - sz) < 2.5) {
+      tx = sx + Math.sin(c.yaw) * 4;
+      tz = sz + Math.cos(c.yaw) * 4;
+    }
+    this.bombs.push({ x: sx, y: sy, z: sz, vx: (tx - sx) / T, vy: (at.y + 0.2 - sy + 0.5 * G * T * T) / T, vz: (tz - sz) / T, fuse: 1.6 + this.r() * 0.6 });
+    c.bombCd = 1 + this.r() * 1.5;
   }
 
   private onPlatform(x: number, z: number) {
