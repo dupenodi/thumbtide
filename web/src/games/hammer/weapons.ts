@@ -297,8 +297,8 @@ export const SIDEARMS: Record<GunKind, SidearmSpec> = {
   // mortar (id 240): box 22 × 10, density 25, rod 18, clip 3, m_recoil_time 5; 5 balls a shot with +-0.2 spread,
   // recoil = the balls' momentum. The ball speed, the time between blasts, the hit and the weight are OURS.
   // Density 68 (the exe: 25, a 5 500 mass) makes it about 15 000, so the gun weighs on the machine (RE_GUNS.md §5, §9).
-  // GUNS_REVIEW.md (2026-11-18): balls 1100 → 1600 px/s (the exe: 2000 ± 400) and spread 0.2 → 0.14, so a blast still
-  // lands past point-blank; a blast's balls that land together are one hit (sim.ts damage).
+  // GUNS_REVIEW.md (2026-11-18): balls 1100 → 1600 px/s (the exe: 2000 ± 400; they land 58 % in duels, were 48 %;
+  // a tighter spread made it stronger than the arquebus); a blast's balls that land together are one hit (sim.ts damage).
   mortar: {
     kind: "mortar",
     label: "Mortar",
@@ -311,7 +311,7 @@ export const SIDEARMS: Record<GunKind, SidearmSpec> = {
       bladeable: 0,
       look: "gun",
       material: "iron",
-      gun: { clip: 3, reload: 5, interval: 0.6, pellets: 5, spread: 0.14, speed: 1600, shotR: 5, shotDensity: 10, shotSharpness: 7, hit: { dmg: 5, push: 60, stun: 0.07 }, look: "ball" },
+      gun: { clip: 3, reload: 5, interval: 0.6, pellets: 5, spread: 0.2, speed: 1600, shotR: 5, shotDensity: 10, shotSharpness: 7, hit: { dmg: 5, push: 60, stun: 0.07 }, look: "ball" },
     },
   },
   // mortar_heavy (id 244): box 22 × 14, density 25, rod 19, clip 1, m_recoil_time 5; one mortar_ball (6-gon 13 × 13,
