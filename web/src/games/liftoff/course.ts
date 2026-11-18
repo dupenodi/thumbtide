@@ -70,9 +70,9 @@ export interface Difficulty {
 }
 
 export const DIFFICULTIES: Record<"easy" | "normal" | "hard", Difficulty> = {
-  easy: { gap: [7.4, 5.4], space: [20, 15], move: 0.75, creep: [1.3, 3.8], right: 2.6 },
-  normal: { gap: [6.6, 4.6], space: [18, 13], move: 1, creep: [1.7, 4.8], right: 1.8 },
-  hard: { gap: [5.8, 4.0], space: [16, 11.5], move: 1.25, creep: [2.2, 6], right: 1.2 },
+  easy: { gap: [10, 8], space: [21, 16], move: 0.6, creep: [1.0, 3.0], right: 4.2 },
+  normal: { gap: [9, 6.8], space: [19, 14], move: 0.8, creep: [1.3, 3.8], right: 3.2 },
+  hard: { gap: [7.6, 5.4], space: [17, 12.5], move: 1.05, creep: [1.8, 5], right: 2.2 },
 };
 export type DifficultyKey = keyof typeof DIFFICULTIES;
 
