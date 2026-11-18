@@ -170,8 +170,29 @@ const mount: HostMount = (ctx) => {
     }
   }
 
+  /** After AWAY_AFTER ms with the phone off, a computer plays the seat (a handler's clue, an agent's picks). */
+  const AWAY_AFTER = 10000;
+  const offFor = new Map<string, number>();
+  function watchPhones() {
+    for (const s of game.seats) {
+      if (s.bot) continue;
+      if (host.players.get(s.id)?.connected === false) {
+        const t = (offFor.get(s.id) ?? 0) + TICK;
+        offFor.set(s.id, t);
+        if (t >= AWAY_AFTER && !game.away.has(s.id)) {
+          game.setAway(s.id, true);
+          publish();
+        }
+      } else if (offFor.delete(s.id) || game.away.has(s.id)) {
+        game.setAway(s.id, false);
+        publish();
+      }
+    }
+  }
+
   function tick() {
     if (paused) return;
+    watchPhones();
     bots.step(TICK);
     game.step(TICK);
     const ev = game.drainEvents();

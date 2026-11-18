@@ -188,6 +188,14 @@ export class Spyline {
   }
   humans = () => this.seats.filter((s) => !s.bot);
   bots = () => this.seats.filter((s) => s.bot);
+  /** People whose phones have been off a while: a computer plays their seat until they are back (they keep the role). */
+  readonly away = new Set<string>();
+  setAway(id: string, away: boolean) {
+    if (!away) this.away.delete(id);
+    else if (this.seat(id) && !this.seat(id)!.bot) this.away.add(id);
+  }
+  /** Seats a computer plays now: the computer seats and the people who are away. */
+  botPlayed = () => this.seats.filter((s) => s.bot || this.away.has(s.id));
 
   private smaller(): Team {
     const a = this.team("cobalt").length;
@@ -243,6 +251,7 @@ export class Spyline {
     if (!s) return;
     this.seats = this.seats.filter((x) => x.id !== id);
     this.picks.delete(id);
+    this.away.delete(id);
     if (this.handler[s.team] === id) this.handler[s.team] = null;
   }
 
