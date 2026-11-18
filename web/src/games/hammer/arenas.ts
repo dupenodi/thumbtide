@@ -60,7 +60,15 @@ const WALL_HP = 60;
  * crates, melka's middle cage, blocks' middle block).
  */
 export const ARENAS: Record<string, ArenaDef> = {
-  classic: { k: 1.5, obstacles: [] },
+  // 2026-11-18 (user: "yes side walls for classic arena"): a breakable wall toward each side, the middle stays open
+  classic: {
+    k: 1.5,
+    obstacles: [
+      ["wall", 0.1, 0.5, 12, 80, { hp: WALL_HP }],
+      ["wall", 0.9, 0.5, 12, 80, { hp: WALL_HP }],
+    ],
+    spawns: [[0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7], [0.2, 0.5], [0.8, 0.5], [0.42, 0.55], [0.58, 0.55]],
+  },
   crates: {
     k: 1.5,
     obstacles: [

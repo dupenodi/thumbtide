@@ -373,7 +373,12 @@ export type SimEvent =
 export type ObstacleKind = "crate" | "pillar" | "ledge" | "floor" | "cage" | "block" | "wall" | "saw";
 export const breakable = (k: ObstacleKind) => k === "crate" || k === "cage" || k === "wall";
 /** A saw's cut (OURS): damage at the slowest and the fastest contact, the stun, the kick away (px/s), and the rest between two cuts of one machine (s). */
-export const SAW = { dmgMin: 6, dmgMax: 16, stun: 0.9, kick: 380, rest: 0.6 };
+/**
+ * The arena saws. 2026-11-18 (user: "the saws should not be an insta-kill but deal good damage"): a bigger bite
+ * (10-22 of 100), but a shorter stun and a longer rest between bites, so a machine that touches a saw gets thrown
+ * clear and can steer away before the next bite: at least 5 touches to wreck a full machine.
+ */
+export const SAW = { dmgMin: 10, dmgMax: 22, stun: 0.5, kick: 420, rest: 1.0 };
 export interface Obstacle {
   kind: ObstacleKind;
   body: Body;
