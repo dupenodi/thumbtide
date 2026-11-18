@@ -114,9 +114,10 @@ exe's final values (sharp / blade / spike, `u/d` where the sides differ). **Bold
 
 | weapon | sprite | collider | original | before | now |
 |---|---|---|---|---|---|
-| kathib, claw, sword (katar), severn, innata, saian, silverblade, palash, hisaian, imperia | one-sided (or 0.5–0.7 back) blades, edge on +y; the guards are outside the blade meshes | file meshes; art out ≤ 7 px, all at the guards (no collider, they never hurt) | blade d 1, u 0–0.7 | +y cuts, −y as the side values | same (default side faces) |
-| liberia | straight double-edged, **pointed tip** to x 30.5 | **box 51 × 15, the tip 5 px out → LIBERIA, 0** (guard left out) | 3.5 / 1 / 0 | cuts both edges | same, with the tip in the mesh |
-| broadblade, goldblade, sunblade | straight double-edged, rounded or short tips | boxes; ≤ 2.5 px | 1 both | cut both edges | same |
+| kathib, claw, severn, innata, saian, silverblade, palash, hisaian, imperia | one-edged blades, edge on +y (the engraved or plain back on −y); the guards are outside the blade meshes | file meshes; art out ≤ 7 px, all at the guards (no collider, they never hurt) | blade d 1, u 0–0.7 | +y cuts, −y as the side values | **2026-11-18: point stabs, +y edge cuts, −y spine blunt** (`swordFaces`) |
+| sword (katar) | two-edged dagger blade | file mesh | blade d 1, u 0.6 | as the side values | **point stabs, both edges cut (back at 0.6)** |
+| liberia | straight double-edged, **pointed tip** to x 30.5 | **box 51 × 15, the tip 5 px out → LIBERIA, 0** (guard left out) | 3.5 / 1 / 0 | cuts both edges | the tip in the mesh; **point stabs, both edges cut** |
+| broadblade, goldblade, sunblade | straight double-edged, rounded or short tips | boxes; ≤ 2.5 px | 1 both | cut both edges | **point stabs, both edges cut** |
 | cyclone disc | **toothed saw** | 10-gon; 0 | 3 / 0 (Body default) / 0, m_effect_type 7 | cut (bladeable 1) | **saw: grinds** |
 | cyclone arm | **wide braced frame** (±11.5), point at +x | **box 50 × 10, 6.5 px out → CYCLONE_ARM, 0** | 1 / 0 / 0 | blunt 1 | blunt 1 + knockback |
 
@@ -124,7 +125,7 @@ exe's final values (sharp / blade / spike, `u/d` where the sides differ). **Bold
 
 | weapon | part | sprite | collider | original | before | now |
 |---|---|---|---|---|---|---|
-| twin | head (palash), back (claw) | one-sided blades | file meshes | as palash, claw | +y cuts | same |
+| twin | head (palash), back (claw) | one-sided blades | file meshes | as palash, claw | +y cuts | as palash, claw (the same face lists) |
 | tribune | head (axe_posolski, flipped) | **long spike on top (−y)**, fan blade below | **box 12 × 40 → POSOLSKI, 0** | 3.1 / blade 0.5 (u 0) / **spike u 1 d 0.3** (Demo) | +y cuts 0.5, no spike | **spike (y ≤ −8): spike 1, hook**; fan (y ≥ 4): blade 0.5; rest blunt 3.1 |
 | tribune | back (tribun gun) | barrel, **blade hanging under the muzzle** (to y 22) | **file quad sat 6 px above the barrel, blade 11.8 px out → TRIBUN, 0** (the exe has the same gap) | 5 (u 0.3) / blade u 0 d 1 / 0 | whole +y side cut | **only the blade (x ≥ 11, y ≥ 0) cuts; the barrel is blunt 1.5** |
 
@@ -156,11 +157,20 @@ its origin and has at most 10 vertices (the collision buffers take 16); `sim.tes
 - **every blunt face** (all hammers, balls, flails' heads, the blunt parts above): knockback on a blow over 30.
 - **every one-sided blade** (the sabres, the axes' edges, the twin set): the side is now read from the contact
   normal, so the whole drawn edge cuts, up to the tip.
+- **every sword** (2026-11-18, the user: "swords can stab or slice, slicing should work better from edged side and
+  'spine' does blunt damage instead"; `swordFaces` in weapons.ts, GUNS_REVIEW.md): the point (the last 6 px) met
+  along the blade (contact normal within about 37° of the blade's axis, `Face.nx0` 0.8) stabs: a spike with no
+  hook, sharpness × `tuning.pierce`, no cut; met at a glance it still cuts. The +y edge slices (the cut grows with
+  the slide). A one-edged blade's back is a blunt spine (it knocks back, no cut; sharpness: the exe's back value,
+  or × 0.5 where the exe has none: kathib 1.7, claw 3, innata 2.25); a two-edged blade (katar, broadblade, liberia,
+  goldblade, sunblade) cuts with both edges. A chop across the blade that touches with the point's corner first is
+  not a stab (the normal test). The bots wind a one-edged weapon up edge first from rest (bots.ts `edgeSpin`).
 
 ## 5. Open questions
 
-- Sword points: a pointed sword tip (katar, innata, liberia, …) could stab head-on like a spike (no hook). Left out:
-  the exe has no m_spikeable on any sword, and it would change the blade weapons' balance.
+- Sword points: done (2026-11-18, section 4, "every sword"). The exe has no m_spikeable on any sword; the stab is
+  OURS, at the user's request. It moved the sword bot (razor) from 42 % to 36 % in bots.bench (the backs no longer
+  cut).
 - Rods have no collider (as in the exe): the drawn shaft of a hammer or axe can pass through a machine. Making rods
   solid "shaft" bodies would cost a body per weapon on the TV.
 - The cyclone's disc sits on a 12 px rod, half inside the hull (WEAPON_PROFILES 4.3: the exe mounts the arm, not the

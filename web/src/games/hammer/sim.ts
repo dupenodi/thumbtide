@@ -96,7 +96,7 @@ export function faceAt(faces: readonly Face[], b: Body, nx: number, ny: number):
   featureOut.y = fy;
   const side = lny >= 0 ? 1 : -1;
   for (const f of faces) {
-    if ((f.side === undefined || f.side === side) && (f.x0 === undefined || fx >= f.x0) && (f.x1 === undefined || fx <= f.x1) && (f.y0 === undefined || fy >= f.y0) && (f.y1 === undefined || fy <= f.y1)) return f;
+    if ((f.side === undefined || f.side === side) && (f.nx0 === undefined || lnx >= f.nx0) && (f.x0 === undefined || fx >= f.x0) && (f.x1 === undefined || fx <= f.x1) && (f.y0 === undefined || fy >= f.y0) && (f.y1 === undefined || fy <= f.y1)) return f;
   }
   return faces[faces.length - 1]!;
 }
@@ -187,6 +187,8 @@ const PUSH_MASS = 66000;
 const RECOIL_SHARE = 0.5;
 /** A rocket regains its speed after a bounce at this rate, 1/s (OURS, RE_GUNS.md §2.5). */
 const ROCKET_THRUST = 5;
+/** A rocket pressed against a held weapon by its thrust clanks (a ping) at most once per this many seconds. */
+const ROCKET_PING_GAP = 0.3;
 /** Seconds a shot flies through a teammate it touched (a bullet covers 80 px, a mortar ball 44). */
 const SHOT_GHOST = 0.04;
 /** A shot's push can't make a light part (a claw, a link) jump faster than this, px/s. */
@@ -266,6 +268,10 @@ export interface GunState {
   hitAt: number;
 }
 
+/** What a gun's shot sounds and looks like: arquebus and tribune bullets, the mortar's scatter, the heavy mortar's ball, a rocket. */
+export type ShotKind = "bullet" | "scatter" | "cannon" | "rocket";
+export const shotKind = (g: GunSpec): ShotKind => (g.look === "bullet" ? "bullet" : g.look === "rocket" ? "rocket" : g.pellets > 1 ? "scatter" : "cannon");
+
 export interface Shot {
   body: Body;
   look: GunSpec["look"];
@@ -283,6 +289,11 @@ export interface Shot {
   ghostUntil?: number;
   /** Rockets: the blast when it goes. */
   blast?: GunSpec["blast"];
+  /** Rockets: the launch heading their thrust drives along (a unit vector). */
+  hx: number;
+  hy: number;
+  /** Rockets: when it last clanked off a held weapon (a ping event). */
+  pingAt?: number;
 }
 
 export interface Machine {
@@ -347,7 +358,8 @@ export type SimEvent =
   | { type: "clash"; a: Machine; b: Machine; impact: number; x: number; y: number }
   | { type: "disarm"; victim: Machine; by: Machine; x: number; y: number }
   | { type: "pickup"; m: Machine; weapon: WeaponKind }
-  | { type: "shot"; m: Machine; ball: boolean; x: number; y: number }
+  /** A gun fired (x, y: the gun); `kick` is the shot's push (pellets × hit.push), for the shake. */
+  | { type: "shot"; m: Machine; kind: ShotKind; kick: number; x: number; y: number }
   /** A shot spent on a weapon, plate or gun (no damage to the machine): a spark. */
   | { type: "ping"; m: Machine; heavy: boolean; x: number; y: number }
   /** A sidearm took too much and broke off. */
@@ -425,6 +437,8 @@ export class Arena {
   readonly events: SimEvent[] = [];
   /** Simulated seconds (slows down in slow motion). */
   t = 0;
+  /** The step time of the last shot hit reported (pellets landing together merge into it, see damage). */
+  private shotHitAt = -1;
   /** CORE_TIMEWRAP: 1 = normal, 0.3 at the start of slow motion. */
   timewarp = 1;
   /** The arena in world px (the TV shows all of it: a bigger arena is a zoomed-out view). */
@@ -851,6 +865,8 @@ export class Arena {
         speed: gs.speed,
         vx,
         vy,
+        hx: dx,
+        hy: dy,
       };
       shot.data = { m, hull: false, striker: false, sharpness: gs.shotSharpness, bladeable: 0, bladeableU: 0, sharpnessU: gs.shotSharpness, spec: null, shot: sh } satisfies Tag;
       this.world.add(shot);
@@ -869,7 +885,7 @@ export class Arena {
       b.setVelocity(b.vx - (ux * P * 0.3) / b.mass, b.vy - (uy * P * 0.3) / b.mass, b.w, dt);
     }
     if (this.shots.length > MAX_SHOTS) for (let i = 0; i < this.shots.length - MAX_SHOTS; i++) this.shots[i]!.body.dead = true;
-    this.events.push({ type: "shot", m, ball: gs.look === "ball", x: b.x, y: b.y });
+    this.events.push({ type: "shot", m, kind: shotKind(gs), kick: gs.pellets * gs.hit.push, x: b.x, y: b.y });
   }
 
   /** Shots that hit their limit, grew old or left the frame go, all at once. */
@@ -882,14 +898,16 @@ export class Arena {
         any = true;
         if (sh.blast) this.blast(sh);
       } else {
-        // a rocket pushes itself back up to its speed after a bounce (the exe: thrust mass · 2000 against drag
-        // 5 · mass · v, 0x408123; here a 0.2 s ease back to the muzzle speed along its flight)
+        // a rocket drives itself along its heading (the exe: thrust mass · 2000 along the body's heading against drag
+        // 5 · mass · v, 0x408123): after a bounce off a weapon it comes back onto its line in about 0.2 s and flies in
+        // again. (Before 2026-11-18 it sped up along the bounce, so a blocked rocket flew off and went off elsewhere.)
         if (sh.blast) {
-          const s = Math.hypot(b.vx, b.vy);
-          if (s > 1 && s < sh.speed) {
+          const tx = sh.hx * sh.speed;
+          const ty = sh.hy * sh.speed;
+          if (Math.abs(b.vx - tx) + Math.abs(b.vy - ty) > 1) {
             const dt = STEP * this.timewarp;
-            const k = (s + (sh.speed - s) * Math.min(1, dt * ROCKET_THRUST)) / s;
-            b.setVelocity(b.vx * k, b.vy * k, b.w, dt);
+            const k = Math.min(1, dt * ROCKET_THRUST);
+            b.setVelocity(b.vx + (tx - b.vx) * k, b.vy + (ty - b.vy) * k, b.w, dt);
           }
         }
         sh.vx = b.vx;
@@ -1283,7 +1301,11 @@ export class Arena {
     // a rocket against a live machine's weapon, gun or plate: the exe's rocket takes no damage from a held weapon
     // (0x410540–0x410575), so it doesn't go off; it bounces and pushes itself on (ageShots). On a hull it goes off.
     if (sh.blast && v.alive && this.enemies(st.m, v) && !ot.hull && !ot.loose && ot.gibUntil === undefined && (ot.plate || v.armed)) {
-      this.events.push({ type: "ping", m: v, heavy: true, x: c.x, y: c.y });
+      // its thrust drives it back onto the weapon (ageShots): one clank per ROCKET_PING_GAP, not one per contact
+      if (this.t >= (sh.pingAt ?? -1) + ROCKET_PING_GAP) {
+        sh.pingAt = this.t;
+        this.events.push({ type: "ping", m: v, heavy: true, x: c.x, y: c.y });
+      }
       return;
     }
     // a teammate with friendly fire off: the shot flies on through (with team collision off they never touch; with
@@ -1493,7 +1515,16 @@ export class Arena {
     }
     if (owned) victim.lastHitBy = attacker;
     victim.flash = 0.12;
-    this.events.push({ type: "hit", attacker, victim, dmg: before - victim.hp, impact, cut, x, y, shot });
+    // the pellets of one volley that land in the same step are one hit (one number, one sound, one shake): five
+    // small hits read as a weak spatter (a bullet gun never lands two in a step, so its hits stay one each)
+    const last = this.events[this.events.length - 1];
+    if (shot && !direct && last?.type === "hit" && last.shot && last.attacker === attacker && last.victim === victim && this.shotHitAt === this.t) {
+      last.dmg += before - victim.hp;
+      last.impact += impact;
+    } else {
+      this.events.push({ type: "hit", attacker, victim, dmg: before - victim.hp, impact, cut, x, y, shot });
+      this.shotHitAt = shot && !direct ? this.t : -1;
+    }
     if (victim.hp <= 0) this.wreck(victim);
   }
 

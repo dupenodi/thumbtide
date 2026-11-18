@@ -416,6 +416,10 @@ duel. modes.bench.ts (ROUNDS=32, 96 rounds a row; with guns / GUNS=0): 2 v 2 lan
 flak+jackal v lance+razor(mortar) 60 % / 32 %; bulwark(heavy mortar)+thump v krank+dervish **72 % / 43 %** (the heavy
 mortar may be too strong in teams); worms (3 bots v 3 worms) won by the bots in every round either way, 9.1 s / 12.4 s.
 
+2026-11-18 (GUNS_REVIEW.md): mortar balls 1600 px/s and a blast's landing balls are one hit; heavy mortar 1500 px/s,
+reload 4 s, damage 16; the rocket's thrust drives along its launch heading (row 5b: it no longer eases back along
+the bounce). Rows 6 and 7 hold otherwise; the bullets are unchanged.
+
 ## 10. Open points
 - The exact player trigger path for use-type-3 guns (8, 3).
 - Where the `pishal` tie comes from in normal play (8, 1.2 and 1.3).
