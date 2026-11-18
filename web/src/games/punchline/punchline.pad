@@ -2,7 +2,7 @@
 # Syntax and every setting: web/src/games/kit/pad.ts
 
 controller
-  orientation  portrait
+  orientation  any
 
 button send
   label        "Send"
