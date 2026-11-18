@@ -353,9 +353,11 @@ function join(room: string, name: string) {
     const paused = !!state?.paused && (ctl.config?.game ?? "lobby") !== "lobby";
     pausedEl.hidden = !paused;
     if (!paused) return;
-    // name who paused; if that player has left (the host moved on), say only that the game is paused
+    // name who paused; if that player has left or their phone is gone (a closed tab keeps the seat for a while),
+    // say only that the game is paused
     const by = state?.pausedBy ?? null;
-    const byName = by ? state?.players.find((p) => p.id === by)?.name : undefined;
+    const pauser = by ? state?.players.find((p) => p.id === by) : undefined;
+    const byName = pauser?.connected ? pauser.name : undefined;
     const line = by && ctl.me?.id === by ? "You paused the game." : byName ? `${esc(byName)} paused the game.` : "The game is paused.";
     pausedEl.innerHTML = `
       <div class="pz-title">${juicy("Paused", "candy")}</div>
