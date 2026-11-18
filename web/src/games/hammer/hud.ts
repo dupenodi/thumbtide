@@ -50,6 +50,12 @@ export class Hud {
   private warmKey = "";
   private fpsEl: HTMLElement;
   private fpsShown = -1;
+  private levelEl: HTMLElement;
+
+  /** The level name at the top centre; the page changes only when the name does (once per arena change). */
+  setLevel(name: string): void {
+    if (this.levelEl.textContent !== name) this.levelEl.textContent = name;
+  }
 
   /** The small frame-rate counter in the bottom-right corner; the page changes only when the number does. */
   setFps(fps: number): void {
@@ -67,9 +73,11 @@ export class Hud {
       <div class="hm-feed"></div>
       <div class="hm-ann"></div>
       <div class="hm-warm" hidden><b></b><i><s></s></i></div>
-      <div class="hm-fps"></div>`;
+      <div class="hm-fps"></div>
+      <div class="hm-level"></div>`;
     root.appendChild(this.el);
     this.fpsEl = this.el.querySelector(".hm-fps")!;
+    this.levelEl = this.el.querySelector(".hm-level")!;
     this.left = this.el.querySelector(".hm-left")!;
     this.right = this.el.querySelector(".hm-right")!;
     this.feedEl = this.el.querySelector(".hm-feed")!;

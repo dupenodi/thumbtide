@@ -361,6 +361,21 @@
 }
 
 /* ---- kill feed */
+/* the level name, top centre above the player cards (static text: no layer, painted once per arena change) */
+.hm-level {
+  position: absolute;
+  top: 0.5vh;
+  left: 30vw;
+  right: 30vw;
+  text-align: center;
+  font-size: 1.7vh;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  text-shadow: 0 0.15vh 0.3vh rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
 .hm-feed {
   position: absolute;
   top: 13vh;

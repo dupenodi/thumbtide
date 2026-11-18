@@ -44,6 +44,20 @@ export interface ArenaDef {
   theme?: ArenaTheme;
 }
 
+/** The level name the TV shows at the top (Settings has longer labels with hints). */
+export const ARENA_NAME: Record<string, string> = {
+  classic: "Classic",
+  crates: "Walls and Crates",
+  big: "Saw Hall",
+  huge: "Great Saw Hall",
+  stands: "The Stands",
+  towers: "Sunrise Towers",
+  eye: "The Eye",
+  melka: "Melka Arena",
+  blocks: "Block Hall",
+  pit: "The Pit",
+};
+
 /** Destructible walls (OURS): sturdy plank walls toward the sides, slam surfaces that break after a beating. */
 const WALL_HP = 60;
 
