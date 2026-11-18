@@ -1,9 +1,9 @@
 // Computer players for Punchline. They answer from a hand-written pool (BOT_ANSWERS in prompts.ts), choosing an
 // answer of the kind the prompt asks for, never the same one twice in a match. They vote with a mild preference for
-// the shorter, punchier answer and almost never for a stand-in. They take a human-ish while to do both.
+// the shorter, punchier answer. They take a human-ish while to do both.
 // Plain TypeScript: no DOM, so Node can test and simulate it.
 import { BOT_ANSWERS, type BotAnswer, type Prompt } from "./prompts.ts";
-import { MAX_LEN, type Answer, type Punchline, type Rng } from "./rules.ts";
+import { MAX_LEN, type Punchline, type Rng } from "./rules.ts";
 
 export const BOT_NAMES = ["Mabel", "Otis", "Dot", "Reggie", "Pearl", "Stan", "Vera", "Lenny", "Ida", "Morris", "Fern", "Clive"];
 
@@ -19,15 +19,14 @@ export function pickAnswer(prompt: Prompt, rng: Rng, used: Set<string>, family: 
   return a.text;
 }
 
-/** How much a bot likes an answer: shorter reads punchier; a stand-in is almost never picked. */
-export function appeal(a: Answer | null): number {
-  if (!a || a.missing) return 0.04;
-  const len = Array.from(a.text).length;
-  return Math.exp(-len / (MAX_LEN * 1.2)); // 10 chars ≈ 0.87, 60 chars ≈ 0.43: a mild lean
+/** How much a bot likes an answer: shorter reads punchier. */
+export function appeal(text: string): number {
+  const len = Array.from(text).length;
+  return Math.exp(-len / (MAX_LEN * 1.2));
 }
 
 /** Picks one of `options` (indices into `answers`), weighted by appeal. */
-export function pickWeighted(answers: readonly (Answer | null)[], options: readonly number[], rng: Rng): number {
+export function pickWeighted(answers: readonly string[], options: readonly number[], rng: Rng): number {
   const w = options.map((i) => appeal(answers[i]!) * (0.75 + rng() * 0.5));
   const sum = w.reduce((a, b) => a + b, 0);
   let r = rng() * sum;
@@ -39,15 +38,15 @@ export function pickWeighted(answers: readonly (Answer | null)[], options: reado
 }
 
 export interface Pace {
-  /** When a bot sends its first answer, as a share of the answer time [from, to], capped by writeCap ms. */
+  /** When a bot sends its answer, as a share of the answer time [from, to], capped by writeCap ms. */
   write: [number, number];
   writeCap: number;
   /** Milliseconds into a vote. */
   vote: [number, number];
 }
-export const PACE: Pace = { write: [0.1, 0.45], writeCap: 40000, vote: [1800, 6500] };
+export const PACE: Pace = { write: [0.12, 0.6], writeCap: 38000, vote: [2500, 14000] };
 
-/** Plays every seat marked `bot` (bots, and players who left mid-round). Call step() after each advance(). */
+/** Plays every seat marked `bot`. Call step() after each advance(). */
 export class Bots {
   private plan = new Map<string, number>();
   private used = new Set<string>();
@@ -78,25 +77,18 @@ export class Bots {
     }
     const r = (a: number, b: number) => a + (b - a) * this.rng();
     for (const s of g.list()) {
-      if (!s.bot) continue;
-      if (g.phase === "write" && s.inRound) {
-        const span = Math.min(g.dur, this.pace.writeCap / this.pace.write[1]);
-        g.tasks(s.id).forEach((task, n) => {
-          if (task.answer) return;
-          // the second answer comes a little after the first
-          if (!this.due(s.id, task.key, () => span * r(this.pace.write[0], this.pace.write[1]) + n * r(2500, 9000))) return;
-          g.answer(s.id, task.key, pickAnswer(task.prompt, this.rng, this.used, g.opts.family));
-        });
+      if (!s.bot || s.left) continue;
+      if (g.phase === "write") {
+        const task = g.task(s.id);
+        if (!task || task.text !== null) continue;
+        const span = Math.min(g.opts.time * 1000, this.pace.writeCap / this.pace.write[1]);
+        if (!this.due(s.id, task.key, () => span * r(this.pace.write[0], this.pace.write[1]))) continue;
+        g.answer(s.id, task.key, pickAnswer(task.prompt, this.rng, this.used, g.opts.family));
       } else if (g.phase === "vote" && g.canVote(s.id) && !g.hasVoted(s.id)) {
-        const key = g.voteKey()!;
-        const extra = g.final ? 3000 : 0;
-        if (!this.due(s.id, key, () => r(this.pace.vote[0], this.pace.vote[1]) + extra)) continue;
-        if (g.final) {
-          g.vote(s.id, key, pickWeighted(g.final.entries.map((e) => e.answer), g.options(s.id), this.rng));
-        } else {
-          const p = g.current()!;
-          g.vote(s.id, key, pickWeighted(p.answers, [0, 1], this.rng));
-        }
+        const key = g.key();
+        if (!this.due(s.id, key, () => r(this.pace.vote[0], this.pace.vote[1]))) continue;
+        const texts = g.shown.map((ei) => g.entries[ei]!.text!);
+        g.vote(s.id, key, pickWeighted(texts, g.options(s.id), this.rng));
       }
     }
   }
