@@ -1,10 +1,14 @@
-// Blast Party 3D: the rules. Plain TypeScript (no DOM, no three.js), a fixed 60 Hz step, a seeded random source.
-// The rules and numbers are ported from Ballistica's MIT scripts (spaz.py, bomb.py, powerupbox.py, elimination.py,
-// the_pad.py); RULES_NOTES.md traces each value to its source line and says which ones are tuned here because they
-// live in Ballistica's C++ physics. Fighters are capsules (a character controller); the ragdoll is drawn on top by
-// the view and never feeds back into the rules, so a match plays the same in Node as on the TV.
+// Blast Party 3D: the rules. Plain TypeScript (no DOM, no three.js), a fixed 60 Hz step (two physics steps of
+// 1/120 s inside it), a seeded random source.
+// The rules and numbers are ported from Ballistica (MIT): the scripts (spaz.py, bomb.py, powerupbox.py,
+// elimination.py, the_pad.py) and the engine's C++ (spaz_node.cc, rigid_body.cc, prop_node.cc, dynamics.cc), whose
+// character physics lives in engine.ts. RULES_NOTES.md traces each value to its source line and says which are
+// converted, approximated or tuned. The ragdoll the view draws never feeds back into the rules, so a match plays the
+// same in Node as on the TV.
+import * as E from "./engine.ts";
 
 export const STEP = 1 / 60;
+export const SUBSTEPS = 2;
 export const MAX_SEATS = 8;
 export type Rng = () => number;
 
@@ -20,32 +24,37 @@ export function seeded(seed: number): Rng {
 }
 
 // ------------------------------------------------------------------------------------------------ numbers
-// [S] = from a Ballistica script, [E] = from Ballistica's engine source, [T] = tuned here. See RULES_NOTES.md.
+// [S] = from a Ballistica script, [E] = from Ballistica's engine source, [C] = converted from it (8 ms steps → time,
+// ODE → this model), [A] = approximated, [T] = tuned here. See RULES_NOTES.md.
 export const HP = 1000; // [S] spaz.py default_hitpoints
 export const PUNCH_COOLDOWN = 0.4; // [S] BASE_PUNCH_COOLDOWN 400 ms
 export const PUNCH_COOLDOWN_GLOVES = 0.3; // [S] spazfactory.py punch_cooldown_gloves 300 ms
 export const PUNCH_SCALE = 1.2; // [S] BASE_PUNCH_POWER_SCALE
 export const PUNCH_SCALE_GLOVES = 1.4; // [S] spazfactory.py punch_power_scale_gloves
-export const PUNCH_TIME = 35 / 120; // [E] kPunchDuration 35 steps at 120 Hz
-export const PUNCH_HIT_AT = 0.1; // [E] punch_power peaks 100 ms after the press
-export const PUNCH_REACH = 1.15; // [T]
+export const PUNCH_TIME = E.PUNCH_TIME; // [C] kPunchDuration 35 steps of 8 ms
 export const JUMP_COOLDOWN = 0.25; // [S] _jump_cooldown 250 ms
-export const PICKUP_COOLDOWN = 40 / 120; // [E] kPickupCooldown 40 steps
+export const PICKUP_DELAY = 8 * E.SRC_H; // [C] the pick-up sphere exists 8 steps after the press (44 → 36)
+export const PICKUP_COOLDOWN = 44 * E.SRC_H; // [C] kPickupCooldown + kPickupHitboxDelay steps before another press
+export const PICKUP_R = 0.7; // [E] the pick-up sphere's radius
 export const INVINCIBLE = 1.0; // [S] spaz.py: invincible for 1.0 s after a spawn
 export const DAMAGE_SCALE = 0.22; // [S] spaz.py damage_scale
 export const KNOCKOUT_MAX = 26; // [E] behaviour version 2
-export const KNOCKOUT_PER_S = 24; // [E] one tick per 5 steps of 120 Hz with footing (half that in the air)
+export const KNOCKOUT_PER_S = 1 / (5 * E.SRC_H); // [C] one tick per 5 steps of 8 ms with footing (half that in the air)
+export const WAKE_SLIDE = 25 * E.SRC_H; // [C] wake_slide_steps: the ball has no friction for 0.2 s after getting up
 export const SHIELD_HP = 650; // [S] shield_hitpoints_max
 export const SHIELD_DECAY = 10 / 0.5; // [S] shield_decay_rate 10 every 0.5 s
 export const SHIELD_SPILL = 500; // [S] max_shield_spillover_damage
 export const WEAR_OFF = 20; // [S] POWERUP_WEAR_OFF_TIME 20000 ms
 export const BLAST_RADIUS = 2.0; // [S] spaz.py blast_radius / bomb.py default
+export const BLAST_MAG = 2000; // [S] bomb.py ExplodeHitMessage: magnitude 2000
 export const IMPACT_RADIUS_K = 0.7; // [S] bomb.py
 export const TNT_RADIUS_K = 1.45; // [S] bomb.py
 export const TNT_MAG_K = 2.0; // [S] bomb.py Blast: mag 2000, × 2.0 for tnt
+export const BLAST_DROP = 0.1; // [S] bomb.py Blast: the blast sits 0.1 below the bomb "so we throw more things upward"
 export const FUSE = 3.0; // [S] bomb.py fuse_time, normal and sticky
 export const IMPACT_FUSE = 20.0; // [S] bomb.py fuse_time, impact
-export const ARM_TIME = 0.25; // [S] bomb.py: an impact bomb arms, a sticky bomb may stick to its thrower, 0.25 s on
+export const ARM_TIME = 0.2; // [S] bomb.py: an impact bomb arms 0.2 s after it is made (and is "older than 200 ms")
+export const STICK_OWNER = 0.25; // [S] bomb.py _handle_dropped: a sticky bomb may stick to its thrower 0.25 s after
 export const CHAIN_MIN = 0.1; // [S] bomb.py _handle_hit: 0.1 + random × 0.1 s
 export const POWERUP_INTERVAL = 8.0; // [S] DEFAULT_POWERUP_INTERVAL
 export const POWERUP_STAGGER = 0.4; // [S] _gameactivity.py _standard_drop_powerups
@@ -54,27 +63,25 @@ export const POWERUP_FLASH = POWERUP_INTERVAL - 2.5; // [S] powerupbox.py
 export const TNT_RESPAWN = 20.0; // [S] TNTSpawner respawn_time, × random 0.8–1.2
 export const RESPAWN = 3.0; // [S] _gameactivity.py respawn_player: 3.0 s when a team is one player
 export const END_CHECK = 1.0; // [S] elimination.py: the "who is left" check runs once a second
-export const THROW_SOFT = 0.5; // [E] a throw within 500 ms of the pick-up is weaker (0.4 → 1.0)
+export const KICK_BACK = 400; // [S] spaz.py PunchHitMessage: the puncher gets −400 on its first hit
+export const PUNCH_GRAB_GAP = 0.07; // [S] spaz.py: no punch on a fighter 0–70 ms after a pick-up press…
+export const PUNCH_DROP_GAP = 0.36; // [S] … or within 360 ms of letting go of something
+export const IMPACT_K = 50; // [S] spaz.py _hit_self: 50 × intensity damage, and a knock-out of 50 × intensity × 0.07
+export const IMPACT_MIN = 3; // [E] a head jolt over 3 m/s counts (spaz_node.cc:2451)
 
-// [T] the capsule physics (Ballistica's are an ODE rigid-body ragdoll in C++; these are picked to feel alike)
-export const GRAVITY = 20;
-export const RUN = 5.4;
-export const JUMP_V = 6.6;
-export const RADIUS = 0.36;
-export const HEIGHT = 2.0;
-export const BOMB_R = 0.24;
-export const TNT_R = 0.45;
-export const BOX_R = 0.36;
-export const BLAST_HP = 1400; // hit points lost at the centre of a normal blast (falls off in a line to the radius)
-export const BLAST_DV = 13; // knock-back at the centre (m/s)
-export const PUNCH_DV = 0.009;
-export const MOMENTUM_TIME = 0.5; // how fast a run-up builds a punch (s)
-export const PUNCH_RECOIL = 0.2; // what is left of it after a punch lands // knock-back per hit point of punch damage (m/s)
-export const THROW_H = 8.2; // a full throw: sideways and upward speed (m/s)
-export const THROW_V = 6.4;
-export const HOLD_MAX = 2.5; // a carried fighter breaks free after this long
-export const PICKUP_REACH = 1.25;
-export const KILL_Y = -5.5; // the_pad.py map_bounds: about 5.5 m under the floor
+// The bodies (engine.ts has the sources)
+export const GRAVITY = E.G; // [E]
+export const RADIUS = E.ROLLER_R; // [E] the roller ball: what fighters bump with
+export const HEIGHT = E.HEAD_TOP; // [E] 1.16: the top of the head above the feet
+export const BOMB_R = E.BOMB_R; // [E] 0.3
+export const TNT_R = E.TNT_HALF; // [E] 0.35 (a 0.7 crate)
+export const BOX_R = 0.36; // [T] the power-up box (its drop from the sky is ours)
+/** [C] top speeds: the walk (7.68 rad/s on a 0.3 ball) and the run (the gear's fixed point with full gas). */
+export const WALK = E.WALK_SPEED * E.ROLLER_R;
+export const RUN = WALK / (1 - (E.RUN_SPEED_ADD * E.ROLLER_R) / E.GEAR_UP_SPEED);
+/** [C] how far a punch reaches, centre to centre (the fist out at 0.58 + its 0.25 sphere + a torso's 0.15). */
+export const PUNCH_REACH = 0.58 + E.FIST_R + E.TORSO_R;
+export const KILL_Y = -5.5; // [S] the_pad.py map_bounds: about 5.5 m under the floor
 
 export const COUNT_STEPS = 180;
 export const ROUND_STEPS = 270;
@@ -93,14 +100,15 @@ export interface Block {
 /**
  * The arena: a floating deck sized from The Pad's points in the_pad.py (its spawn points, power-up points and TNT
  * point, moved so the deck's middle is the origin). The Pad's own model is not open source: the shape here is ours.
+ * The blocks are ours too; their height (0.4) is under the engine's jump (the feet rise about 0.5).
  */
 export const ARENA = {
   hx: 7.5,
   hz: 7.0,
   blocks: [
-    { x: -2.5, z: 0.5, w: 1.7, d: 1.7, h: 0.7 },
-    { x: 2.7, z: -0.6, w: 1.7, d: 1.7, h: 0.7 },
-    { x: 0, z: 4.3, w: 3.2, d: 0.9, h: 0.7 },
+    { x: -2.5, z: 0.5, w: 1.7, d: 1.7, h: 0.4 },
+    { x: 2.7, z: -0.6, w: 1.7, d: 1.7, h: 0.4 },
+    { x: 0, z: 4.3, w: 3.2, d: 0.9, h: 0.4 },
   ] as Block[],
   // the first four are The Pad's ffa_spawn1–4; the other four mirror them to the front (it has four; we seat eight)
   spawns: [[-4.2, -6.1], [4.1, -6.1], [6.6, -4.5], [-6.7, -4.5], [-6.3, 2.4], [6.3, 2.4], [-3.6, 5.8], [3.6, 5.8]] as [number, number][],
@@ -128,7 +136,11 @@ interface Body {
   vz: number;
 }
 
-export interface Fighter extends Body {
+/** Buttons held down (the engine runs while any is held, as its touch screens do). */
+export const BTN = { bomb: 1, punch: 2, jump: 4, grab: 8 } as const;
+export type Button = keyof typeof BTN;
+
+export interface Fighter extends E.Spaz {
   id: string;
   name: string;
   bot: boolean;
@@ -142,28 +154,33 @@ export interface Fighter extends Body {
   /** Not on the deck at all: fell out of the world, or its body was cleared before the respawn. */
   gone: boolean;
   hp: number;
-  yaw: number;
-  grounded: boolean;
-  /** Stick, -1..1 (z towards the camera). */
-  ix: number;
-  iz: number;
-  /** Knock-out ticks left (Ballistica's `knockout`): no control, can be picked up. */
-  knockout: number;
   invincible: number;
-  /** Punch swing in seconds since the press, or -1. */
+  /** Punch: seconds since the press (or -1), the hand, the cooldown, who it already hit, and its kick-back. */
   punchT: number;
   punchSide: number;
   punchCd: number;
-  /** Its speed, smoothed: what a punch hurts by (Ballistica's punch_momentum_linear). */
-  momentum: number;
-  jumpCd: number;
+  punched: (string | number)[];
+  /** Seconds since the last pick-up press (-1 when the press is spent), and the cooldown. */
+  pickupT: number;
   pickupCd: number;
+  sincePickupPress: number;
+  jumpCd: number;
   /** What it carries: a bomb's id, or a fighter's id. */
   holdBomb: number;
   holdFighter: string | null;
   holdT: number;
   heldBy: string | null;
   heldT: number;
+  /** Seconds since it threw, and since it let go of anything (thrown or dropped). */
+  sinceThrow: number;
+  sinceDrop: number;
+  /** Buttons held. */
+  btn: number;
+  /** Knocked about (by a blast, a hit, a throw): a hard landing hurts (the engine's head-jolt damage). */
+  tumble: boolean;
+  sinceImpulse: number;
+  /** Seconds since its last impact damage (the engine waits 500 ms between two). */
+  sinceJolt: number;
   /** Power-ups: seconds left (0 = off). */
   tripleT: number;
   bombKind: "normal" | "impact" | "sticky";
@@ -182,13 +199,17 @@ export interface Bomb extends Body {
   fuse: number;
   radius: number;
   heldBy: string | null;
-  /** Seconds since it left a hand (-1 while it has never been thrown). */
+  /** Seconds since it was made, and since it left a hand (-1 while it has never been let go). */
+  age: number;
   free: number;
   /** Sticky: the fighter it sticks to, or "ground". */
   stuck: string | null;
   sx: number;
   sy: number;
   sz: number;
+  /** Spin about x and z (rad/s): a ball rolls. */
+  wx: number;
+  wz: number;
   rest: boolean;
 }
 
@@ -204,7 +225,7 @@ export type GameEvent =
   | { type: "round"; winner: string | null }
   | { type: "spawn"; id: string }
   | { type: "punch"; id: string }
-  | { type: "hit"; id: string; by: string | null; damage: number; kind: "punch" | "blast"; x: number; y: number; z: number; dx: number; dy: number; dz: number }
+  | { type: "hit"; id: string; by: string | null; damage: number; kind: "punch" | "blast" | "impact"; x: number; y: number; z: number; dx: number; dy: number; dz: number }
   | { type: "die"; id: string; fell: boolean; x: number; y: number; z: number }
   | { type: "blast"; x: number; y: number; z: number; radius: number; kind: BombKind }
   | { type: "bomb"; id: string }
@@ -229,6 +250,7 @@ export interface Options {
 export const DEFAULTS: Options = { lives: 3, wins: 2, powerups: true, endless: false };
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+const H = E.H;
 
 export class Game {
   opts: Options;
@@ -248,6 +270,8 @@ export class Game {
   private dropQueue: { at: number; i: number }[] = [];
   private tntT = -1;
   private endT = -1;
+  private ctx: E.DriveCtx = { carry: 0, holding: false, sinceThrow: 9, limp: false, dead: false, ground: 0 };
+  private dv = [0, 0, 0];
 
   constructor(opts: Partial<Options> = {}, readonly rng: Rng = Math.random) {
     this.opts = { ...DEFAULTS, ...opts };
@@ -270,9 +294,10 @@ export class Game {
     const used = new Set([...this.seats.values()].map((s) => s.slot));
     if (slot < 0 || used.has(slot)) for (slot = 0; used.has(slot); slot++);
     const f: Fighter = {
-      id, name, bot, slot, wins: 0, inRound: false, lives: 0, alive: false, gone: true, hp: HP, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0,
-      grounded: false, ix: 0, iz: 0, knockout: 0, invincible: 0, punchT: -1, punchSide: 0, punchCd: 0, momentum: 0, jumpCd: 0, pickupCd: 0, holdBomb: 0,
-      holdFighter: null, holdT: 0, heldBy: null, heldT: 0, tripleT: 0, bombKind: "normal", bombKindT: 0, glovesT: 0, shield: 0, respawnT: 0, deadT: 0,
+      ...E.newSpaz(), id, name, bot, slot, wins: 0, inRound: false, lives: 0, alive: false, gone: true, hp: HP, invincible: 0,
+      punchT: -1, punchSide: 0, punchCd: 0, punched: [], pickupT: -1, pickupCd: 0, sincePickupPress: 9, jumpCd: 0, holdBomb: 0, holdFighter: null,
+      holdT: 0, heldBy: null, heldT: 0, sinceThrow: 9, sinceDrop: 9, btn: 0, tumble: false, sinceImpulse: 9, sinceJolt: 9, tripleT: 0, bombKind: "normal",
+      bombKindT: 0, glovesT: 0, shield: 0, respawnT: 0, deadT: 0,
     };
     this.seats.set(id, f);
     if (this.phase === "wait" && this.seats.size >= 2) this.startMatch();
@@ -362,20 +387,30 @@ export class Game {
       point = best;
     }
     const [sx, sz] = ARENA.spawns[point]!;
+    const ix = f.ix;
+    const iz = f.iz;
+    const btn = f.btn;
+    const run = f.run;
+    E.stand(f, sx, 0, sz, Math.atan2(-sx, -sz));
     Object.assign(f, {
-      x: sx, y: 0, z: sz, vx: 0, vy: 0, vz: 0, yaw: Math.atan2(-sx, -sz), alive: true, gone: false, hp: HP, grounded: true, knockout: 0,
-      invincible: INVINCIBLE, punchT: -1, punchCd: 0, momentum: 0, jumpCd: 0, pickupCd: 0, holdBomb: 0, holdFighter: null, holdT: 0, heldBy: null, heldT: 0,
-      tripleT: 0, bombKind: "normal", bombKindT: 0, glovesT: 0, shield: 0, respawnT: 0, deadT: 0,
+      ix, iz, btn, run, alive: true, gone: false, hp: HP, invincible: INVINCIBLE, punchT: -1, punchCd: 0, punched: [], pickupT: -1, pickupCd: 0,
+      sincePickupPress: 9, jumpCd: 0, holdBomb: 0, holdFighter: null, holdT: 0, heldBy: null, heldT: 0, sinceThrow: 9, sinceDrop: 9, tumble: false,
+      sinceImpulse: 9, sinceJolt: 9, tripleT: 0, bombKind: "normal", bombKindT: 0, glovesT: 0, shield: 0, respawnT: 0, deadT: 0,
     } satisfies Partial<Fighter>);
     this.events.push({ type: "spawn", id: f.id });
   }
 
+  private newBomb(kind: BombKind, owner: string | null, x: number, y: number, z: number): Bomb {
+    return {
+      id: this.uid++, kind, owner, fuse: kind === "tnt" ? Infinity : kind === "impact" ? IMPACT_FUSE : FUSE,
+      radius: BLAST_RADIUS * (kind === "tnt" ? TNT_RADIUS_K : kind === "impact" ? IMPACT_RADIUS_K : 1), heldBy: null, age: 0, free: kind === "tnt" ? 9 : -1,
+      stuck: null, sx: 0, sy: 0, sz: 0, wx: 0, wz: 0, rest: false, x, y, z, vx: 0, vy: 0, vz: 0,
+    };
+  }
+
   private spawnTnt() {
     const [x, z] = ARENA.tnt;
-    this.bombs.push({
-      id: this.uid++, kind: "tnt", owner: null, fuse: Infinity, radius: BLAST_RADIUS * TNT_RADIUS_K, heldBy: null, free: 9, stuck: null,
-      sx: 0, sy: 0, sz: 0, rest: false, x, y: TNT_R + 3, z, vx: 0, vy: 0, vz: 0,
-    });
+    this.bombs.push(this.newBomb("tnt", null, x, TNT_R + 3, z));
     this.tntT = -1;
   }
 
@@ -399,9 +434,33 @@ export class Game {
     f.iz = z;
   }
 
-  /** Can it act: in play, on its feet. */
+  /** The run trigger (0..1). Phones run while a button is held (`buttonUp` ends it); bots set it themselves. */
+  setRun(id: string, v: number) {
+    const f = this.seats.get(id);
+    if (f) f.run = clamp(Number.isFinite(v) ? v : 0, 0, 1);
+  }
+  /** The buttons a phone holds down (a mask of BTN): it runs while any is held. */
+  setButtons(id: string, mask: number) {
+    const f = this.seats.get(id);
+    if (!f) return;
+    f.btn = mask & 15;
+    f.run = f.btn ? 1 : 0;
+  }
+  private press(f: Fighter, b: Button) {
+    f.btn |= BTN[b];
+    f.run = 1;
+  }
+  /** A button let go of: the run ends when no button is held (base/input/device/touch_input.cc). */
+  buttonUp(id: string, b: Button) {
+    const f = this.seats.get(id);
+    if (!f) return;
+    f.btn &= ~BTN[b];
+    if (!f.btn) f.run = 0;
+  }
+
+  /** Can it act: in play, alive, not knocked out ([S] spaz.py: every press checks knockout > 0). */
   ready(f: Fighter): boolean {
-    return this.phase === "play" && f.alive && f.knockout <= 0 && !f.heldBy;
+    return this.phase === "play" && f.alive && f.knockout <= 0;
   }
   private canAct(f: Fighter | undefined): f is Fighter {
     return !!f && this.ready(f);
@@ -410,40 +469,42 @@ export class Game {
     return f.holdBomb !== 0 || f.holdFighter !== null;
   }
 
+  /** Jump: the ball's spring is pushed down for 7 steps; it only lifts when the ball is on the ground. */
   jump(id: string) {
     const f = this.seats.get(id);
-    if (!this.canAct(f) || !f.grounded || f.jumpCd > 0) return false;
-    f.vy = JUMP_V;
-    f.grounded = false;
+    if (f && this.phase === "play") this.press(f, "jump");
+    if (!this.canAct(f) || f.jumpCd > 0) return false;
     f.jumpCd = JUMP_COOLDOWN;
-    this.events.push({ type: "jump", id, x: f.x, y: f.y, z: f.z });
+    f.jumpT = E.JUMP_TIME;
+    if (f.grounded && !f.heldBy) this.events.push({ type: "jump", id: f.id, x: f.x, y: f.y, z: f.z });
     return true;
   }
 
   /** Punch; with something in the hands, throw it (as in Ballistica, every action button throws). */
   punch(id: string) {
     const f = this.seats.get(id);
+    if (f && this.phase === "play") this.press(f, "punch");
     if (!this.canAct(f)) return false;
-    if (this.holding(f)) return this.throwHeld(f);
+    if (this.holding(f)) return this.throwHeld(f, false);
     if (f.punchCd > 0) return false;
     f.punchCd = f.glovesT > 0 ? PUNCH_COOLDOWN_GLOVES : PUNCH_COOLDOWN;
     f.punchT = 0;
-    f.punchSide = 1 - f.punchSide;
-    this.events.push({ type: "punch", id });
+    f.punched = [];
+    // [E] left or right by its spin; random when it barely turns
+    f.punchSide = Math.abs(f.aVelSm) < 0.3 ? (this.rng() > 0.5 ? 1 : 0) : f.aVelSm > 0 ? 1 : 0;
+    this.events.push({ type: "punch", id: f.id });
     return true;
   }
 
-  /** Bomb: the first press lights one in the hands, the next press throws it (spaz.py on_bomb_press). */
+  /** Bomb: lights one in the hands (spaz.py drop_bomb: made and picked up); the next press throws it. */
   bomb(id: string) {
     const f = this.seats.get(id);
+    if (f && this.phase === "play") this.press(f, "bomb");
     if (!this.canAct(f)) return false;
-    if (this.holding(f)) return this.throwHeld(f);
+    if (this.holding(f)) return this.throwHeld(f, true);
     if (this.bombsLeft(f) <= 0) return false;
-    const kind = f.bombKind;
-    const b: Bomb = {
-      id: this.uid++, kind, owner: id, fuse: kind === "impact" ? IMPACT_FUSE : FUSE, radius: BLAST_RADIUS * (kind === "impact" ? IMPACT_RADIUS_K : 1),
-      heldBy: id, free: -1, stuck: null, sx: 0, sy: 0, sz: 0, rest: false, x: f.x, y: f.y + HEIGHT + 0.3, z: f.z, vx: 0, vy: 0, vz: 0,
-    };
+    const b = this.newBomb(f.bombKind, id, f.x, f.y + E.TORSO_Y + E.HOLD_UP, f.z);
+    b.heldBy = id;
     this.bombs.push(b);
     f.holdBomb = b.id;
     f.holdT = 0;
@@ -458,95 +519,143 @@ export class Game {
     return (f.tripleT > 0 ? 3 : 1) - out;
   }
 
-  /** Pick up a bomb, the TNT crate or a knocked-out fighter in front; with something in the hands, throw it. */
+  /** Pick-up: a sphere in front of the head 64 ms later takes a bomb, the crate or a fighter; with something in the hands, throw. */
   grab(id: string) {
     const f = this.seats.get(id);
+    if (f && this.phase === "play") this.press(f, "grab");
     if (!this.canAct(f)) return false;
-    if (this.holding(f)) return this.throwHeld(f);
-    if (f.pickupCd > 0) return false;
+    if (this.holding(f)) return this.throwHeld(f, false);
+    if (f.pickupCd > 0 || f.heldBy) return false;
     f.pickupCd = PICKUP_COOLDOWN;
+    f.pickupT = 0;
+    f.sincePickupPress = 0;
+    return true;
+  }
+
+  /** The pick-up sphere's moment: take the nearest thing it touches. */
+  private pickup(f: Fighter) {
+    const ty = f.y + E.ROLLER_R + f.sep;
     const fx = Math.sin(f.yaw);
     const fz = Math.cos(f.yaw);
-    let best = PICKUP_REACH;
+    // [E] between head and torso, 0.3 along the head's forward
+    const cx = f.x + fx * 0.3;
+    const cy = ty + E.HEAD_UP / 2;
+    const cz = f.z + fz * 0.3;
+    let best = 1e9;
     let bomb: Bomb | null = null;
     let man: Fighter | null = null;
-    const near = (o: Body, dy: number) => {
-      const dx = o.x - f.x;
-      const dz = o.z - f.z;
-      const d = Math.hypot(dx, dz);
-      return Math.abs(dy) < 1.4 && (d < 0.5 || dx * fx + dz * fz > 0) ? d : 1e9;
-    };
     for (const b of this.bombs) {
-      if (b.heldBy || b.stuck) continue;
-      const d = near(b, b.y - f.y - 0.5) - (b.kind === "tnt" ? 0.25 : 0);
-      if (d < best) {
+      if (b.heldBy || (b.stuck && b.stuck !== "ground")) continue;
+      const r = b.kind === "tnt" ? TNT_R : BOMB_R;
+      const d = Math.hypot(b.x - cx, b.y - cy, b.z - cz) - r;
+      if (d < PICKUP_R && d < best) {
         best = d;
         bomb = b;
         man = null;
       }
     }
     for (const o of this.seats.values()) {
-      // the task's rule: only a knocked-out fighter can be lifted (Ballistica lets you lift anyone)
-      if (o === f || !o.alive || o.gone || o.heldBy || o.knockout <= 0 || o.invincible > 0 || !o.inRound) continue;
-      const d = near(o, o.y - f.y) + 0.15; // a bomb at the same distance wins
-      if (d < best) {
+      // [S] anyone not invincible (spaz.py PickupMessage); a carried one or one carrying it is out of the question
+      if (o === f || !o.alive || o.gone || o.heldBy || o.invincible > 0 || !o.inRound || o.holdFighter === f.id) continue;
+      const oy = o.y + E.ROLLER_R + o.sep;
+      let d = 1e9;
+      for (const p of E.CORE_PARTS) {
+        const py = this.partY(o, p, oy);
+        d = Math.min(d, Math.hypot(o.x - cx, py - cy, o.z - cz) - (p.head ? E.HEAD_R : E.TORSO_R));
+      }
+      if (d < PICKUP_R && d < best) {
         best = d;
         man = o;
         bomb = null;
       }
     }
     if (bomb) {
-      bomb.heldBy = id;
+      bomb.heldBy = f.id;
       bomb.rest = false;
+      bomb.stuck = null;
       f.holdBomb = bomb.id;
     } else if (man) {
       this.letGo(man);
-      man.heldBy = id;
+      man.heldBy = f.id;
       man.heldT = 0;
+      man.balance = 0; // [E] kPickedUp: it loses its balance at once
       f.holdFighter = man.id;
-    } else return false;
+    } else return;
     f.holdT = 0;
-    this.events.push({ type: "grab", id });
-    return true;
+    this.events.push({ type: "grab", id: f.id });
   }
 
-  /** The throw's velocity for a stick pushed `scale` (0..1) and a thing held for `held` seconds ([E] spaz_node.cc Throw). */
-  static throwSpeed(scale: number, held = 1, mass = 1): [number, number] {
-    let power = 0.8 * (0.6 + 0.4 * clamp(scale, 0, 1));
-    if (held < THROW_SOFT) power *= 0.4 + 0.6 * (held / THROW_SOFT);
-    const k = power / 0.8 / mass;
-    return [THROW_H * k, THROW_V * k];
+  /** The mass it carries (hanging on its pick-up spring). */
+  private carried(f: Fighter) {
+    if (f.holdFighter) return E.M_SPAZ;
+    if (f.holdBomb) {
+      const b = this.bombs.find((x) => x.id === f.holdBomb);
+      return b?.kind === "tnt" ? E.TNT_M : E.BOMB_M;
+    }
+    return 0;
   }
 
-  private throwHeld(f: Fighter) {
+  /** The throw's velocity change for a stick pushed `scale` (0..1), a thing held `held` s, of `mass` ([E] spaz_node.cc Throw). */
+  static throwSpeed(scale: number, held = 1, mass = E.BOMB_M): [number, number] {
+    const t = E.throwImpulse(scale, held, mass);
+    return [t.dvh, t.dvv];
+  }
+
+  private throwHeld(f: Fighter, withBomb: boolean) {
     const b = f.holdBomb ? this.bombs.find((x) => x.id === f.holdBomb) : undefined;
     const man = f.holdFighter ? this.seats.get(f.holdFighter) : undefined;
     const body: Body | undefined = b ?? man;
-    const m = Math.hypot(f.ix, f.iz);
-    // the stick's direction when it is pushed, else the way it faces
-    const dx = m > 0.1 ? f.ix / m : Math.sin(f.yaw);
-    const dz = m > 0.1 ? f.iz / m : Math.cos(f.yaw);
-    if (m > 0.1) f.yaw = Math.atan2(dx, dz);
-    const [vh, vv] = Game.throwSpeed(m, f.holdT, man ? 1.35 : b?.kind === "tnt" ? 1.3 : 1);
+    // [E] the stick (the engine's smoothed stick is the raw one for analog input), clamped to the circle: its length is
+    // the throw's strength, its way the throw's way
+    let sx = f.ix;
+    let sz = f.iz;
+    const m = Math.hypot(sx, sz);
+    if (m > 1) {
+      sx /= m;
+      sz /= m;
+    }
+    const scale = Math.min(1, m);
+    const fx = Math.sin(f.yaw);
+    const fz = Math.cos(f.yaw);
+    const dx = scale > 0.1 ? sx / m : fx;
+    const dz = scale > 0.1 ? sz / m : fz;
+    const mass = man ? E.M_SPAZ : b?.kind === "tnt" ? E.TNT_M : E.BOMB_M;
+    const t = E.throwImpulse(scale > 0.1 ? scale : 0, f.holdT, mass);
     f.holdBomb = 0;
     f.holdFighter = null;
+    f.sinceThrow = 0;
+    f.sinceDrop = 0;
     if (!body) return false;
-    body.vx = dx * vh + f.vx * 0.5;
-    body.vz = dz * vh + f.vz * 0.5;
-    body.vy = vv;
+    // [E] "pro trick": throwing with Punch or Pick-up while Bomb is still held lobs it lightly backwards
+    const back = !withBomb && (f.btn & BTN.bomb) !== 0;
+    const k = back ? -0.2 : 1;
+    body.vx = f.vx + dx * t.dvh * k;
+    body.vz = f.vz + dz * t.dvh * k;
+    body.vy = (f.grounded ? 0 : f.vy) + t.dvv * Math.abs(k);
+    // the thrower takes −0.25 of the push (or +0.2 for the backward lob), its vertical part always downward
+    const mf = E.M_SPAZ + 0;
+    const kb = back ? 0.2 : -0.25;
+    f.vx += (dx * t.jh * kb) / mf;
+    f.vz += (dz * t.jh * kb) / mf;
+    if (!f.grounded) f.vy -= (t.jv * Math.abs(kb)) / mf;
     if (b) {
       b.heldBy = null;
       b.free = 0;
+      b.rest = false;
+      // [E] the push lands 0.1 under the bomb's centre: it spins backwards
+      const spin = (0.1 * t.jh * k) / (0.4 * E.BOMB_M * BOMB_R * BOMB_R);
+      b.wx = -dz * spin;
+      b.wz = dx * spin;
     } else if (man) {
       man.heldBy = null;
       man.grounded = false;
-      man.knockout = Math.max(man.knockout, 10); // [T] still dizzy when it lands
+      man.tumble = true;
     }
     this.events.push({ type: "throw", id: f.id });
     return true;
   }
 
-  /** Drop whatever it carries, where it stands. */
+  /** Drop whatever it carries, where it is. */
   private letGo(f: Fighter) {
     if (f.holdBomb) {
       const b = this.bombs.find((x) => x.id === f.holdBomb);
@@ -558,6 +667,7 @@ export class Game {
         b.vz = f.vz;
       }
       f.holdBomb = 0;
+      f.sinceDrop = 0;
     }
     if (f.holdFighter) {
       const o = this.seats.get(f.holdFighter);
@@ -566,14 +676,20 @@ export class Game {
         o.vx = f.vx;
         o.vy = 0;
         o.vz = f.vz;
+        o.grounded = false;
+        o.tumble = true;
       }
       f.holdFighter = null;
+      f.sinceDrop = 0;
     }
   }
   /** A carried fighter gets loose. */
   private release(f: Fighter) {
     const h = f.heldBy ? this.seats.get(f.heldBy) : undefined;
-    if (h && h.holdFighter === f.id) h.holdFighter = null;
+    if (h && h.holdFighter === f.id) {
+      h.holdFighter = null;
+      h.sinceDrop = 0;
+    }
     f.heldBy = null;
   }
 
@@ -583,26 +699,81 @@ export class Game {
     return clamp(Math.floor((damage / DAMAGE_SCALE) * 0.02) - 24, 0, KNOCKOUT_MAX);
   }
 
-  /** A punch's damage from the puncher's run-up (its smoothed speed) ([E]/[T], see RULES_NOTES.md). */
-  static punchDamage(speed: number, gloves: boolean) {
+  /**
+   * A punch's "total" ([E] spaz.py PunchHitMessage + rigid_body.cc:862): power × scale × (angular momentum × 110 +
+   * linear momentum × 40). Damage is 0.22 × 5 × that (a one-body hit counts five times).
+   */
+  static punchTotal(pmLin: number, pmAng: number, power: number, gloves: boolean) {
     const scale = gloves ? PUNCH_SCALE_GLOVES : PUNCH_SCALE;
-    // hp = 0.22 × 5 (one-body hit) × punch_power(1.0 at the peak) × scale × (40 × momentum + the spin's share)
-    return Math.round(DAMAGE_SCALE * 5 * scale * (40 * 1.0 * speed + 50));
+    return power * scale * pmAng * 110 + pmLin * power * scale * 40;
+  }
+  /** A punch's damage at full power for a puncher whose filters settled at a steady `speed` and spin ([E]). */
+  static punchDamage(speed: number, gloves: boolean, spin = 0) {
+    // the engine's filters' steady states: linear 1.824 × speed (0.9 + 0.02·v extra decay under 5 m/s), angular 0.127 × spin
+    const fl = speed < 5 ? 0.9 + 0.02 * speed : 1;
+    const lin = (0.96 * fl * 0.076 * speed) / (1 - 0.96 * fl);
+    const a = Math.min(25, Math.abs(spin));
+    const fa = a < 5 ? 0.8 + 0.04 * a : 1;
+    const ang = (0.92 * fa * 0.01103 * a) / (1 - 0.92 * fa);
+    return Math.round(DAMAGE_SCALE * 5 * Game.punchTotal(lin, ang, 1, gloves));
   }
 
-  /** A blast's damage at a distance ([E] rigid_body.cc: a straight fall-off to the radius). */
-  static blastDamage(dist: number, radius: number, kind: BombKind = "normal") {
-    if (dist >= radius) return 0;
-    return Math.round(BLAST_HP * (kind === "tnt" ? TNT_MAG_K : 1) * (1 - dist / radius));
+  /** The damage and velocity change of a blast on a fighter standing `dist` m (sideways) from a bomb on the deck. */
+  static blastOn(dist: number, radius = BLAST_RADIUS, kind: BombKind = "normal") {
+    const g = new Game({}, () => 0.5);
+    const f = { ...E.newSpaz(), alive: true, knockout: 0, heldBy: null } as unknown as Fighter;
+    f.x = dist;
+    const r = g.blastParts(f, 0, BOMB_R - BLAST_DROP, 0, BLAST_MAG * (kind === "tnt" ? TNT_MAG_K : 1), radius);
+    return { damage: Math.round(r.raw * DAMAGE_SCALE), dvx: r.dvx, dvy: r.dvy };
+  }
+  /** A blast's damage on a fighter standing `dist` m from a bomb resting on the deck ([E]). */
+  static blastDamage(dist: number, radius = BLAST_RADIUS, kind: BombKind = "normal") {
+    return Game.blastOn(dist, radius, kind).damage;
   }
 
-  /** A hit (spaz.py HitMessage): the shield takes it first; damage, knock-back, knock-out, death. */
-  hurt(f: Fighter, damage: number, by: string | null, kind: "punch" | "blast", dvx: number, dvy: number, dvz: number, px = f.x, py = f.y + 1, pz = f.z) {
-    if (!f.alive || f.invincible > 0 || damage <= 0) return 0;
+  /** Where a core body is: standing, or lying when knocked out on the ground. */
+  private partY(o: Fighter, p: (typeof E.CORE_PARTS)[number], torsoY: number) {
+    const lying = (!o.alive || o.knockout > 0) && o.grounded && !o.heldBy;
+    if (lying) return o.y + p.lying;
+    return torsoY + (p.up - E.TORSO_Y);
+  }
+
+  /** Sum a blast over a fighter's three core bodies (the head's share of damage counts five times). */
+  private blastParts(f: Fighter, bx: number, by: number, bz: number, mag: number, radius: number) {
+    const ty = f.y + E.ROLLER_R + f.sep;
+    const lying = (!f.alive || f.knockout > 0) && f.grounded && !f.heldBy;
+    const fx = Math.sin(f.yaw);
+    const fz = Math.cos(f.yaw);
+    let raw = 0;
+    let px = 0;
+    let py = 0;
+    let pz = 0;
+    for (const p of E.CORE_PARTS) {
+      const x = f.x + (lying ? fx * p.fwd : 0);
+      const z = f.z + (lying ? fz * p.fwd : 0);
+      const y = lying ? f.y + p.lying : ty + (p.up - E.TORSO_Y);
+      const m = E.areaImpulse(bx, by, bz, mag, radius, x, y, z, p.m, this.dv);
+      if (m <= 0) continue;
+      raw += m * (p.head ? 5 : 1);
+      px += this.dv[0]! * p.m;
+      py += this.dv[1]! * p.m;
+      pz += this.dv[2]! * p.m;
+    }
+    // the core's push moves the whole body (its ball too)
+    return { raw, dvx: px / E.M_SPAZ, dvy: py / E.M_SPAZ, dvz: pz / E.M_SPAZ };
+  }
+
+  /**
+   * A hit (spaz.py HitMessage): the shield takes it first; damage, knock-back, knock-out, death. `ko` false: a flat
+   * hit (an impact) whose knock-out the caller sets.
+   */
+  hurt(f: Fighter, damage: number, by: string | null, kind: "punch" | "blast" | "impact", dvx: number, dvy: number, dvz: number, px = f.x, py = f.y + 1, pz = f.z, ko = true) {
+    if (!f.alive || f.invincible > 0) return 0;
+    if (damage <= 0 && Math.hypot(dvx, dvy, dvz) < 1e-6) return 0;
     let ratio = 1;
-    if (f.shield > 0) {
+    if (f.shield > 0 && damage > 0) {
       f.shield -= damage;
-      if (f.shield <= 0) this.events.push({ type: "shieldDown", id: f.id, x: f.x, y: f.y + 0.9, z: f.z });
+      if (f.shield <= 0) this.events.push({ type: "shieldDown", id: f.id, x: f.x, y: f.y + 0.6, z: f.z });
       // a hit that only breaks the shield does nothing else; a massive one spills over
       if (f.shield > -SHIELD_SPILL) {
         f.shield = Math.max(0, f.shield);
@@ -615,10 +786,17 @@ export class Game {
     f.vx += dvx * ratio;
     f.vy += dvy * ratio;
     f.vz += dvz * ratio;
-    if (dvy * ratio > 0.5) f.grounded = false;
+    if (dvy * ratio > 0.5 && f.grounded) f.grounded = false;
+    if (kind !== "impact") {
+      f.sinceImpulse = 0;
+      if (Math.hypot(dvx, dvy, dvz) * ratio > 1.5) f.tumble = true;
+    }
     if (damage > 0) this.letGo(f);
+    // [S] impact damage never quite kills: it leaves 10 hp, unless it is 200 more than what is left
+    if (kind === "impact" && damage >= f.hp) damage = Math.max(damage - 200, f.hp - 10);
     f.hp -= damage;
-    f.knockout = Math.max(f.knockout, Game.knockoutFor(damage));
+    if (ko) f.knockout = Math.max(f.knockout, Game.knockoutFor(damage));
+    if (f.knockout > 0) f.tumble = true;
     const l = Math.hypot(dvx, dvy, dvz) || 1;
     this.events.push({ type: "hit", id: f.id, by, damage, kind, x: px, y: py, z: pz, dx: dvx / l, dy: dvy / l, dz: dvz / l });
     if (f.hp <= 0) this.die(f, false);
@@ -640,49 +818,36 @@ export class Game {
     this.events.push({ type: "die", id: f.id, fell, x: f.x, y: f.y, z: f.z });
   }
 
-  /** A blast (bomb.py Blast): fighters, bombs and boxes inside the radius. */
+  /** A blast (bomb.py Blast) at (x, y, z), the region's centre: fighters, bombs and boxes inside the radius. */
   explode(x: number, y: number, z: number, radius: number, kind: BombKind, by: string | null) {
     this.events.push({ type: "blast", x, y, z, radius, kind });
-    const k = kind === "tnt" ? TNT_MAG_K : 1;
-    const push = (o: Body, cy: number, mass: number) => {
-      const dx = o.x - x;
-      const dy = cy - y;
-      const dz = o.z - z;
-      const d = Math.hypot(dx, dy, dz);
-      if (d >= radius) return -1;
-      const amt = 1 - d / radius;
-      const n = d || 1;
-      // [E] rigid_body.cc: the upward part of the push is doubled; [T] and it always lifts a little
-      const dv = (BLAST_DV * k * amt) / mass;
-      return { d, dvx: (dx / n) * dv, dvy: Math.max(0.35, (dy / n) * 2) * dv * 0.6, dvz: (dz / n) * dv };
-    };
+    const mag = BLAST_MAG * (kind === "tnt" ? TNT_MAG_K : 1);
     for (const f of this.seats.values()) {
       if (f.gone || !f.inRound) continue;
-      // the nearest point of the body (its axis from the hips to the head), as the engine sums over the body's parts
-      const p = push(f, clamp(y, f.y + 0.5, f.y + HEIGHT - 0.2), 1);
-      if (p === -1) continue;
-      if (f.alive) this.hurt(f, Game.blastDamage(p.d, radius, kind), by, "blast", p.dvx, p.dvy, p.dvz, x, y, z);
+      const r = this.blastParts(f, x, y, z, mag, radius);
+      if (r.raw <= 0) continue;
+      if (f.alive) this.hurt(f, Math.round(r.raw * DAMAGE_SCALE), by, "blast", r.dvx, r.dvy, r.dvz, x, y, z);
       else {
-        f.vx += p.dvx;
-        f.vy += p.dvy;
-        f.vz += p.dvz;
-        f.grounded = false;
+        f.vx += r.dvx;
+        f.vy += r.dvy;
+        f.vz += r.dvz;
+        if (r.dvy > 0.5) f.grounded = false;
       }
     }
     for (const b of this.bombs) {
-      const p = push(b, b.y, b.kind === "tnt" ? 2 : 0.8);
-      if (p === -1) continue;
+      const m = E.areaImpulse(x, y, z, mag, radius, b.x, b.y, b.z, 1, this.dv);
+      if (m <= 0) continue;
       if (!b.heldBy && !b.stuck) {
-        b.vx += p.dvx;
-        b.vy += p.dvy;
-        b.vz += p.dvz;
+        b.vx += this.dv[0]!;
+        b.vy += this.dv[1]!;
+        b.vz += this.dv[2]!;
         b.rest = false;
       }
       // a chain reaction: it goes off 0.1–0.2 s later
       b.fuse = Math.min(b.fuse, CHAIN_MIN + this.rng() * 0.1);
     }
     // powerupbox.py: any hit that is not a punch destroys a box
-    this.boxes = this.boxes.filter((b) => Math.hypot(b.x - x, b.y - y, b.z - z) >= radius);
+    this.boxes = this.boxes.filter((b) => Math.hypot(b.x - x, b.y - y, b.z - z) >= radius + BOX_R);
   }
 
   private give(f: Fighter, kind: PowerKind) {
@@ -693,7 +858,7 @@ export class Game {
     } else if (kind === "gloves") f.glovesT = WEAR_OFF;
     else if (kind === "shield") f.shield = SHIELD_HP;
     else f.hp = HP;
-    this.events.push({ type: "power", id: f.id, kind, x: f.x, y: f.y + 1, z: f.z });
+    this.events.push({ type: "power", id: f.id, kind, x: f.x, y: f.y + 0.7, z: f.z });
   }
 
   // ---------------------------------------------------------------------------------------------- step
@@ -703,11 +868,11 @@ export class Game {
     if (this.phase === "count") {
       if (this.t >= COUNT_STEPS) this.setPhase("play");
       // the fighters stand; the TNT crate drops in
-      this.stepBombs(STEP);
+      for (let i = 0; i < SUBSTEPS; i++) this.stepBombs(H);
       return;
     }
     if (this.phase === "round") {
-      this.physics(STEP);
+      this.physics();
       if (this.t >= ROUND_STEPS) {
         const top = this.standings()[0];
         if (top && top.wins >= this.opts.wins) {
@@ -719,7 +884,7 @@ export class Game {
     }
     this.time += STEP;
     if (this.opts.powerups) this.drops(STEP);
-    this.physics(STEP);
+    this.physics();
     // elimination.py: once a second, see who is left
     if (this.endT < 0) {
       if (this.contenders().length <= 1 && !this.opts.endless) this.endT = END_CHECK;
@@ -730,6 +895,8 @@ export class Game {
       this.roundWinner = w ? w.id : null;
       for (const f of this.seats.values()) {
         f.ix = f.iz = 0;
+        f.run = 0;
+        f.btn = 0;
       }
       this.events.push({ type: "round", winner: this.roundWinner });
       this.setPhase("round");
@@ -759,121 +926,130 @@ export class Game {
     if (this.tntT > 0 && (this.tntT -= dt) <= 0) this.spawnTnt();
   }
 
-  private physics(dt: number) {
+  private physics() {
     const fs = this.list();
-    for (const f of fs) if (f.inRound) this.stepFighter(f, dt);
-    this.separate(fs);
-    this.stepBombs(dt);
-    this.stepBoxes(dt);
+    for (let i = 0; i < SUBSTEPS; i++) {
+      for (const f of fs) if (f.inRound) this.stepFighter(f, H);
+      this.separate(fs);
+      this.stepBombs(H);
+    }
+    this.stepBoxes(STEP);
   }
 
-  private stepFighter(f: Fighter, dt: number) {
+  private stepFighter(f: Fighter, h: number) {
+    const ctx = this.ctx;
+    ctx.ground = groundAt(f.x, f.z);
     if (!f.alive) {
-      f.deadT += dt;
-      if (f.respawnT > 0 && (f.respawnT -= dt) <= 0 && this.phase === "play") {
+      f.deadT += h;
+      if (f.respawnT > 0 && (f.respawnT -= h) <= 0 && this.phase === "play") {
         this.spawn(f);
         return;
       }
       if (f.deadT > RESPAWN) f.gone = true;
       if (f.gone) return;
-      if (f.grounded) {
-        const k = Math.max(0, 1 - 5 * dt);
-        f.vx *= k;
-        f.vz *= k;
+      ctx.carry = 0;
+      ctx.holding = false;
+      ctx.limp = true;
+      ctx.dead = true;
+      ctx.sinceThrow = 9;
+      f.ix = f.iz = 0;
+      f.knockout = Math.max(f.knockout, 1);
+      if (!f.heldBy) {
+        E.stepSpaz(f, ctx, h);
+        this.walls(f, false);
       }
-      this.moveBody(f, dt, RADIUS, true);
       if (f.y < KILL_Y) f.gone = true;
       return;
     }
-    f.invincible = Math.max(0, f.invincible - dt);
-    f.punchCd = Math.max(0, f.punchCd - dt);
-    f.jumpCd = Math.max(0, f.jumpCd - dt);
-    f.pickupCd = Math.max(0, f.pickupCd - dt);
-    f.holdT += dt;
-    if (f.tripleT > 0) f.tripleT = Math.max(0, f.tripleT - dt);
-    if (f.glovesT > 0) f.glovesT = Math.max(0, f.glovesT - dt);
-    if (f.bombKindT > 0 && (f.bombKindT -= dt) <= 0) {
+    f.invincible = Math.max(0, f.invincible - h);
+    f.punchCd = Math.max(0, f.punchCd - h);
+    f.jumpCd = Math.max(0, f.jumpCd - h);
+    f.pickupCd = Math.max(0, f.pickupCd - h);
+    f.holdT += h;
+    f.sinceThrow += h;
+    f.sinceDrop += h;
+    f.sinceImpulse += h;
+    f.sinceJolt += h;
+    f.sincePickupPress += h;
+    if (f.tripleT > 0) f.tripleT = Math.max(0, f.tripleT - h);
+    if (f.glovesT > 0) f.glovesT = Math.max(0, f.glovesT - h);
+    if (f.bombKindT > 0 && (f.bombKindT -= h) <= 0) {
       f.bombKindT = 0;
       f.bombKind = "normal";
     }
-    if (f.shield > 0) f.shield = Math.max(0, f.shield - SHIELD_DECAY * dt);
+    if (f.shield > 0) f.shield = Math.max(0, f.shield - SHIELD_DECAY * h);
     if (f.holdFighter && this.seats.get(f.holdFighter)?.heldBy !== f.id) f.holdFighter = null;
     if (f.holdBomb && !this.bombs.some((b) => b.id === f.holdBomb && b.heldBy === f.id)) f.holdBomb = 0;
 
+    // knock-out wears off (slower in the air); getting up, the ball slides for a moment
+    if (f.knockout > 0) {
+      f.knockout = Math.max(0, f.knockout - (f.grounded ? KNOCKOUT_PER_S : KNOCKOUT_PER_S / 2) * h);
+      if (f.knockout === 0) f.wake = WAKE_SLIDE;
+    }
+
     if (f.heldBy) {
-      const h = this.seats.get(f.heldBy);
-      f.heldT += dt;
-      if (!h || !h.alive || h.holdFighter !== f.id || f.heldT > HOLD_MAX) {
-        this.release(f);
-        f.vy = 2;
-      } else {
-        f.x = h.x;
-        f.y = h.y + HEIGHT + 0.05;
-        f.z = h.z;
-        f.vx = h.vx;
-        f.vy = 0;
-        f.vz = h.vz;
-        f.yaw = h.yaw + Math.PI / 2;
+      const o = this.seats.get(f.heldBy);
+      f.heldT += h;
+      if (!o || !o.alive || o.holdFighter !== f.id) this.release(f);
+      else {
+        // [E] its torso hangs 1.08 over the carrier's torso, 0.05 forward, sagging on the 180 spring
+        const sag = (E.M_SPAZ * GRAVITY) / E.HOLD_K;
+        f.x = o.x + Math.sin(o.yaw) * E.HOLD_FWD;
+        f.z = o.z + Math.cos(o.yaw) * E.HOLD_FWD;
+        f.y = o.y + E.ROLLER_R + o.sep + E.HOLD_UP - sag - E.TORSO_Y;
+        f.vx = o.vx;
+        f.vy = o.grounded ? 0 : o.vy;
+        f.vz = o.vz;
+        f.sep = E.SEP_REST;
         f.grounded = false;
-        f.knockout = Math.max(f.knockout, 6); // [T] it stays helpless while carried
+        f.balance = 0;
+        f.tumble = true;
+        this.punchStep(f, h);
         return;
       }
     }
-    if (f.knockout > 0) f.knockout = Math.max(0, f.knockout - (f.grounded ? KNOCKOUT_PER_S : KNOCKOUT_PER_S / 2) * dt);
 
-    // the punch lands 0.1 s after the press
-    if (f.punchT >= 0) {
-      const was = f.punchT;
-      f.punchT += dt;
-      if (was < PUNCH_HIT_AT && f.punchT >= PUNCH_HIT_AT && f.knockout <= 0) this.punchHit(f);
-      if (f.punchT >= PUNCH_TIME) f.punchT = -1;
+    ctx.carry = this.carried(f);
+    ctx.holding = ctx.carry > 0;
+    ctx.limp = f.knockout > 0;
+    ctx.dead = false;
+    ctx.sinceThrow = f.sinceThrow;
+    if (this.phase !== "play") {
+      f.ix = f.iz = 0;
+      f.run = 0;
     }
-
-    const control = f.knockout <= 0 && this.phase === "play";
-    if (control) {
-      const m = Math.hypot(f.ix, f.iz);
-      if (m > 0.08) {
-        // turn towards the stick
-        let d = Math.atan2(f.ix, f.iz) - f.yaw;
-        d = Math.atan2(Math.sin(d), Math.cos(d));
-        f.yaw += clamp(d, -14 * dt, 14 * dt);
+    const wasAir = !f.grounded;
+    const landed = E.stepSpaz(f, ctx, h);
+    this.walls(f, !ctx.limp);
+    if (landed > 0) {
+      if (wasAir && landed > 5) this.events.push({ type: "land", id: f.id, x: f.x, y: f.y, z: f.z, speed: landed });
+      // [A] the engine's head-jolt damage: a body knocked about lands hard (its head hits first)
+      if (f.tumble && landed > IMPACT_MIN && f.sinceImpulse >= 0.3 && f.sinceJolt > 0.5) {
+        const intensity = landed - IMPACT_MIN;
+        f.sinceJolt = 0;
+        this.hurt(f, Math.round(IMPACT_K * intensity), null, "impact", 0, 0, 0, f.x, f.y + 0.3, f.z, false);
+        f.knockout = Math.max(f.knockout, Math.min(40, IMPACT_K * intensity * 0.07));
       }
-      const run = RUN * (f.holdFighter ? 0.75 : 1);
-      const k = Math.min(1, (f.grounded ? 12 : 2.5) * dt);
-      f.vx += (f.ix * run - f.vx) * k;
-      f.vz += (f.iz * run - f.vz) * k;
-    } else if (f.grounded) {
-      const k = Math.max(0, 1 - 5 * dt);
-      f.vx *= k;
-      f.vz *= k;
+      if (f.knockout <= 0) f.tumble = false;
     }
-    this.moveBody(f, dt, RADIUS, true);
-    f.momentum += (Math.hypot(f.vx, f.vz) - f.momentum) * Math.min(1, dt / MOMENTUM_TIME);
+    if (!f.alive) return;
+    if (f.pickupT >= 0) {
+      f.pickupT += h;
+      if (f.pickupT >= PICKUP_DELAY) {
+        f.pickupT = -1;
+        if (f.knockout <= 0 && !this.holding(f) && this.phase === "play") this.pickup(f);
+      }
+    }
+    this.punchStep(f, h);
     if (f.y < KILL_Y) this.die(f, true);
   }
 
-  /** Gravity, the deck, the blocks. Returns the speed it hit the ground with (0 when it did not land). */
-  private moveBody(o: Body & { grounded?: boolean }, dt: number, r: number, fighter: boolean, bounce = 0): number {
-    const feet = fighter ? 0 : r; // a fighter's y is its feet, a ball's its middle
-    const wasY = o.y - feet;
-    o.vy -= GRAVITY * dt;
-    o.x += o.vx * dt;
-    o.y += o.vy * dt;
-    o.z += o.vz * dt;
-    let landed = 0;
-    let on = false;
-    const y = o.y - feet;
-    const top = groundAt(o.x, o.z);
-    if (top !== null && o.vy <= 0 && y <= top && wasY >= top - 0.3) {
-      if (o.vy < -1.5) landed = -o.vy;
-      o.y = top + feet;
-      o.vy = bounce && landed > 2.5 ? -o.vy * bounce : 0;
-      on = true;
-    }
-    // sides: the blocks, and the deck's rim from below
-    const below = o.y - feet;
+  /** The blocks' sides and the deck's rim from below; the ball is kicked off walls it touches ([E] wall kick). */
+  private walls(o: Fighter, kick: boolean) {
+    const r = RADIUS;
+    const k = kick ? (E.WALL_KICK * H) / E.M_SPAZ : 0;
     for (const b of ARENA.blocks) {
-      if (below >= b.h - 0.02) continue;
+      if (o.y >= b.h - 0.02) continue;
       const hw = b.w / 2 + r;
       const hd = b.d / 2 + r;
       const dx = o.x - b.x;
@@ -881,13 +1057,13 @@ export class Game {
       if (Math.abs(dx) >= hw || Math.abs(dz) >= hd) continue;
       if (hw - Math.abs(dx) < hd - Math.abs(dz)) {
         o.x = b.x + (dx < 0 ? -hw : hw);
-        o.vx = bounce ? -o.vx * bounce : 0;
+        o.vx = (dx < 0 ? Math.min(0, o.vx) : Math.max(0, o.vx)) + (dx < 0 ? -k : k);
       } else {
         o.z = b.z + (dz < 0 ? -hd : hd);
-        o.vz = bounce ? -o.vz * bounce : 0;
+        o.vz = (dz < 0 ? Math.min(0, o.vz) : Math.max(0, o.vz)) + (dz < 0 ? -k : k);
       }
     }
-    if (below < -0.3 && below > -1.6) {
+    if (o.y < -0.3 && o.y > -1.6) {
       const hw = ARENA.hx + r;
       const hd = ARENA.hz + r;
       if (Math.abs(o.x) < hw && Math.abs(o.z) < hd) {
@@ -900,51 +1076,86 @@ export class Game {
         }
       }
     }
-    if (fighter) {
-      const f = o as Fighter;
-      if (on && !f.grounded && landed > 5) this.events.push({ type: "land", id: f.id, x: f.x, y: f.y, z: f.z, speed: landed });
-      f.grounded = on;
-    }
-    return on ? Math.max(landed, 0.001) : 0;
   }
 
-  private punchHit(f: Fighter) {
-    const fx = Math.sin(f.yaw);
-    const fz = Math.cos(f.yaw);
-    const speed = Math.hypot(f.vx, f.vz);
-    const damage = Game.punchDamage(f.momentum, f.glovesT > 0);
-    let landed = false;
-    const inReach = (o: Body, oy: number, extra: number) => {
-      const dx = o.x - f.x;
-      const dz = o.z - f.z;
-      const d = Math.hypot(dx, dz);
-      return d < PUNCH_REACH + extra && Math.abs(oy - f.y) < 1.5 && dx * fx + dz * fz > 0.35 * d;
-    };
-    for (const o of this.seats.values()) {
-      if (o === f || !o.alive || o.gone || !o.inRound || o.heldBy === f.id || !inReach(o, o.y, 0)) continue;
-      const dv = damage * PUNCH_DV;
-      this.hurt(o, damage, f.id, "punch", fx * dv, dv * 0.3 + 0.8, fz * dv, o.x - fx * 0.3, o.y + 1.1, o.z - fz * 0.3);
-      landed = true;
+  /** A punch in progress: the fist's sphere hits each body once, from 80 ms until the punch ends ([E]). */
+  private punchStep(f: Fighter, h: number) {
+    if (f.punchT < 0) return;
+    f.punchT += h;
+    if (f.punchT >= PUNCH_TIME || f.knockout > 0) {
+      f.punchT = -1;
+      return;
     }
-    if (landed) {
-      // spaz.py: the first hit of a punch kicks the puncher back; [T] so a flurry hits softer than a run-up
-      f.momentum *= PUNCH_RECOIL;
-      f.vx *= 0.5;
-      f.vz *= 0.5;
+    if (f.punchT <= E.FIST_FROM) return;
+    const fist = E.fistAt(f.punchT);
+    const pdx = f.pdx;
+    const pdz = f.pdz;
+    const side = f.punchSide ? 1 : -1;
+    // the punch's frame: forward along the punch, side to its right
+    const rx = pdz * side;
+    const rz = -pdx * side;
+    const ty = f.y + E.ROLLER_R + f.sep;
+    const cx = f.x + pdx * fist.f + rx * fist.s;
+    const cy = ty + fist.u - 0.1; // [E] moved down 0.1: punching dudes on the ground
+    const cz = f.z + pdz * fist.f + rz * fist.s;
+    // the fist's velocity: the torso's plus the swing
+    const fvx = f.vx + pdx * fist.vf;
+    const fvy = (f.grounded ? 0 : f.vy) + fist.vu;
+    const fvz = f.vz + pdz * fist.vf;
+    const power = E.punchPower(f.punchT);
+    const gloves = f.glovesT > 0;
+    let first = f.punched.length === 0;
+    for (const o of this.seats.values()) {
+      if (o === f || !o.alive || o.gone || !o.inRound || f.punched.includes(o.id) || o.holdFighter === f.id) continue;
+      const oy = o.y + E.ROLLER_R + o.sep;
+      let touch = false;
+      for (const p of E.CORE_PARTS) {
+        const lying = (o.knockout > 0 || !o.alive) && o.grounded && !o.heldBy;
+        const px = o.x + (lying ? Math.sin(o.yaw) * p.fwd : 0);
+        const pz = o.z + (lying ? Math.cos(o.yaw) * p.fwd : 0);
+        const py = this.partY(o, p, oy);
+        const pr = p.head ? E.HEAD_R : p.m === E.M_PELVIS ? 0.12 : E.TORSO_R;
+        if (Math.hypot(px - cx, py - cy, pz - cz) < E.FIST_R + pr) touch = true;
+      }
+      if (!touch) continue;
+      // [S] no punches on fighters right after a pick-up press or a let-go
+      if (f.sincePickupPress - f.punchT <= PUNCH_GRAB_GAP && f.sincePickupPress >= f.punchT) continue;
+      if (f.sinceDrop <= PUNCH_DROP_GAP) continue;
+      f.punched.push(o.id);
+      const total = Game.punchTotal(f.pmLin, f.pmAng, power, gloves);
+      const [dvx, dvy, dvz] = E.pointImpulse(total, fvx, fvy, fvz, E.M_SPAZ + this.carried(o));
+      this.hurt(o, Math.round(DAMAGE_SCALE * 5 * total), f.id, "punch", dvx, dvy, dvz, cx, cy, cz);
+      if (first) this.kickBack(f, fvx, fvy, fvz);
+      first = false;
     }
     // bomb.py _handle_hit: a punch only knocks a bomb away; an armed impact bomb goes off
     for (const b of this.bombs) {
-      if (b.heldBy || b.stuck || !inReach(b, b.y - 0.5, b.kind === "tnt" ? 0.3 : 0)) continue;
-      const k = b.kind === "tnt" ? 0.5 : 1;
-      b.vx += fx * (5 + speed) * k;
-      b.vz += fz * (5 + speed) * k;
-      b.vy += 3.5 * k;
+      if (b.heldBy || b.stuck || f.punched.includes(b.id)) continue;
+      const r = b.kind === "tnt" ? TNT_R : BOMB_R;
+      if (Math.hypot(b.x - cx, b.y - cy, b.z - cz) >= E.FIST_R + r) continue;
+      f.punched.push(b.id);
+      const total = Game.punchTotal(f.pmLin, f.pmAng, power, gloves);
+      const [dvx, dvy, dvz] = E.pointImpulse(total, fvx, fvy, fvz, b.kind === "tnt" ? E.TNT_M : E.BOMB_M);
+      b.vx += dvx;
+      b.vy += dvy;
+      b.vz += dvz;
       b.rest = false;
-      if (b.kind === "impact" && b.free >= ARM_TIME) b.fuse = Math.min(b.fuse, CHAIN_MIN);
+      if (b.kind === "impact" && b.age >= ARM_TIME) b.fuse = Math.min(b.fuse, CHAIN_MIN + this.rng() * 0.1);
+      if (first) this.kickBack(f, fvx, fvy, fvz);
+      first = false;
     }
   }
 
-  /** Fighters push each other apart (capsule against capsule), and off the TNT crate. */
+  /** [S]/[E] the puncher's first hit pushes it back: −400 along the fist's way for one step. */
+  private kickBack(f: Fighter, dx: number, dy: number, dz: number) {
+    const l = Math.hypot(dx, dy, dz) || 1;
+    const k = (KICK_BACK * E.SRC_H) / (E.M_SPAZ + this.carried(f));
+    f.vx -= (dx / l) * k;
+    f.vz -= (dz / l) * k;
+    if (!f.grounded) f.vy -= (dy / l) * k;
+  }
+
+  /** Fighters push each other apart (ball against ball, when the balls are level), and off the TNT crate. */
   private separate(fs: Fighter[]) {
     const min = RADIUS * 2;
     for (let i = 0; i < fs.length; i++) {
@@ -952,7 +1163,7 @@ export class Game {
       if (!a.alive || a.heldBy || !a.inRound) continue;
       for (let j = i + 1; j < fs.length; j++) {
         const b = fs[j]!;
-        if (!b.alive || b.heldBy || !b.inRound || Math.abs(a.y - b.y) > HEIGHT) continue;
+        if (!b.alive || b.heldBy || !b.inRound || Math.abs(a.y - b.y) > 2 * RADIUS) continue;
         const dx = b.x - a.x;
         const dz = b.z - a.z;
         const d2 = dx * dx + dz * dz;
@@ -977,25 +1188,102 @@ export class Game {
     }
   }
 
-  private stepBombs(dt: number) {
+  /** Gravity, the deck, the blocks for a prop. Returns the speed it hit the ground with (0 when not on the ground). */
+  private moveProp(o: Body, h: number, r: number): number {
+    const wasY = o.y - r;
+    o.vy -= GRAVITY * h;
+    o.x += o.vx * h;
+    o.y += o.vy * h;
+    o.z += o.vz * h;
+    let landed = 0;
+    const y = o.y - r;
+    const top = groundAt(o.x, o.z);
+    if (top !== null && o.vy <= 0 && y <= top && wasY >= top - 0.3) {
+      landed = Math.max(-o.vy, 0.001);
+      o.y = top + r;
+      // [E] bounce 0: only the soft contact gives a little back
+      o.vy = landed > 1 ? landed * E.PROP_BOUNCE : 0;
+    }
+    const below = o.y - r;
+    for (const b of ARENA.blocks) {
+      if (below >= b.h - 0.02) continue;
+      const hw = b.w / 2 + r;
+      const hd = b.d / 2 + r;
+      const dx = o.x - b.x;
+      const dz = o.z - b.z;
+      if (Math.abs(dx) >= hw || Math.abs(dz) >= hd) continue;
+      if (hw - Math.abs(dx) < hd - Math.abs(dz)) {
+        o.x = b.x + (dx < 0 ? -hw : hw);
+        o.vx = -o.vx * E.PROP_BOUNCE;
+      } else {
+        o.z = b.z + (dz < 0 ? -hd : hd);
+        o.vz = -o.vz * E.PROP_BOUNCE;
+      }
+    }
+    if (below < -0.3 && below > -1.6) {
+      const hw = ARENA.hx + r;
+      const hd = ARENA.hz + r;
+      if (Math.abs(o.x) < hw && Math.abs(o.z) < hd) {
+        if (hw - Math.abs(o.x) < hd - Math.abs(o.z)) {
+          o.x = o.x < 0 ? -hw : hw;
+          o.vx = 0;
+        } else {
+          o.z = o.z < 0 ? -hd : hd;
+          o.vz = 0;
+        }
+      }
+    }
+    return landed;
+  }
+
+  /** A bomb on the deck: Coulomb friction at its contact point turns sliding into rolling; spin damps slowly ([E]). */
+  private roll(b: Bomb, landed: number, h: number) {
+    const R = BOMB_R;
+    const m = E.BOMB_M;
+    const I = 0.4 * m * R * R;
+    // the contact point's velocity (the ball's plus its spin's, at (0, −R, 0))
+    const cvx = b.vx + b.wz * R;
+    const cvz = b.vz - b.wx * R;
+    const cv = Math.hypot(cvx, cvz);
+    if (cv > 1e-6) {
+      // the impulse that makes it roll, capped by μ × the normal impulse (its weight this step, plus the landing)
+      const need = (cv * m) / 3.5;
+      const cap = E.MU_BOMB * m * landed;
+      const j = Math.min(need, cap);
+      const jx = (-cvx / cv) * j;
+      const jz = (-cvz / cv) * j;
+      b.vx += jx / m;
+      b.vz += jz / m;
+      b.wx += (-R * jz) / I;
+      b.wz += (R * jx) / I;
+    }
+  }
+
+  private stepBombs(h: number) {
+    const spinDamp = Math.exp((-E.PROP_SPIN_DAMP * E.BOMB_M * h) / (0.4 * E.BOMB_M * BOMB_R * BOMB_R));
     for (let i = this.bombs.length - 1; i >= 0; i--) {
       const b = this.bombs[i]!;
-      const r = b.kind === "tnt" ? TNT_R : BOMB_R;
-      if (this.phase === "play") b.fuse -= dt;
-      if (b.free >= 0) b.free += dt;
+      const tnt = b.kind === "tnt";
+      const r = tnt ? TNT_R : BOMB_R;
+      if (this.phase === "play") b.fuse -= h;
+      b.age += h;
+      if (b.free >= 0) b.free += h;
       let boom = b.fuse <= 0;
       if (b.heldBy) {
-        const h = this.seats.get(b.heldBy);
-        if (!h || !h.alive || h.holdBomb !== b.id) {
+        const o = this.seats.get(b.heldBy);
+        if (!o || !o.alive || o.holdBomb !== b.id) {
           b.heldBy = null;
           b.free = 0;
         } else {
-          b.x = h.x + Math.sin(h.yaw) * 0.12;
-          b.y = h.y + HEIGHT + 0.05 + r;
-          b.z = h.z + Math.cos(h.yaw) * 0.12;
-          b.vx = h.vx;
-          b.vy = 0;
-          b.vz = h.vz;
+          // [E] 1.08 over the torso, 0.05 forward, sagging on the 180 spring
+          const sag = ((tnt ? E.TNT_M : E.BOMB_M) * GRAVITY) / E.HOLD_K;
+          b.x = o.x + Math.sin(o.yaw) * E.HOLD_FWD;
+          b.y = o.y + E.ROLLER_R + o.sep + E.HOLD_UP - sag;
+          b.z = o.z + Math.cos(o.yaw) * E.HOLD_FWD;
+          b.vx = o.vx;
+          b.vy = o.grounded ? 0 : o.vy;
+          b.vz = o.vz;
+          b.wx = b.wz = 0;
         }
       } else if (b.stuck) {
         const s = b.stuck === "ground" ? null : this.seats.get(b.stuck);
@@ -1007,37 +1295,53 @@ export class Game {
           b.z = s.z - b.sx * n + b.sz * c;
         } else if (b.stuck !== "ground") b.stuck = null;
       } else if (!b.rest) {
-        const hit = this.moveBody(b, dt, r, false, b.kind === "tnt" ? 0.15 : 0.4);
-        let touched = hit > 0.5;
-        if (hit > 0) {
-          // rolling on the ground
-          const k = (touched ? 0.6 : 1) * Math.max(0, 1 - (b.kind === "tnt" ? 6 : 3.5) * dt);
+        b.wx *= spinDamp;
+        b.wz *= spinDamp;
+        const sp = Math.hypot(b.vx, b.vy, b.vz);
+        if (sp > E.PROP_MAX_SPEED) {
+          const k = E.PROP_MAX_SPEED / sp;
           b.vx *= k;
+          b.vy *= k;
           b.vz *= k;
-          if (Math.abs(b.vx) + Math.abs(b.vz) + Math.abs(b.vy) < 0.15 && b.kind !== "impact") b.rest = true;
+        }
+        const hit = this.moveProp(b, h, r);
+        if (hit > 0) {
+          if (tnt) {
+            // a crate slides: friction μ·g
+            const v = Math.hypot(b.vx, b.vz);
+            const k = v > 0 ? Math.max(0, v - E.MU_BOMB * hit) / v : 0;
+            b.vx *= k;
+            b.vz *= k;
+          } else this.roll(b, hit, h);
+          // [E] ODE puts a body to sleep when it barely moves
+          if (Math.hypot(b.vx, b.vz) + Math.abs(b.vy) < 0.1 && Math.hypot(b.wx, b.wz) < 0.1 && b.kind !== "impact") {
+            b.rest = true;
+            b.vx = b.vy = b.vz = b.wx = b.wz = 0;
+          }
         }
         // against fighters
         let who: Fighter | null = null;
-        if (b.kind !== "tnt" && b.free >= 0) {
+        if (!tnt && b.free >= 0) {
           for (const f of this.seats.values()) {
-            if (!f.alive || f.gone || !f.inRound || (f.id === b.owner && b.free < ARM_TIME)) continue;
+            if (!f.alive || f.gone || !f.inRound || (f.id === b.owner && b.free < STICK_OWNER && b.kind === "sticky")) continue;
             const dx = b.x - f.x;
             const dz = b.z - f.z;
             const d = Math.hypot(dx, dz);
             if (d >= RADIUS + r || b.y < f.y - r || b.y > f.y + HEIGHT + r) continue;
             who = f;
             const n = d || 1;
-            const vn = (b.vx * dx + b.vz * dz) / n;
+            const vn = (b.vx * dx + b.vz * dz) / n - (f.vx * dx + f.vz * dz) / n;
             b.x = f.x + (dx / n) * (RADIUS + r);
             b.z = f.z + (dz / n) * (RADIUS + r);
             if (vn < 0) {
-              b.vx -= (dx / n) * vn * 1.3;
-              b.vz -= (dz / n) * vn * 1.3;
+              b.vx -= (dx / n) * vn;
+              b.vz -= (dz / n) * vn;
             }
             break;
           }
         }
-        if (b.kind === "impact" && b.free >= ARM_TIME && (touched || (who && who.id !== b.owner))) boom = true; // bomb.py _handle_impact
+        // bomb.py _handle_impact: an impact bomb older than 200 ms goes off on any touch, but not against its owner
+        if (b.kind === "impact" && b.age >= ARM_TIME && b.free >= 0 && (hit > 0 || (who && who.id !== b.owner))) boom = true;
         if (b.kind === "sticky" && b.free >= 0 && (hit > 0 || who)) {
           // bomb.py: it sticks to what it touches (to its thrower only after 0.25 s)
           if (who) {
@@ -1048,25 +1352,25 @@ export class Game {
             const dz = b.z - who.z;
             b.sx = dx * c - dz * n;
             b.sz = dx * n + dz * c;
-            b.sy = clamp(b.y - who.y, 0.3, HEIGHT);
+            b.sy = clamp(b.y - who.y, 0.2, HEIGHT);
           } else b.stuck = "ground";
-          b.vx = b.vy = b.vz = 0;
+          b.vx = b.vy = b.vz = b.wx = b.wz = 0;
           this.events.push({ type: "stick", x: b.x, y: b.y, z: b.z });
         }
         if (b.y < KILL_Y) {
           this.bombs.splice(i, 1);
-          if (b.kind === "tnt") this.tntT = TNT_RESPAWN * (0.8 + this.rng() * 0.4);
+          if (tnt) this.tntT = TNT_RESPAWN * (0.8 + this.rng() * 0.4);
           continue;
         }
       }
       if (boom) {
         this.bombs.splice(i, 1);
         if (b.heldBy) {
-          const h = this.seats.get(b.heldBy);
-          if (h) h.holdBomb = 0;
+          const o = this.seats.get(b.heldBy);
+          if (o) o.holdBomb = 0;
         }
-        if (b.kind === "tnt") this.tntT = TNT_RESPAWN * (0.8 + this.rng() * 0.4);
-        this.explode(b.x, b.y, b.z, b.radius, b.kind, b.owner);
+        if (tnt) this.tntT = TNT_RESPAWN * (0.8 + this.rng() * 0.4);
+        this.explode(b.x, b.y - BLAST_DROP, b.z, b.radius, b.kind, b.owner);
         i = Math.min(i, this.bombs.length);
       }
     }
@@ -1076,12 +1380,15 @@ export class Game {
     for (let i = this.boxes.length - 1; i >= 0; i--) {
       const b = this.boxes[i]!;
       b.age += dt;
-      if (!b.rest && this.moveBody(b, dt, BOX_R, false, 0.25) > 0 && Math.abs(b.vy) < 0.5) b.rest = true;
+      if (!b.rest) {
+        for (let k = 0; k < SUBSTEPS; k++) if (this.moveProp(b, dt / SUBSTEPS, BOX_R) > 0 && Math.abs(b.vy) < 0.5) b.rest = true;
+        if (b.rest) b.vx = b.vz = 0;
+      }
       let taken = false;
       if (this.phase === "play") {
         for (const f of this.seats.values()) {
           if (!f.alive || f.gone || !f.inRound || f.heldBy) continue;
-          if (Math.hypot(f.x - b.x, f.z - b.z) < RADIUS + BOX_R + 0.1 && b.y > f.y - BOX_R && b.y < f.y + HEIGHT) {
+          if (Math.hypot(f.x - b.x, f.z - b.z) < RADIUS + BOX_R + 0.1 && b.y > f.y - BOX_R && b.y < f.y + HEIGHT + BOX_R) {
             this.give(f, b.kind);
             taken = true;
             break;

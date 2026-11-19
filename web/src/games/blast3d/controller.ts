@@ -19,12 +19,28 @@ const POWER_TEXT: Record<string, string> = {
 
 const mount: ControllerMount = (ctx) => {
   const ctl = ctx.ctl as Controller<B3dGame>;
+  // the buttons held down: the fighter runs while any is held (Ballistica's touch screens do the same)
+  const BIT: Record<string, number> = { bomb: 1, punch: 2, jump: 4, grab: 8 };
+  let held = 0;
+  let sx = 0;
+  let sy = 0;
+  const send = () => ctl.input({ x: sx, y: sy, b: held });
   const pad = gamepad(ctx.root, gameById("blast3d")!.controls!, {
     ctl,
     top: `<div class="b3d-ptop"><div class="b3d-who"><i></i><span></span><div class="b3d-plives"></div></div><div class="b3d-php"><b></b></div><p class="b3d-status"></p><button class="b3d-again" hidden>Play again</button></div>`,
-    onStick: ({ x, y }) => ctl.input({ x, y }),
+    onStick: ({ x, y }) => {
+      sx = x;
+      sy = y;
+      send();
+    },
     onPress: (id) => {
+      held |= BIT[id] ?? 0;
+      send();
       if (playing()) ctl.send({ type: id as "bomb" | "punch" | "jump" | "grab" });
+    },
+    onRelease: (id) => {
+      held &= ~(BIT[id] ?? 0);
+      send();
     },
   });
   pad.el.classList.add("b3d-pad");
@@ -94,7 +110,7 @@ const mount: ControllerMount = (ctx) => {
   return () => {
     offs.forEach((o) => o());
     pad.destroy();
-    ctl.input({ x: 0, y: 0 });
+    ctl.input({ x: 0, y: 0, b: 0 });
   };
 };
 

@@ -36,6 +36,8 @@ import {
 } from "./meshes.ts";
 import { Particles } from "./particles.ts";
 import { Body, settle, stepBodies } from "./ragdoll.ts";
+import { SCALE } from "./body.ts";
+import { SEP_EQ } from "./engine.ts";
 import { ARM_TIME, BOMB_R, FUSE, MAX_SEATS, POWERUP_FLASH, PUNCH_TIME, RUN, STEP, TNT_R, groundAt, type Fighter, type Game, type GameEvent } from "./rules.ts";
 
 THREE.ColorManagement.enabled = false;
@@ -144,6 +146,9 @@ export class View {
   private observer: ResizeObserver;
   private gpuBytes = 0;
   private fwd = new THREE.Vector3();
+  /** Ballistica's game camera (game_camera.cc), smoothed per millisecond as it does. */
+  private camFollow = true;
+  private cam = { tx: 0, ty: 0.3, tz: 0.3, vx: 0, vy: 0, vz: 0, fov: 22, pan: 0, panV: 0, ready: false };
 
   constructor(private readonly host: HTMLElement, o: ViewOpts) {
     this.res = o.res;
@@ -212,12 +217,14 @@ export class View {
     this.scene.add(this.fx.mesh);
     this.gpuBytes += MARKS * 32 + this.fx.cap * 64;
 
+    this.camFollow = !o.close;
     if (o.close) {
       this.camera.position.set(0, 6.5, 12.5);
       this.camera.lookAt(0, 0.9, 1.5);
     } else {
-      this.camera.position.set(0, 15, 17.4);
-      this.camera.lookAt(0, 0.3, 1.05);
+      this.camera.fov = 22;
+      this.camera.position.set(0, 16.3, 24.9);
+      this.camera.lookAt(0, 0.3, 0.3);
     }
     this.camera.updateMatrixWorld(true);
     this.camera.matrixAutoUpdate = false;
@@ -287,11 +294,12 @@ export class View {
     const limp = !f.alive || f.knockout > 0 || !!f.heldBy;
     const hs = Math.hypot(f.vx, f.vz);
     b.x = f.x;
-    b.y = f.y;
+    // the body rides the legs' spring: it dips on landing and stretches on a jump
+    b.y = f.y + (f.alive && !f.heldBy ? f.sep - SEP_EQ - f.pen : 0);
     b.z = f.z;
     b.yaw = f.yaw;
     b.speed = f.grounded && !limp ? Math.min(1, hs / RUN) : 0;
-    b.phase += hs * STEP * 2.1;
+    b.phase += hs * STEP * 2.1 * (1.25 / SCALE) * 0.75;
     b.punch = f.punchT >= 0 ? f.punchT / PUNCH_TIME : -1;
     b.punchSide = f.punchSide;
     b.carry = game.holding(f);
@@ -376,6 +384,7 @@ export class View {
   /** Fill this frame's part matrices, tints and instances from the game. `dt` is 0 while paused. */
   draw(game: Game, dt: number) {
     this.time += dt;
+    if (this.camFollow) this.aim(game, dt);
     this.frameNo++;
     const t = this.time;
     const md = this.markData;
@@ -436,11 +445,11 @@ export class View {
       if (f.alive) {
         const top = groundAt(pv.x, pv.z);
         if (top !== null && pv.y > top - 0.3) {
-          mark(pv.x, top, pv.z, -1.3, tint, 0.9);
-          if (f.shield > 0) mark(pv.x, top, pv.z, -(1.8 + 0.08 * Math.sin(t * 7)), rgb(POWER_COLORS.shield), 0.6 + 0.4 * Math.min(1, f.shield / 200));
+          mark(pv.x, top, pv.z, -0.95, tint, 0.9);
+          if (f.shield > 0) mark(pv.x, top, pv.z, -(1.3 + 0.06 * Math.sin(t * 7)), rgb(POWER_COLORS.shield), 0.6 + 0.4 * Math.min(1, f.shield / 200));
         }
       }
-      shadow(pv.x, f.y, pv.z, 1.25, 0.34);
+      shadow(pv.x, f.y, pv.z, 0.9, 0.34);
     }
     // nearest first
     const order = this.depth;
@@ -461,7 +470,7 @@ export class View {
         if (used.tnt >= TNT_SLOTS[1]) continue;
         const o = (TNT_SLOTS[0] + used.tnt++) * 16;
         const blink = lit && Math.floor(t * 20) % 2 === 0;
-        putYaw(xm, o, b.x, b.y, b.z, 0, swell, blink ? 1 : 0.24, blink ? 0.9 : 0.1, blink ? 0.5 : 0.07);
+        putYaw(xm, o, b.x, b.y, b.z, 0, swell * (TNT_R / 0.45), blink ? 1 : 0.24, blink ? 0.9 : 0.1, blink ? 0.5 : 0.07);
         if (!b.heldBy) shadow(b.x, b.y - TNT_R, b.z, 1.5, 0.32);
         continue;
       }
@@ -510,6 +519,65 @@ export class View {
       this.markBuf.needsUpdate = true;
     }
     this.fx.update(t);
+  }
+
+  /**
+   * The follow camera of Ballistica's GameCamera (game_camera.cc:225–760), cut down: it sits at (pan, 20.5, 22) in The
+   * Pad's frame (here 16.3 over the deck, 24.9 in front of its middle), pans after the fighters, aims at the middle of
+   * a 5 m sphere round each one's head (clamped to The Pad's area-of-interest box) and zooms to fit them all; the aim
+   * is a damped spring and the zoom eases out fast and in slowly, per millisecond, with the source's constants.
+   */
+  private aim(game: Game, dt: number) {
+    const c = this.cam;
+    const R = 5;
+    // the_pad.py area_of_interest_bounds, moved to our origin
+    const bx = [-8.36, 8.28];
+    const bz = [-8.91, 9.59];
+    const cy = 0.3;
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, n = 0;
+    for (const f of game.seats.values()) {
+      if (!f.inRound || !f.alive || f.gone) continue;
+      const x = Math.min(bx[1]! - R, Math.max(bx[0]! + R, f.x));
+      const z = Math.min(bz[1]! - R, Math.max(bz[0]! + R, f.z));
+      x0 = Math.min(x0, x - R); x1 = Math.max(x1, x + R);
+      z0 = Math.min(z0, z - R); z1 = Math.max(z1, z + R);
+      n++;
+    }
+    if (!n) { x0 = -5; x1 = 5; z0 = -4.7; z1 = 5.3; }
+    const tx = (x0 + x1) / 2, tz = (z0 + z1) / 2;
+    const px = c.pan, py = 16.3, pz = 24.9;
+    // the zoom: the angle the box's corners span, both ways, from the camera
+    const dx = tx - px, dy = cy - py, dz = tz - pz;
+    const dist = Math.hypot(dx, dy, dz);
+    const pitch = Math.atan2(-dy, Math.hypot(dx, dz));
+    const fovX = 2 * Math.atan(((x1 - x0) / 2) / dist);
+    // depth seen from above at this pitch, plus a body's height
+    const fovY = 2 * Math.atan((((z1 - z0) / 2) * Math.sin(pitch) + 0.8) / dist);
+    const aspect = this.camera.aspect;
+    let want = Math.max(fovY, 2 * Math.atan(Math.tan(fovX / 2) / aspect)) * (180 / Math.PI);
+    want = Math.min(40, Math.max(12, want));
+    if (!c.ready) {
+      Object.assign(c, { tx, tz, fov: want, pan: Math.min(9, Math.max(-9, tx)), ready: true });
+    }
+    const ms = Math.min(100, Math.round(dt * 1000));
+    for (let i = 0; i < ms; i++) {
+      c.vx += (tx - c.tx) * 0.000012; c.vz += (tz - c.tz) * 0.000012;
+      c.vx *= 1 - 0.006; c.vz *= 1 - 0.006;
+      c.tx += c.vx; c.tz += c.vz;
+      c.panV += 0.00004 * (Math.min(9, Math.max(-9, tx)) - c.pan);
+      c.panV *= 0.97;
+      c.pan += c.panV;
+      const d = want - c.fov;
+      c.fov += d * (d > 0 ? 0.0025 : 0.001);
+    }
+    this.camera.position.set(c.pan, 16.3, 24.9);
+    this.camera.lookAt(c.tx, cy, c.tz);
+    if (Math.abs(this.camera.fov - c.fov) > 1e-3) {
+      this.camera.fov = c.fov;
+      this.camera.updateProjectionMatrix();
+    }
+    this.camera.updateMatrixWorld(true);
+    this.camera.getWorldDirection(this.fwd);
   }
 
   render() {

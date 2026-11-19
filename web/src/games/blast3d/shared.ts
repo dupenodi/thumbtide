@@ -30,8 +30,11 @@ export interface B3dOwn {
 
 export interface B3dGame {
   toHost: { type: "again" } | { type: "bomb" } | { type: "punch" } | { type: "jump" } | { type: "grab" };
-  /** The stick, -1..1 each way (y down the phone = towards the camera). */
-  input: { x: number; y: number };
+  /**
+   * The stick, -1..1 each way (y down the phone = towards the camera), and the buttons held down (a bit mask:
+   * bomb 1, punch 2, jump 4, grab 8): a fighter runs while any is held, as on Ballistica's touch screens.
+   */
+  input: { x: number; y: number; b?: number };
   toController: { type: "go" } | { type: "out" } | { type: "hit" } | { type: "pick" };
   shared: B3dShared | null;
   own: B3dOwn;

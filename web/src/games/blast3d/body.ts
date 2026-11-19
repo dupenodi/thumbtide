@@ -10,8 +10,14 @@ export interface V3 {
 }
 export const v3 = (x = 0, y = 0, z = 0): V3 => ({ x, y, z });
 
-/** How much bigger the fighters are drawn than the rig's own measures (chunky, readable from a sofa). */
-export const SCALE = 1.25;
+/**
+ * How the rig's own measures are drawn. Ballistica's character stands about 1.2 m from its feet to the top of its head
+ * (characterrig.py: the ball's bottom to the head's top, 0.3 + 0.18 + 0.45 + 0.23), on a deck the size of The Pad, so
+ * ours are drawn about that size (1.26 m) with a bigger head (HEAD_GROW), chunky and readable from a sofa.
+ */
+export const SCALE = 0.73;
+/** The head drawn this much bigger than the rig's (Ballistica's head is a 0.23 ball on a 1.2 m body). */
+export const HEAD_GROW = 1.35;
 
 /** Joints (also the ragdoll's particles). Local frame: +y up, +z forward, feet on y = 0. */
 export const J = { head: 0, neck: 1, pelvis: 2, lSh: 3, rSh: 4, lEl: 5, rEl: 6, lHa: 7, rHa: 8, lHip: 9, rHip: 10, lKn: 11, rKn: 12, lFt: 13, rFt: 14 } as const;
@@ -36,6 +42,8 @@ export const REST: V3[] = [
 
 export type Shape = "sphere" | "box" | "capsule";
 export interface PartDef {
+  /** Drawn this much bigger about its place (the head). */
+  grow?: number;
   /** Geometry kind: mirrored parts share one (one InstancedMesh per kind). */
   kind: string;
   shape: Shape;
@@ -55,7 +63,7 @@ const seg = (kind: string, r: number, a: number, b: number): PartDef => ({ kind,
 
 /** BombSquad's part count: 15 rigid parts. */
 export const PARTS15: PartDef[] = [
-  { kind: "head", shape: "sphere", size: [0.2], a: J.neck, b: J.head, at: J.head },
+  { kind: "head", shape: "sphere", size: [0.2], a: J.neck, b: J.head, at: J.head, grow: HEAD_GROW },
   { kind: "torso", shape: "box", size: [0.42, dist(J.pelvis, J.neck), 0.26], a: J.pelvis, b: J.neck, at: -1 },
   { kind: "pelvis", shape: "box", size: [0.34, 0.2, 0.24], a: J.pelvis, b: J.neck, at: J.pelvis },
   seg("upperArm", 0.075, J.lSh, J.lEl),
@@ -151,8 +159,8 @@ export function pose(c: Poser, out: V3[]) {
     p.y *= SCALE;
     p.z *= SCALE;
     if (tip > 0) {
-      const y = p.y * ct + p.z * st + 0.17 * c.down;
-      p.z = -p.y * st + p.z * ct + 0.85 * c.down;
+      const y = p.y * ct + p.z * st + 0.136 * SCALE * c.down;
+      p.z = -p.y * st + p.z * ct + 0.68 * SCALE * c.down;
       p.y = y;
     }
     const x = p.x * cs + p.z * sn;
@@ -253,15 +261,16 @@ export function partMatrices(joints: V3[], yaw: number, parts: PartDef[], out: F
       pz = (a.z + b.z) / 2;
     }
     const o = base + i * 16;
-    out[o] = xx * SCALE;
-    out[o + 1] = xy * SCALE;
-    out[o + 2] = xz * SCALE;
-    out[o + 4] = yx * SCALE;
-    out[o + 5] = yy * SCALE;
-    out[o + 6] = yz * SCALE;
-    out[o + 8] = zx * SCALE;
-    out[o + 9] = zy * SCALE;
-    out[o + 10] = zz * SCALE;
+    const k = SCALE * (d.grow ?? 1);
+    out[o] = xx * k;
+    out[o + 1] = xy * k;
+    out[o + 2] = xz * k;
+    out[o + 4] = yx * k;
+    out[o + 5] = yy * k;
+    out[o + 6] = yz * k;
+    out[o + 8] = zx * k;
+    out[o + 9] = zy * k;
+    out[o + 10] = zz * k;
     out[o + 12] = px;
     out[o + 13] = py;
     out[o + 14] = pz;

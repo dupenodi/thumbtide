@@ -118,7 +118,10 @@ const mount: HostMount = (ctx) => {
       sentOwn.delete(p.id);
       publish();
     }),
-    host.on("drop", (p) => game.setInput(p.id, 0, 0)),
+    host.on("drop", (p) => {
+      game.setInput(p.id, 0, 0);
+      game.setButtons(p.id, 0);
+    }),
     host.on("leave", (p) => {
       game.removeSeat(p.id);
       sentOwn.delete(p.id);
@@ -129,7 +132,10 @@ const mount: HostMount = (ctx) => {
       publish();
     }),
     host.on("input", (p, d) => {
-      if (d && typeof d === "object") game.setInput(p.id, Number(d.x), Number(d.y));
+      if (d && typeof d === "object") {
+        game.setInput(p.id, Number(d.x), Number(d.y));
+        game.setButtons(p.id, Number(d.b) || 0);
+      }
     }),
     host.on("message", (p, d) => {
       if (isSys(d) || !d || typeof d !== "object") return;

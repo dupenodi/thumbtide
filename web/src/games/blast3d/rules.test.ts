@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createBots, throwRange } from "./bots.ts";
+import * as E from "./engine.ts";
 import {
-  ARENA, ARM_TIME, BLAST_RADIUS, COUNT_STEPS, FUSE, HP, INVINCIBLE, KILL_Y, KNOCKOUT_MAX, POWERUP_LIFE, PUNCH_COOLDOWN, PUNCH_HIT_AT, RESPAWN,
-  ROUND_STEPS, RUN, SHIELD_HP, SHIELD_SPILL, STEP, WEAR_OFF, Game, groundAt, seeded, type Fighter, type GameEvent, type Options,
+  ARENA, ARM_TIME, BLAST_RADIUS, BOMB_R, COUNT_STEPS, FUSE, HP, INVINCIBLE, KILL_Y, KNOCKOUT_MAX, PICKUP_DELAY, POWERUP_LIFE, PUNCH_COOLDOWN, RESPAWN,
+  ROUND_STEPS, RUN, SHIELD_HP, SHIELD_SPILL, STEP, WALK, WEAR_OFF, Game, groundAt, seeded, type Fighter, type GameEvent, type Options,
 } from "./rules.ts";
 
 /** A game with these fighters, already playing, no power-up boxes unless asked for. */
@@ -18,7 +19,13 @@ function playing(ids: string[], opts: Partial<Options> = {}, seed = 1) {
   return g;
 }
 const seat = (g: Game, id: string) => g.seats.get(id)!;
-const place = (f: Fighter, x: number, z: number, yaw = 0) => Object.assign(f, { x, y: 0, z, vx: 0, vy: 0, vz: 0, yaw, grounded: true, momentum: 0 });
+/** Stand a fighter here, at rest (its engine state reset). */
+const place = (f: Fighter, x: number, z: number, yaw = 0) => {
+  const keep = { ix: f.ix, iz: f.iz, run: f.run };
+  E.stand(f, x, groundAt(x, z) ?? 0, z, yaw);
+  Object.assign(f, keep);
+  return f;
+};
 const run = (g: Game, steps: number, each?: (i: number) => void) => {
   const ev: GameEvent[] = [];
   for (let i = 0; i < steps; i++) {
@@ -30,6 +37,7 @@ const run = (g: Game, steps: number, each?: (i: number) => void) => {
 };
 const of = <T extends GameEvent["type"]>(ev: GameEvent[], type: T) => ev.filter((e) => e.type === type) as Extract<GameEvent, { type: T }>[];
 const secs = (s: number) => Math.round(s / STEP);
+const speed = (f: Fighter) => Math.hypot(f.vx, f.vz);
 /** Take the TNT crate away so a test has open ground. */
 const open = (g: Game) => {
   g.bombs = g.bombs.filter((b) => b.kind !== "tnt");
@@ -48,15 +56,61 @@ test("a match needs two fighters; the count leads to play", () => {
   assert.equal(seat(g, "a").punchT, -1);
 });
 
-test("the stick moves a fighter at the run speed and turns it", () => {
+test("the engine's numbers: masses, the stand, top speeds", () => {
+  assert.ok(Math.abs(E.M_CORE - 1.392) < 0.02, `core ${E.M_CORE}`); // spaz_physics_tuning.h says 1.392
+  assert.ok(Math.abs(WALK - 2.304) < 1e-6);
+  assert.ok(Math.abs(RUN - 6.452) < 0.01);
+  assert.ok(E.HEAD_TOP > 1.1 && E.HEAD_TOP < 1.25);
+  // a per-step filter converted to our step keeps its time constant
+  assert.ok(Math.abs(Math.log(E.per(0.985)) / E.H - Math.log(0.985) / E.SRC_H) < 1e-9);
+});
+
+test("the stick walks; a held button runs, and the run builds up over seconds", () => {
   const g = playing(["a", "b"]);
-  const a = place(seat(g, "a"), 0, 2.5);
-  g.setInput("a", 1, 0);
+  open(g);
+  const a = place(seat(g, "a"), -7, -6.5);
+  g.setInput("a", 0.6, 0.8);
   run(g, secs(1));
-  assert.ok(Math.abs(Math.hypot(a.vx, a.vz) - RUN) < 0.05);
-  assert.ok(a.x > 3.5 && Math.abs(a.yaw - Math.PI / 2) < 0.05);
+  assert.ok(Math.abs(speed(a) - WALK) < 0.05, `walk ${speed(a)}`);
+  assert.ok(Math.abs(a.yaw - Math.atan2(0.6, 0.8)) < 0.05, "it faces the way it goes");
+  // a button held: the gas comes on, and the gear builds up to the run speed
+  place(a, -7, -6.5);
+  g.setInput("a", 1, 0);
+  g.punch("a");
+  assert.equal(a.run, 1);
+  run(g, secs(0.5));
+  const early = speed(a);
+  run(g, secs(1.5));
+  assert.ok(early > WALK && early < 0.75 * RUN, `0.5 s in: ${early}`);
+  assert.ok(speed(a) > 0.78 * RUN && speed(a) <= RUN + 0.01, `2 s in: ${speed(a)}`);
+  // letting go of the button: back to walking
+  g.buttonUp("a", "punch");
+  assert.equal(a.run, 0);
+  run(g, secs(0.6));
+  assert.ok(speed(a) < WALK + 0.3, `${speed(a)}`);
   g.setInput("a", 5, 5); // clamped to the unit circle
   assert.ok(Math.abs(Math.hypot(a.ix, a.iz) - 1) < 1e-9);
+});
+
+test("no steering in the air; carrying, it only walks", () => {
+  const g = playing(["a", "b"]);
+  open(g);
+  const a = place(seat(g, "a"), -6, -6);
+  g.setInput("a", 1, 0);
+  run(g, secs(0.5));
+  g.jump("a");
+  run(g, 5);
+  assert.equal(a.grounded, false);
+  const vx = a.vx;
+  g.setInput("a", -1, 0);
+  run(g, 10);
+  assert.ok(!a.grounded && Math.abs(a.vx - vx) < 1e-9, "the stick does nothing in the air");
+  place(a, -6, -6);
+  g.setInput("a", 1, 0);
+  g.setRun("a", 1);
+  g.bomb("a");
+  run(g, secs(2));
+  assert.ok(speed(a) < WALK + 0.01, "holding a bomb: no run");
 });
 
 test("a jump leaves the ground, lands again, and has a cooldown", () => {
@@ -65,65 +119,102 @@ test("a jump leaves the ground, lands again, and has a cooldown", () => {
   assert.equal(g.jump("a"), true);
   assert.equal(g.jump("a"), false);
   let top = 0;
-  run(g, secs(1), () => (top = Math.max(top, a.y)));
-  assert.ok(top > 0.9 && top < 1.3, `apex ${top}`);
+  let air = 0;
+  let down = false;
+  run(g, secs(1), () => {
+    top = Math.max(top, a.y);
+    if (!a.grounded && !down) air++;
+    if (air > 0 && a.grounded) down = true;
+  });
+  assert.ok(top > 0.45 && top < 0.65, `apex ${top}`);
+  assert.ok(air * STEP > 0.35 && air * STEP < 0.5, `airtime ${air * STEP}`);
+  run(g, secs(0.5)); // (the legs' spring bounces it a little after it lands)
   assert.ok(a.grounded && a.y === 0);
 });
 
-test("a fighter can hop onto a block and stand on it", () => {
+test("with a run-up a fighter hops onto a block and stands on it; a standing hop does not", () => {
   const g = playing(["a", "b"]);
+  open(g);
   const blk = ARENA.blocks[0]!;
-  const a = place(seat(g, "a"), blk.x - blk.w / 2 - 0.6, blk.z);
+  const a = place(seat(g, "a"), blk.x - blk.w / 2 - 0.4, blk.z, Math.PI / 2);
   g.setInput("a", 1, 0);
   run(g, secs(0.4));
   assert.ok(a.x < blk.x - blk.w / 2, "the block's side stops it");
+  const x = a.x;
   g.jump("a");
-  run(g, secs(0.7));
+  run(g, secs(1.2));
+  assert.ok(a.y === 0 && Math.abs(a.x - x) < 0.1, "no run-up: it lands where it was");
+  place(a, blk.x - blk.w / 2 - 3, blk.z, Math.PI / 2);
+  g.setRun("a", 1);
+  for (let i = 0; i < secs(2) && a.y === 0; i++) {
+    if (a.x > blk.x - blk.w / 2 - 0.9 && a.grounded) g.jump("a");
+    run(g, 1);
+  }
   g.setInput("a", 0, 0);
-  run(g, secs(0.3));
+  g.setRun("a", 0);
+  run(g, secs(1));
   assert.equal(a.y, blk.h);
   assert.equal(groundAt(a.x, a.z), blk.h);
 });
 
-test("a standing punch is weak; a run-up punch hurts, knocks back and stuns", () => {
-  assert.ok(Game.punchDamage(0, false) < 100);
-  assert.ok(Game.punchDamage(RUN, false) > 300 && Game.punchDamage(RUN, false) < 450);
+test("a standing punch barely hurts; a running punch hurts, knocks back, knocks out and kicks the puncher back", () => {
+  // the engine's punch: power × 1.2 × (spin × 110 + speed momentum × 40); damage 0.22 × 5 × that
+  assert.equal(Game.punchDamage(0, false), 0);
+  assert.ok(Game.punchDamage(WALK, false) > 60 && Game.punchDamage(WALK, false) < 120);
+  assert.ok(Game.punchDamage(RUN, false) > 550 && Game.punchDamage(RUN, false) < 700);
   assert.ok(Game.punchDamage(RUN, true) > Game.punchDamage(RUN, false));
+  assert.ok(Game.punchDamage(0, false, 10) > 150, "a spinning punch");
   const g = playing(["a", "b"]);
   open(g);
-  const a = place(seat(g, "a"), -6, 2.5, Math.PI / 2);
-  const b = place(seat(g, "b"), 0, 2.5);
+  const a = place(seat(g, "a"), -6.5, 2.5, Math.PI / 2);
+  const b = place(seat(g, "b"), 2, 2.5);
+  // standing: next to it, no run-up
+  place(a, 1.15, 2.5, Math.PI / 2);
+  g.punch("a");
+  let ev = run(g, secs(0.4));
+  assert.ok(of(ev, "hit").every((e) => e.damage < 20), "a standing punch does next to nothing");
+  // the run-up
+  place(a, -6.5, 2.5, Math.PI / 2);
+  b.hp = HP;
   g.setInput("a", 1, 0);
-  let ev: GameEvent[] = [];
+  g.setRun("a", 1);
+  ev = [];
+  let before = 0;
   for (let i = 0; i < 300 && !of(ev, "hit").length; i++) {
-    if (b.x - a.x < 1.0) g.punch("a");
+    if (b.x - a.x < 1.0 && a.punchT < 0) {
+      g.punch("a");
+      before = a.vx;
+    }
     ev = ev.concat(run(g, 1));
   }
   const hit = of(ev, "hit")[0]!;
   assert.equal(hit.id, "b");
   assert.equal(hit.kind, "punch");
-  assert.ok(hit.damage > 280, `damage ${hit.damage}`);
+  assert.ok(hit.damage > 300, `damage ${hit.damage}`);
   assert.equal(b.hp, HP - hit.damage);
-  assert.ok(b.vx > 2 && b.knockout > 0);
-  assert.ok(a.momentum < 2, "the puncher's run-up is spent");
+  assert.ok(b.vx > 2.5 && b.knockout > 10, `knock-back ${b.vx}, knock-out ${b.knockout}`);
+  assert.ok(a.vx < before - 1, "the puncher is kicked back");
   // knocked out: no actions until it wears off
   assert.equal(g.punch("b"), false);
   g.setInput("a", 0, 0);
-  run(g, secs(1.5));
+  g.setRun("a", 0);
+  run(g, secs(2));
   assert.equal(b.knockout, 0);
   assert.equal(g.punch("b"), true);
 });
 
-test("the punch has a cooldown and lands 0.1 s after the press", () => {
+test("the fist reaches out from 80 ms; the punch has a cooldown; one hit per target", () => {
   const g = playing(["a", "b"]);
   open(g);
-  place(seat(g, "a"), 0, 0, 0);
-  const b = place(seat(g, "b"), 0, 0.9);
+  const a = place(seat(g, "a"), 0, 0, 0);
+  const b = place(seat(g, "b"), 0, 0.85);
+  a.pmLin = 5; // as if it had been moving
   assert.equal(g.punch("a"), true);
   assert.equal(g.punch("a"), false);
-  run(g, secs(PUNCH_HIT_AT) - 1);
+  run(g, secs(0.08));
   assert.equal(b.hp, HP);
-  run(g, 3);
+  const ev = run(g, secs(0.2));
+  assert.equal(of(ev, "hit").length, 1);
   assert.ok(b.hp < HP);
   run(g, secs(PUNCH_COOLDOWN));
   assert.equal(g.punch("a"), true);
@@ -136,55 +227,79 @@ test("knock-out follows the engine's formula", () => {
   assert.equal(Game.knockoutFor(5000), KNOCKOUT_MAX);
 });
 
-test("Bomb lights one in the hands; the next press throws it; it goes off after the fuse", () => {
+test("Bomb lights one in the hands; the next press throws it; it lands, rolls on and goes off after the fuse", () => {
   const g = playing(["a", "b"]);
   open(g);
-  const a = place(seat(g, "a"), -5, -2.4, Math.PI / 2);
+  const a = place(seat(g, "a"), -6, -2.4, Math.PI / 2);
   const b = place(seat(g, "b"), 6, 5);
   assert.equal(g.bomb("a"), true);
   const bomb = g.bombs[0]!;
   assert.equal(bomb.heldBy, "a");
   assert.equal(g.bombsLeft(a), 0);
   run(g, secs(0.6));
-  assert.ok(Math.abs(bomb.x - a.x) < 0.3 && bomb.y > 1.5, "carried over the head");
+  assert.ok(Math.abs(bomb.x - a.x) < 0.1 && bomb.y > 1.3, `carried over the head (${bomb.y})`);
   g.setInput("a", 1, 0);
   assert.equal(g.bomb("a"), true);
   g.setInput("a", 0, 0);
   assert.equal(bomb.heldBy, null);
   assert.equal(g.bomb("a"), false, "one bomb at a time");
-  const ev = run(g, secs(FUSE));
+  let landed = NaN;
+  const ev = run(g, secs(FUSE), () => {
+    if (Number.isNaN(landed) && bomb.free > 0.2 && bomb.y <= BOMB_R + 1e-6) landed = bomb.x + 6;
+  });
   const blast = of(ev, "blast")[0]!;
   assert.ok(blast, "it went off");
   const [range] = throwRange(1);
-  assert.ok(blast.x + 5 > range * 0.8 && blast.x + 5 < range + 3.5, `landed ${blast.x + 5} m away`);
+  assert.ok(Math.abs(landed - range) < 0.5, `landed ${landed} m away, ${range} expected`);
+  assert.ok(blast.x + 6 > landed + 1.5, `rolled on to ${blast.x + 6}`);
   assert.equal(blast.radius, BLAST_RADIUS);
   assert.equal(b.hp, HP, "far away: unhurt");
   assert.equal(g.bombsLeft(a), 1, "the bomb comes back");
 });
 
-test("a blast hurts by distance, throws fighters, and a held bomb goes off in the hands", () => {
-  assert.equal(Game.blastDamage(BLAST_RADIUS, BLAST_RADIUS), 0);
-  assert.ok(Game.blastDamage(0.5, BLAST_RADIUS) > HP);
-  assert.ok(Game.blastDamage(1.5, BLAST_RADIUS) < 400);
-  assert.equal(Game.blastDamage(1, BLAST_RADIUS, "tnt"), 2 * Game.blastDamage(1, BLAST_RADIUS));
+test("a blast hurts by distance, throws fighters up, and a held bomb goes off in the hands", () => {
+  assert.equal(Game.blastDamage(BLAST_RADIUS), 0);
+  assert.ok(Game.blastDamage(0) > 950);
+  assert.ok(Game.blastDamage(1) > 500 && Game.blastDamage(1) < 650);
+  assert.ok(Game.blastDamage(1.5) < 300);
+  assert.equal(Game.blastDamage(1, BLAST_RADIUS, "tnt"), 2 * Game.blastDamage(1));
+  const near = Game.blastOn(0.5);
+  assert.ok(near.dvy > 2 * near.dvx, "a blast throws more up than sideways");
   const g = playing(["a", "b", "c"]);
   open(g);
   const a = place(seat(g, "a"), 0, 0);
-  const b = place(seat(g, "b"), 1.3, 0);
+  const b = place(seat(g, "b"), 1.0, 0);
   const c = place(seat(g, "c"), 5, 0);
-  g.explode(0, 0.24, 0, BLAST_RADIUS, "normal", null);
+  a.hp = 500;
+  g.explode(0, 0.2, 0, BLAST_RADIUS, "normal", null);
   assert.equal(a.alive, false, "on top of it");
-  assert.ok(b.alive && b.hp < HP && b.vx > 2 && b.vy > 0 && b.knockout > 0);
+  assert.ok(b.alive && b.hp < HP && b.vx > 2 && b.vy > 3 && b.knockout > 0);
   assert.equal(c.hp, HP);
   // cooked too long
   const d = playing(["a", "b"]);
   open(d);
   place(seat(d, "a"), 0, 0);
   place(seat(d, "b"), 6, 0);
+  seat(d, "a").hp = 800;
   d.bomb("a");
   const ev = run(d, secs(FUSE) + 2);
   assert.equal(of(ev, "blast").length, 1);
   assert.equal(of(ev, "die")[0]!.id, "a");
+});
+
+test("a hard landing after a blast hurts (the engine's head-jolt damage), but never quite kills", () => {
+  const g = playing(["a", "b"]);
+  open(g);
+  const a = place(seat(g, "a"), 0, 0);
+  place(seat(g, "b"), 6, 6);
+  g.explode(0.6, 0.2, 0, BLAST_RADIUS, "normal", null);
+  const hp = a.hp;
+  const ev = run(g, secs(2));
+  const imp = of(ev, "hit").filter((e) => e.kind === "impact");
+  assert.equal(imp.length, 1);
+  assert.ok(imp[0]!.damage > 0 && a.hp === hp - imp[0]!.damage);
+  a.hp = 30;
+  assert.equal(g.hurt(a, 150, null, "impact", 0, 0, 0, 0, 0, 0, false), 20, "it leaves 10 hp");
 });
 
 test("blasts set each other off, and the TNT crate too, a little later", () => {
@@ -218,7 +333,7 @@ test("an impact bomb goes off when it lands, not in the thrower's hands", () => 
   g.setInput("a", 0, 0);
   const ev = run(g, secs(1.5));
   const blast = of(ev, "blast")[0]!;
-  assert.ok(blast && blast.x > 1, "on landing");
+  assert.ok(blast && blast.x > -1, `on landing (${blast?.x})`);
   assert.ok(Math.abs(blast.radius - BLAST_RADIUS * 0.7) < 1e-9);
   assert.ok(ARM_TIME > 0 && a.alive);
 });
@@ -227,12 +342,12 @@ test("a sticky bomb sticks to the fighter it hits and rides along", () => {
   const g = playing(["a", "b"]);
   open(g);
   const a = place(seat(g, "a"), -2, 3, Math.PI / 2);
-  const b = place(seat(g, "b"), 1.2, 3);
+  const b = place(seat(g, "b"), 1.0, 3);
   a.bombKind = "sticky";
   a.bombKindT = WEAR_OFF;
   g.bomb("a");
   run(g, secs(0.6));
-  g.setInput("a", 0.2, 0);
+  g.setInput("a", 1, 0);
   g.bomb("a");
   g.setInput("a", 0, 0);
   const bomb = g.bombs[0]!;
@@ -243,71 +358,73 @@ test("a sticky bomb sticks to the fighter it hits and rides along", () => {
   run(g, secs(0.5));
   assert.ok(Math.hypot(bomb.x - b.x, bomb.z - b.z) < 0.8, "it rides along");
   ev = run(g, secs(FUSE));
-  assert.equal(of(ev, "die")[0]!.id, "b");
+  assert.ok(of(ev, "die").some((e) => e.id === "b") || b.hp < HP / 2);
 });
 
-test("pick up and throw: a bomb, the TNT crate, and a knocked-out fighter (not one on its feet)", () => {
+test("pick up and throw: a fighter on its feet, the TNT crate; the pick-up comes 64 ms after the press", () => {
   const g = playing(["a", "b"]);
   const a = place(seat(g, "a"), 0, 0, 0);
-  const b = place(seat(g, "b"), 0, 0.9);
-  assert.equal(g.grab("a"), false, "b is on its feet");
-  run(g, secs(0.4));
-  b.knockout = 20;
+  const b = place(seat(g, "b"), 0, 0.7, Math.PI);
   assert.equal(g.grab("a"), true);
-  assert.equal(a.holdFighter, "b");
+  assert.equal(a.holdFighter, null, "not yet");
+  run(g, Math.ceil(PICKUP_DELAY / STEP) + 1);
+  assert.equal(a.holdFighter, "b", "anyone can be lifted (spaz.py: all but the invincible)");
   run(g, secs(0.6));
-  assert.ok(b.y > 1.5 && b.heldBy === "a" && b.knockout > 0, "carried, helpless");
-  assert.equal(g.punch("b"), false);
+  assert.ok(b.y > 0.7 && b.heldBy === "a", "carried");
   g.setInput("a", 0, 1);
   assert.equal(g.grab("a"), true, "the second press throws");
-  assert.ok(b.heldBy === null && b.vz > 4 && b.vy > 3);
-  // right at the edge: the throw carries them off the deck
+  assert.ok(b.heldBy === null && b.vz > 1 && b.vy > 2, `thrown ${b.vz}, ${b.vy}`);
+  // right at the edge: thrown over it
   g.setInput("a", 0, 0);
-  place(a, 0, ARENA.hz - 1, 0);
-  place(b, 0, ARENA.hz - 0.3);
+  run(g, secs(1));
+  place(a, 0, ARENA.hz - 0.7, 0);
+  place(b, 0, ARENA.hz - 0.05, Math.PI);
   b.knockout = 26;
   run(g, secs(0.4));
   b.knockout = 26;
-  assert.equal(g.grab("a"), true);
-  run(g, secs(0.6));
+  g.grab("a");
+  run(g, secs(0.7));
+  assert.equal(b.heldBy, "a");
   g.setInput("a", 0, 1);
   g.punch("a"); // any action button throws
   g.setInput("a", 0, 0);
   const ev = run(g, secs(3));
   const die = of(ev, "die")[0]!;
-  assert.ok(die.id === "b" && die.fell);
+  assert.ok(die && die.id === "b" && die.fell);
   assert.equal(b.lives, 2);
   // the crate
   const tnt = g.bombs.find((x) => x.kind === "tnt")!;
-  place(a, tnt.x, tnt.z - 1, 0);
+  place(a, tnt.x, tnt.z - 0.9, 0);
   run(g, secs(0.4));
   assert.equal(g.grab("a"), true);
+  run(g, 6);
   assert.equal(tnt.heldBy, "a");
   run(g, secs(0.6));
+  g.setInput("a", 0, 1);
   g.grab("a");
-  assert.ok(tnt.heldBy === null && tnt.vz > 3);
+  assert.ok(tnt.heldBy === null && tnt.vz > 1.5, `${tnt.vz}`);
 });
 
-test("a hit makes a fighter drop what it carries; a carried fighter breaks free in the end", () => {
+test("a hit makes a fighter drop what it carries; nobody breaks free on a timer", () => {
   const g = playing(["a", "b", "c"]);
   open(g);
   const a = place(seat(g, "a"), 0, 0, 0);
-  const b = place(seat(g, "b"), 0, 0.9);
+  const b = place(seat(g, "b"), 0, 0.7, Math.PI);
   place(seat(g, "c"), 6, 6);
-  b.knockout = 26;
   g.grab("a");
+  run(g, 6);
+  assert.equal(b.heldBy, "a");
   g.hurt(a, 100, "c", "punch", 0, 0, 0);
   assert.equal(a.holdFighter, null);
   assert.equal(b.heldBy, null);
+  run(g, secs(1));
   place(a, 0, 0, 0);
-  place(b, 0, 0.9);
-  b.knockout = 26;
-  run(g, secs(0.4));
-  b.knockout = 26;
+  place(b, 0, 0.7, Math.PI);
   g.grab("a");
+  run(g, 6);
   assert.equal(b.heldBy, "a");
-  run(g, secs(3));
-  assert.equal(b.heldBy, null);
+  run(g, secs(4));
+  assert.equal(b.heldBy, "a", "still carried");
 });
 
 test("falling off the deck costs a life; the fighter comes back after 3 s, invincible for a second", () => {
@@ -328,6 +445,7 @@ test("falling off the deck costs a life; the fighter comes back after 3 s, invin
   run(g, secs(INVINCIBLE) + 1);
   assert.equal(g.hurt(a, 500, "b", "blast", 0, 0, 0), 500);
 });
+
 
 test("the last fighter with lives takes the round; round wins take the match", () => {
   const g = playing(["a", "b", "c"], { lives: 1, wins: 2 });

@@ -17,6 +17,17 @@ const LINKS: [number, number][] = [
 const REST_LEN = LINKS.map(([a, b]) => Math.hypot(REST[a]!.x - REST[b]!.x, REST[a]!.y - REST[b]!.y, REST[a]!.z - REST[b]!.z) * SCALE);
 const PR = 0.11 * SCALE; // particle radius
 const ITERS = 4;
+/**
+ * Each particle's share of the body's mass, after Ballistica's core bodies (engine.ts): the head 0.46 kg, the torso
+ * 0.61 (neck and shoulders), the pelvis 0.33 (pelvis and hips); the limbs are display-only there (bg limbs), so light
+ * here: they flop round a heavy core. Inverse masses weight the constraints.
+ */
+const MASS = [0.46, 0.2, 0.11, 0.2, 0.2, 0.05, 0.05, 0.04, 0.04, 0.11, 0.11, 0.06, 0.06, 0.05, 0.05];
+const INV = MASS.map((m) => 1 / m);
+/** Ballistica's bodies have no air drag; this little keeps the solver calm. */
+const DRAG = 0.997;
+/** A body on the floor slides: body_friction_scale 0.1 (μ 0.12): what is left of its sideways step per contact. */
+const SLIDE = 0.88;
 /** How hard each joint is pulled to the pose while limp: the trunk follows the capsule, the limbs hang. */
 const TRUNK = new Set<number>([J.pelvis, J.neck, J.lSh, J.rSh, J.lHip, J.rHip]);
 
@@ -79,9 +90,9 @@ export class Body implements Poser {
 function collide(p: V3, q: V3) {
   if (p.y < PR && p.y > -0.6 && Math.abs(p.x) < ARENA.hx && Math.abs(p.z) < ARENA.hz) {
     p.y = PR;
-    // friction: lose most of the sideways motion on the ground
-    q.x = p.x - (p.x - q.x) * 0.5;
-    q.z = p.z - (p.z - q.z) * 0.5;
+    // friction: the core bodies slide on the deck
+    q.x = p.x - (p.x - q.x) * SLIDE;
+    q.z = p.z - (p.z - q.z) * SLIDE;
   }
   for (const b of ARENA.blocks) {
     if (p.y > b.h + PR) continue;
@@ -112,9 +123,9 @@ export function stepBodies(bodies: Body[]) {
     for (let j = 0; j < NJ; j++) {
       const p = P[j]!;
       const q = Q[j]!;
-      const vx = (p.x - q.x) * 0.985;
-      const vy = (p.y - q.y) * 0.985;
-      const vz = (p.z - q.z) * 0.985;
+      const vx = (p.x - q.x) * DRAG;
+      const vy = (p.y - q.y) * DRAG;
+      const vz = (p.z - q.z) * DRAG;
       q.x = p.x;
       q.y = p.y;
       q.z = p.z;
@@ -136,13 +147,15 @@ export function stepBodies(bodies: Body[]) {
         const dy = b.y - a.y;
         const dz = b.z - a.z;
         const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
-        const s = ((d - REST_LEN[l]!) / d) * 0.5;
-        a.x += dx * s;
-        a.y += dy * s;
-        a.z += dz * s;
-        b.x -= dx * s;
-        b.y -= dy * s;
-        b.z -= dz * s;
+        const wa = INV[link[0]]!;
+        const wb = INV[link[1]]!;
+        const s = (d - REST_LEN[l]!) / d / (wa + wb);
+        a.x += dx * s * wa;
+        a.y += dy * s * wa;
+        a.z += dz * s * wa;
+        b.x -= dx * s * wb;
+        b.y -= dy * s * wb;
+        b.z -= dz * s * wb;
       }
       if (!c.held) for (let j = 0; j < NJ; j++) collide(P[j]!, Q[j]!);
     }

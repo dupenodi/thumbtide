@@ -19,7 +19,7 @@ stick move
 
 button bomb
   label        "Bomb"
-  hint         "Light a bomb in your hands, then press again to throw it the way you push the stick. Push further to throw further."
+  hint         "Light a bomb in your hands, then press again to throw it the way you push the stick. Push further to throw further. Hold any button to run."
   icon         action
   style        primary
   shape        rounded
@@ -28,7 +28,7 @@ button bomb
 
 button punch
   label        "Punch"
-  hint         "Punch in front of you. A run-up hits much harder. With something in your hands, it throws."
+  hint         "Punch in front of you. Hold a button while you move to run: a running punch hits much harder. With something in your hands, it throws."
   icon         splat
   style        secondary
   shape        rounded
@@ -37,7 +37,7 @@ button punch
 
 button jump
   label        "Jump"
-  hint         "Hop over a bomb or onto a block."
+  hint         "Hop over a bomb, or onto a block with a run-up."
   icon         jump
   style        secondary
   shape        rounded
@@ -46,7 +46,7 @@ button jump
 
 button grab
   label        "Grab"
-  hint         "Pick up a bomb, the TNT crate or a knocked-out fighter in front of you. Press again to throw."
+  hint         "Pick up a bomb, the TNT crate or a fighter in front of you. Press again to throw."
   icon         special
   style        secondary
   shape        rounded
