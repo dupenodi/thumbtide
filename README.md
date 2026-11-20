@@ -19,6 +19,7 @@ point for a new game: open it with `/?game=sandbox`.
 This guide gets the project running on your computer, then shows how to build a game of your own. Two more docs:
 
 - [docs/lg-tv.md](docs/lg-tv.md): the LG TV app. The TV we test on, setup, how the app is built, performance, and fixes for freezes.
+- [docs/android-tv.md](docs/android-tv.md): the Android TV / Google TV app (TCL and others). Setup and commands.
 - [docs/notes.md](docs/notes.md): design rules, known issues and planned games. Read it before you design a game.
 
 ---
@@ -90,6 +91,7 @@ Run these from the repo root.
 | `pnpm typecheck` | TypeScript check across the whole repo |
 | `pnpm build` | Production build of the site into `web/dist` |
 | `pnpm tv` | Builds the TV page as an LG TV app and installs it (see [LG TV app](#lg-tv-app-optional)) |
+| `pnpm tv:android --tv=<TV IP>` | Builds the TV page as an Android TV app and installs it (see [Android TV app](#android-tv-app-optional)) |
 | `pnpm perf` | Frame-rate tests against the LG TV, in a sandbox or on the TV (see [Performance](#performance)) |
 | `pnpm --filter @thumbtide/web art <game>` | Generates poster art with Replicate (see [Art](#art)) |
 
@@ -509,6 +511,19 @@ pnpm tv --perf=cascade     # open straight into a game with computer players and
   built, so run `pnpm tv` again if it changes.
 - Our test TV is an entry-level LG 43SQ700S (webOS 22, Chromium 87). If a game is smooth there, it'll be smooth on most LG TVs.
 
+### Android TV app (optional)
+
+The same TV page as an app for Android TV and Google TV (our test TV is a TCL on Android TV 14). Setup, commands and
+how it works are in **[docs/android-tv.md](docs/android-tv.md)**. In short: turn on *Developer options → USB
+debugging* on the TV, install Android Studio on the computer (for the Android SDK and Java), then:
+
+```sh
+pnpm tv:android --tv=<TV IP>      # build it, install it over Wi-Fi and open it
+pnpm tv:android --build           # only build web/dist-android/thumbtide.apk
+```
+
+Like the LG app, it needs `pnpm dev` running on your computer, and a rebuild when the computer's address changes.
+
 ### Performance
 
 The aim is a steady 60 fps on an entry-level LG TV. `tools/perf` holds the tools; they are never part of the TV app
@@ -549,7 +564,7 @@ Nothing is deployed yet. When it is:
   The room logic (`server/src/rooms.ts`) doesn't depend on the socket library, so it can move to Cloudflare Durable
   Objects later.
 - For the TV app against a deployed setup, set `VITE_RELAY_URL` and `VITE_JOIN_URL` (`https://<your site>/join/`)
-  before `pnpm tv`. The TV app connects from a `file://` page, so `ALLOWED_ORIGINS` must allow that too.
+  before `pnpm tv` or `pnpm tv:android`. The TV apps connect from a `file://` page, so `ALLOWED_ORIGINS` must allow that too.
 
 ---
 

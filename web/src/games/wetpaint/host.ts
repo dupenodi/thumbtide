@@ -9,7 +9,7 @@ import { createFx } from "./fx.ts";
 import { createHud } from "./hud.ts";
 import { PaintView, type Quality } from "./paint/view.ts";
 import { fpsOverride, frameDrawn, setPerfExtras } from "../../shell/perf.ts";
-import { isWebOS } from "../../shell/tv.ts";
+import { isTV } from "../../shell/tv.ts";
 import { gameById } from "../registry.ts";
 import {
   PAINTS, POWERS, ROUND_SECONDS, TUNING, roundOverride,
@@ -43,8 +43,8 @@ const mount: HostMount = (ctx) => {
   const host = ctx.host as Host<WetPaintGame>;
   const params = new URLSearchParams(location.search);
   // TVs have phone-class graphics chips that also draw the TV's own menus: go easy on them
-  const quality: Quality = params.get("quality") === "low" || (isWebOS && params.get("quality") !== "high") ? "low" : "high";
-  const fps = fpsOverride() ?? (isWebOS ? 30 : 60); // 30fps on a TV; fps=60 lifts the cap, for tests at the target
+  const quality: Quality = params.get("quality") === "low" || (isTV && params.get("quality") !== "high") ? "low" : "high";
+  const fps = fpsOverride() ?? (isTV ? 30 : 60); // 30fps on a TV; fps=60 lifts the cap, for tests at the target
   const minFrameMs = fps < 60 ? 1000 / fps - 4 : 0;
   const simOptions = (s: Settings) => ({
     roundLength: roundOverride() ?? (Number(s.round) || ROUND_SECONDS),

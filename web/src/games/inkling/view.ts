@@ -5,7 +5,7 @@
 //    only on undo, clear and a new turn (the rules bump `inkRev`).
 //  - Everything else is DOM, rebuilt only when what it shows changes: the word blanks, the pencil timer (a
 //    transform), the score column and the sticky-note feed (a note slaps on once, with a small tilt).
-import { isWebOS } from "../../shell/tv.ts";
+import { isTV } from "../../shell/tv.ts";
 import { ASPECT, bakeGrid, drawStroke, LOOK, TIPS } from "./look.ts";
 import type { Inkling, Seat } from "./rules.ts";
 
@@ -105,7 +105,7 @@ export class Board {
     this.stage.style.transform = `translate(${(W - STAGE_W * s) / 2}px, ${(H - STAGE_H * s) / 2}px) scale(${s})`;
     // backing pixels: full DPR, but never past 1920 wide for the whole stage on the TV
     const dpr = window.devicePixelRatio || 1;
-    this.res = Math.max(0.5, Math.min(isWebOS ? 1 : 2, s * dpr));
+    this.res = Math.max(0.5, Math.min(isTV ? 1 : 2, s * dpr));
     const bw = Math.round(SHEET_W * this.res);
     const bh = Math.round(SHEET_H * this.res);
     for (const c of [this.grid, this.ink]) {

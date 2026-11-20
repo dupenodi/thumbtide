@@ -8,3 +8,4 @@ dist-tv
 dist-perf
 tools/perf/.cache
 tools/perf/captures
+dist-android

@@ -7,6 +7,7 @@
     "dev": "vite --host",
     "build": "vite build",
     "tv": "node scripts/tv.mjs",
+    "tv:android": "node scripts/android-tv.mjs",
     "art": "node --env-file=../.env.local scripts/art.mjs",
     "preview": "vite preview --host",
     "test": "node --import tsx --test src/games/*/*.test.ts"

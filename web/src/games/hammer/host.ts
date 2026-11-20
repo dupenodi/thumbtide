@@ -5,7 +5,7 @@
 import type { Host, HostPlayer } from "@thumbtide/sdk";
 import { colorFor } from "../../config.ts";
 import { audio } from "../../shell/sound.ts";
-import { isWebOS, startParam } from "../../shell/tv.ts";
+import { isTV, startParam } from "../../shell/tv.ts";
 import { frameDrawn, setPerfExtras } from "../../shell/perf.ts";
 import { profBegin, profEnd } from "../../shell/profiler.ts";
 import { makeTour } from "./tour.ts";
@@ -94,7 +94,7 @@ const mount: HostMount = (ctx) => {
   const stickTune: StickTune = { stick: spec.tune.stick ?? STICK_DEFAULTS.stick, steer: spec.tune.steer ?? STICK_DEFAULTS.steer, hold: spec.tune.hold ?? STICK_DEFAULTS.hold };
   const stickPush = (m: Machine, x: number, y: number) => stickPushFor(arena, m, x, y, stickTune);
 
-  const lite = isWebOS || !!startParam("lite");
+  const lite = isTV || !!startParam("lite");
   // lite (the TV): 15 joint passes instead of 30. Heavy chains cost about a third less per step; the mean chain
   // stretch goes from 0.05 to 0.1 px (measured, 4 orb maces + plates + a worm), which nobody can see.
   // perf A/B (perf builds only): passes=N joint passes, canvasw=W canvas width (min 320), hud=off, draw=off (the canvas keeps one picture)
@@ -126,7 +126,7 @@ const mount: HostMount = (ctx) => {
   // perf A/B (perf builds only): audio=synth (no samples, no file music), nomusic (no file music), nosamples
   const coinsOff = import.meta.env.VITE_PERF === "1" && startParam("coins") === "off";
   const audioAB = import.meta.env.VITE_PERF === "1" ? startParam("audio") : null;
-  const sound0 = createGameAudio(audio(), { lite: isWebOS || !!startParam("lite"), samples: audioAB !== "synth" && audioAB !== "nosamples", fileMusic: audioAB !== "synth" && audioAB !== "nomusic", bufferMusic: lite && audioAB !== "element" });
+  const sound0 = createGameAudio(audio(), { lite: isTV || !!startParam("lite"), samples: audioAB !== "synth" && audioAB !== "nosamples", fileMusic: audioAB !== "synth" && audioAB !== "nomusic", bufferMusic: lite && audioAB !== "element" });
   const sound = tour ? tour.wrapSound(sound0) : sound0;
   sound?.setMusicOn(ctx.settings().music !== false);
   /** The material of a machine's striking part, for the hit sound. */
@@ -154,7 +154,7 @@ const mount: HostMount = (ctx) => {
   const resAB = import.meta.env.VITE_PERF === "1" ? Math.max(0, Number(startParam("canvasw")) || 0) : 0;
   if (resAB && resAB < 320) throw new Error(`canvasw=${resAB}: give the canvas width in pixels (320 or more)`);
   const skipAB = import.meta.env.VITE_PERF === "1" && startParam("skip") ? new Set(startParam("skip")!.split("+")) : undefined;
-  const renderer = new Renderer(canvas, { maxDpr: isWebOS ? 1 : 2, maxWidth: resAB || (isWebOS ? 1280 : 4096), names: true, skip: skipAB });
+  const renderer = new Renderer(canvas, { maxDpr: isTV ? 1 : 2, maxWidth: resAB || (isTV ? 1280 : 4096), names: true, skip: skipAB });
 
   const fit = () => {
     const W = root.clientWidth;

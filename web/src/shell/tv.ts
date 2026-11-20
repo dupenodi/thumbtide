@@ -1,5 +1,6 @@
-// When the TV page runs as the LG webOS app: the remote's Back key, leaving the app, and keeping the TV's
-// screen saver away (everyone plays on their phones, so the remote sits idle for a whole game).
+// When the TV page runs as a TV app (LG webOS, or the Android TV app in web/tv/android): the remote's Back key,
+// leaving the app, and, on webOS, keeping the screen saver away (everyone plays on their phones, so the remote sits
+// idle for a whole game; the Android app keeps the screen on itself).
 // Elsewhere (a browser on a laptop or a TV), it only does Back keys.
 
 interface Bridge {
@@ -12,6 +13,13 @@ const w = window as unknown as {
 };
 
 export const isWebOS = !!w.PalmSystem || /Web0S|webOS/.test(navigator.userAgent);
+
+// The Android TV app (web/tv/android) loads this page in a WebView. It adds "ThumbtideAndroidTV" to the user agent
+// and a `ThumbtideTV` object with exit(), and turns the remote's Back button into an Escape key press.
+export const isAndroidTV = /ThumbtideAndroidTV/.test(navigator.userAgent);
+
+/** Running as a TV app (LG or Android TV): games use their lighter mode, and Back in the lobby leaves the app. */
+export const isTV = isWebOS || isAndroidTV;
 
 /** A start-up option: from the page's URL (?game=…), or, in the TV app, from what it was launched with. */
 export function startParam(name: string): string | null {
@@ -31,7 +39,9 @@ export const isBackKey = (e: KeyboardEvent) => BACK_KEYS.has(e.key) || e.keyCode
 
 /** Close the app and go back to the TV's home screen. */
 export function exitApp() {
+  const android = (window as unknown as { ThumbtideTV?: { exit?(): void } }).ThumbtideTV;
   if (w.PalmSystem?.platformBack) w.PalmSystem.platformBack();
+  else if (android?.exit) android.exit();
   else window.close();
 }
 

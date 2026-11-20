@@ -5,7 +5,7 @@ import type { Host } from "@thumbtide/sdk";
 import { shell } from "../../shell/host-state.ts";
 import { audio } from "../../shell/sound.ts";
 import { fpsOverride, frameDrawn, frameIdle, setPerfExtras } from "../../shell/perf.ts";
-import { isWebOS, startParam } from "../../shell/tv.ts";
+import { isTV, startParam } from "../../shell/tv.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount, type Settings } from "../types.ts";
 import { createAudio } from "./audio.ts";
@@ -46,7 +46,7 @@ const mount: HostMount = (ctx) => {
   };
   const params = new URLSearchParams(location.search);
   // TVs have phone-class graphics chips: no antialiasing, 30fps (fps=60 lifts the cap, for tests at the target)
-  const lite = params.get("quality") === "low" || (isWebOS && params.get("quality") !== "high");
+  const lite = params.get("quality") === "low" || (isTV && params.get("quality") !== "high");
   const fps = fpsOverride() ?? (lite ? 30 : 60);
   // Frame rate by state: full while anything moves; lower once the board has been still for a moment (pieces
   // only idle); lowest on the end screen once the cheer is over. A TV's graphics chip and fans get the rest.

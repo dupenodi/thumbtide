@@ -3,7 +3,7 @@
 // In the lobby of the TV app, Back leaves the app.
 import { juicy } from "../games/kit/juicy.ts";
 import type { ShellState } from "../games/types.ts";
-import { exitApp, isBackKey, isWebOS } from "./tv.ts";
+import { exitApp, isBackKey, isTV } from "./tv.ts";
 
 interface Actions {
   isLobby(): boolean;
@@ -17,7 +17,7 @@ interface Actions {
 export function createPauseMenu(a: Actions) {
   const el = document.createElement("div");
   // on the TV no backdrop blur: blurring the full 4K frame behind the menu is the costliest thing the compositor does
-  el.className = isWebOS ? "pm pm-lite" : "pm";
+  el.className = isTV ? "pm pm-lite" : "pm";
   el.hidden = true;
   document.body.appendChild(el);
 
@@ -75,7 +75,7 @@ export function createPauseMenu(a: Actions) {
 
   window.addEventListener("keydown", (e) => {
     if (a.isLobby()) {
-      if (isWebOS && isBackKey(e)) {
+      if (isTV && isBackKey(e)) {
         e.preventDefault();
         exitApp();
       }
