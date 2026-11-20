@@ -1,13 +1,11 @@
 import { parsePad } from "./kit/pad.ts";
 import { applyThumbs } from "./thumbs.ts";
 import type { GameDef } from "./types.ts";
-import blast3dPad from "./blast3d/blast3d.pad?raw";
 import cascadePad from "./cascade/cascade.pad?raw";
 import cultPad from "./cult/cult.pad?raw";
 import hammerPad from "./hammer/hammer.pad?raw";
 import sandboxPad from "./sandbox/sandbox.pad?raw";
 import inklingPad from "./inkling/inkling.pad?raw";
-import punchlinePad from "./punchline/punchline.pad?raw";
 import wetpaintPad from "./wetpaint/wetpaint.pad?raw";
 
 /** Every game on the platform. Modules are lazy-loaded so phones only download what they need. */
@@ -235,47 +233,6 @@ export const GAMES: GameDef[] = applyThumbs([
     controller: () => import("./hammer/controller.ts"),
   },
   {
-    id: "punchline",
-    title: "Punchline",
-    tagline: "Fill in the blank. Dark, filthy and funny.",
-    minPlayers: 1,
-    maxPlayers: 8,
-    colors: ["#5a0f1f", "#ffe7a3"],
-    glyph: "special",
-    controls: parsePad(punchlinePad, "punchline.pad"),
-    settings: [
-      {
-        key: "rounds",
-        label: "Rounds",
-        options: [
-          { value: 5, label: "5" },
-          { value: 8, label: "8" },
-          { value: 10, label: "10" },
-        ],
-        default: 8,
-      },
-      {
-        key: "time",
-        label: "Answer time",
-        options: [
-          { value: 45, label: "45 s" },
-          { value: 60, label: "60 s" },
-          { value: 90, label: "90 s" },
-        ],
-        default: 60,
-      },
-      { key: "family", label: "Family-friendly prompts only", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: false },
-      {
-        key: "bots",
-        label: "Computer players",
-        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
-        default: 0,
-      },
-    ],
-    host: () => import("./punchline/host.ts"),
-    controller: () => import("./punchline/controller.ts"),
-  },
-  {
     id: "inkling",
     title: "Inkling",
     tagline: "Draw the secret word on your phone. Everyone else guesses.",
@@ -319,35 +276,13 @@ export const GAMES: GameDef[] = applyThumbs([
     controller: () => import("./inkling/controller.ts"),
   },
   {
-    id: "blast3d",
-    title: "Blast Party",
-    tagline: "Punch, grab and bomb everyone off the floating deck.",
-    minPlayers: 1,
-    maxPlayers: 8,
-    colors: ["#f08a2c", "#4f9fdc"],
-    glyph: "action",
-    controls: parsePad(blast3dPad, "blast3d.pad"),
-    settings: [
-      { key: "lives", label: "Lives each round", options: [1, 2, 3, 5].map((n) => ({ value: n, label: String(n) })), default: 3 },
-      { key: "wins", label: "Round wins to take the match", options: [1, 2, 3].map((n) => ({ value: n, label: String(n) })), default: 2, applies: "now" },
-      { key: "powerups", label: "Power-up boxes", options: [{ value: true, label: "On" }, { value: false, label: "Off" }], default: true, applies: "now" },
-      {
-        key: "bots",
-        label: "Computer fighters",
-        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
-        default: 0,
-        applies: "now",
-      },
-    ],
-    host: () => import("./blast3d/host.ts"),
-    controller: () => import("./blast3d/controller.ts"),
-  },
-  {
     id: "sandbox",
     title: "Sandbox",
     tagline: "Check every phone is connected.",
     minPlayers: 1,
     maxPlayers: 16,
+    // A developer tool and the starter template for new games: not in the library, `?game=sandbox` still opens it.
+    hidden: true,
     colors: ["#3ec5ff", "#7c5cff"],
     glyph: "pulse",
     controls: parsePad(sandboxPad, "sandbox.pad"),

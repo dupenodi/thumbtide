@@ -10,8 +10,11 @@ Games so far:
 | **Wet Paint** | 1–8 | Tiny brushes race to cover an oil-paint canvas in their colour |
 | **Cult** | 5–8 (computers fill empty seats) | Hidden roles: the town votes in leaders while a secret cult tries to take over |
 | **Cascade** | 1–8 | Turn-based chain reactions on a grid, in three looks: Culture, Marbles, Reactor |
-| **Rotor Brawl** | 1–4 (computer players optional) | Flying machines swing heavy weapons on rods and chains. Last one flying wins |
-| **Sandbox** | any | A connection test: steer a dot, tap to pulse |
+| **Rotor Brawl** | 1–8 (computer players optional) | Flying machines swing heavy weapons on rods and chains. Last one flying wins |
+| **Inkling** | 1–8 (computer players optional) | One player draws the secret word on their phone, everyone else guesses |
+
+**Sandbox** (a connection test: steer a dot, tap to pulse) isn't in the library. It's a developer tool and the starting
+point for a new game: open it with `/?game=sandbox`.
 
 This guide gets the project running on your computer, then shows how to build a game of your own. Two more docs:
 

@@ -89,7 +89,7 @@
   display: inline-block; margin-left: 1vh; padding: 0.3vh 1.2vh; border-radius: 2vh; vertical-align: 0.2vh;
   background: rgba(243, 233, 210, 0.12); font-size: 0.75em;
 }
-.cf.cf-banner-on .cf-status { opacity: 0; }
+.cf.cf-banner-on .cf-status, .cf.cf-banner-on .cf-note { opacity: 0; }
 
 /* the seats */
 .cf-seats { margin: 0; padding: 0; list-style: none; display: flex; justify-content: center; gap: 1vw; }

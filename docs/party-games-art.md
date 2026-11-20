@@ -1,5 +1,8 @@
 # Party games: art directions
 
+> **Status (2026-11-20):** of these ten, only **Inkling** is still in the app. Blast Party and Punchline were cut in
+> the lineup review; the other seven were paused on 2026-11-18 (see docs/notes.md). Kept as a record.
+
 Ten new games (picked 2026-11-17). Each has its **own** visual identity (docs/notes.md: never reuse another game's
 or the lobby's style). All of them must look good on a 4K TV and still run on the LG TV (Chrome 79–87, 1.5 GB).
 Research behind this: flat vector party art (bright primaries, clean shapes, two-tone cel shading, soft oval ground
