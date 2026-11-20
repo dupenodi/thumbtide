@@ -51,7 +51,7 @@ These come from playtesting and the owner's feedback. Follow them unless you've 
 ## Known issues
 
 - **Needs a computer running.** The relay and phone page are served by `pnpm dev`. Nothing is deployed yet; see
-  [Deploy](../README.md#deploy) and the Cloudflare plan in [lg-tv.md](lg-tv.md#not-done-yet).
+  [Deploy](development.md#deploy) and the Cloudflare plan in [lg-tv.md](lg-tv.md#not-done-yet).
 - **The LG TV app got stuck once**, cause unknown. See [lg-tv.md](lg-tv.md#freezes-and-other-problems).
 - **Cascade's sound levels** haven't been tuned by ear yet (the clips are in `cascade/sounds/`, volumes in `cascade/audio.ts`).
 - **TV performance:** no game holds 60 fps on the TV yet. Rotor Brawl holds 55–58 fps on average with 3 computer

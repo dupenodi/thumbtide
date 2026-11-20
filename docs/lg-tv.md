@@ -161,7 +161,7 @@ app always uses the lighter mode. Rotor Brawl uses `?lite=1` instead.
 
 ## Performance on our TV
 
-Measure with `pnpm perf --tv` or `pnpm perf capture` (see [Performance](../README.md#performance) and
+Measure with `pnpm perf --tv` or `pnpm perf capture` (see [Performance](development.md#performance) and
 `.claude/skills/tv-perf/SKILL.md`). The first full capture is in
 `tools/perf/baselines/2026-11-13-lg-43sq700s.md`. With the 30fps caps lifted, no game held 60 fps then: the lobby
 ran at 29, Cascade at 30–46, and Wet Paint and Cult at about 9.

@@ -83,7 +83,7 @@ multi-second stalls. See `tools/perf/baselines/`.
   many small TV commands, then analyse offline. `capture` writes a lock (`/tmp/thumbtide-perf.lock` on the TV,
   15 min) and refuses to start if another run holds it; `--force` overrides — only if you know it is stale.
 - **TV reachability.** It drops off Wi-Fi when it sleeps; check `ping` / port 9922 first. Developer Mode
-  expires after ~50 h (extend in the Developer Mode app). Device setup: see README "LG TV app".
+  expires after ~50 h (extend in the Developer Mode app). Device setup: see docs/lg-tv.md.
 - **30 fps cap.** On webOS, Wet Paint and Cascade cap themselves at 30 fps. Every perf command passes `fps=60`
   (the target) unless you give `--fps=30`. Lifting the cap needs a `VITE_PERF=1` build.
 - **Slow start on the TV.** Wet Paint can take 25+ s from launch to steady frames (shader compiles ~60 ms each,
