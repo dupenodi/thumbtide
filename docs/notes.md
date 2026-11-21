@@ -20,6 +20,9 @@ These come from playtesting and the owner's feedback. Follow them unless you've 
 - **Cut in the lineup review (2026-11-20):** Punchline and Blast Party (the 3D BombSquad-style brawler) are removed;
   their last code is on branch `blast3d`. Sandbox is hidden from the library and kept as a developer tool and template.
 - **The lineup (2026-11-20):** Wet Paint, Cult, Cascade and Rotor Brawl (each getting a polish pass), and Inkling.
+  **Odd Word Out** (2026-11-21) joins it: a hidden-word social deduction game in two modes, Words (say one adjective)
+  and Jobs (say what happens in that job). Its look takes cues from the general principles in Jackbox's PP10 art blog
+  (flat blocky shapes, one focal point per screen, a colour per phase) but uses only its own characters and art.
 - Each game has its **own visual identity**. Don't reuse another game's style, or the lobby's, inside a game.
 - Don't explain the rules on screen. Label the controls; the **?** help sheet comes from the `.pad` file.
 - Motion is understated: something animates once, when it happens (a card slams down with a thud, a stamp, a dealt
