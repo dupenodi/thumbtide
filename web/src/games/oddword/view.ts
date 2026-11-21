@@ -53,7 +53,7 @@ export class Stage {
     this.join = join;
     this.el.dataset.phase = v.phase;
     this.chips.innerHTML =
-      (join.code ? `<span class="ow-chip join">${esc(join.at)} · <b>${esc(join.code)}</b></span>` : "") +
+      (join.code ? `<span class="ow-chip join">Room <b>${esc(join.code)}</b></span>` : "") +
       `<span class="ow-chip">${v.mode === "jobs" ? "Jobs" : "Words"}</span>` +
       (v.round ? `<span class="ow-chip">Round ${v.round}</span>` : "");
     this.drawMain(v);

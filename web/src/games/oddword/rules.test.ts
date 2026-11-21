@@ -167,19 +167,35 @@ test("reset starts again from round 1 with one deal", () => {
   assert.equal(g.order.length, 4);
 });
 
-test("a player who joins mid-round watches until the next round", () => {
+test("a player who joins while others describe plays now: common word, last to speak, and the round waits", () => {
   const g = table(3);
+  const odd = g.impostor;
+  const word = g.word;
   g.markDone(g.order[0]!);
+  g.addSeat("late", "Late");
+  assert.equal(g.order.at(-1), "late");
+  assert.equal(g.impostor, odd);
+  assert.equal(g.word, word);
+  assert.equal(g.ownView("late")!.word, word);
+  g.order.filter((id) => id !== "late").forEach((id) => g.markDone(id));
+  assert.equal(g.phase, "describe");
+  g.markDone("late");
+  assert.equal(g.phase, "vote");
+});
+
+test("a player who joins during the vote or the reveal plays from the next round", () => {
+  const g = table(3);
+  allDone(g);
   g.addSeat("late", "Late");
   assert.ok(!g.order.includes("late"));
   assert.equal(g.ownView("late")!.playing, false);
   assert.equal(g.ownView("late")!.word, "");
-  g.next(); // not in the reveal: nothing
-  assert.ok(!g.order.includes("late"));
-  allDone(g);
+  assert.ok(!g.targets(g.order[0]!).includes("late"));
   for (const id of g.order) g.vote(id, g.targets(id)[0]!);
+  assert.equal(g.phase, "reveal");
+  g.addSeat("later", "Later");
   g.next();
-  assert.ok(g.order.includes("late"));
+  assert.ok(g.order.includes("late") && g.order.includes("later"));
 });
 
 test("the odd one leaving ends the round; others leaving don't block it", () => {

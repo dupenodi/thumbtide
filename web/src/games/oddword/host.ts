@@ -2,8 +2,8 @@
 // shows. The rules live in rules.ts; the drawing in view.ts.
 //
 // Seats: players first, then computer players up to the "bots" setting (8 seats in all). A phone that drops or goes
-// to another app keeps its seat but doesn't hold up the round. Someone who joins before anyone is done plays this
-// round; later than that, from the next one.
+// to another app keeps its seat and the round waits for it. A newcomer plays at once while people describe, and from
+// the next round if they join during the vote or the reveal (rules.ts). The host menu's room lock stops new joins.
 import type { Host, HostPlayer } from "@thumbtide/sdk";
 import { joinDisplay } from "../../config.ts";
 import { shell } from "../../shell/host-state.ts";

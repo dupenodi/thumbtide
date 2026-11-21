@@ -7,9 +7,10 @@
 // and who went out (reveal), and the next round starts by itself.
 //
 // Ties: when two or more players share the most votes, nobody goes out (and the odd one gets away).
+// Joining: before anyone is done, the round is dealt again with the newcomer in; later while people describe, they
+// join with the common word and speak last; while voting or in the reveal, they play from the next round.
 // Away or dropped phones are waited for (a dropped phone that doesn't come back leaves after 60 s, and the host can
-// remove a player from the host menu); only a player who leaves stops counting. People who join before anyone is done play this round
-// (with the common word); later than that, from the next round.
+// remove a player from the host menu); only a player who leaves stops counting.
 import { SEAT_COLORS, type Hint, type OddOwn, type OddShared, type Phase, type Reveal, type SeatView } from "./shared.ts";
 import { DECKS, type Mode, type Pair } from "./words.ts";
 
@@ -108,6 +109,12 @@ export class OddWord {
     // the round has only just started (nobody is done yet): deal it again with them in, a new pair and a new odd
     // one, so the first to join isn't always the odd one (anyone who already looked sees a fresh word)
     else if (this.phase === "describe" && !this.done.size) this.deal();
+    // mid-round, while people describe: join now with the common word, last in the speaking order
+    else if (this.phase === "describe") {
+      this.order.push(id);
+      if (bot) this.scheduleBot(id);
+    }
+    // voting or the reveal: from the next round
     return true;
   }
 
