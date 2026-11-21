@@ -6,6 +6,7 @@ import cultPad from "./cult/cult.pad?raw";
 import hammerPad from "./hammer/hammer.pad?raw";
 import sandboxPad from "./sandbox/sandbox.pad?raw";
 import inklingPad from "./inkling/inkling.pad?raw";
+import oddwordPad from "./oddword/oddword.pad?raw";
 import wetpaintPad from "./wetpaint/wetpaint.pad?raw";
 
 /** Every game on the platform. Modules are lazy-loaded so phones only download what they need. */
@@ -274,6 +275,45 @@ export const GAMES: GameDef[] = applyThumbs([
     ],
     host: () => import("./inkling/host.ts"),
     controller: () => import("./inkling/controller.ts"),
+  },
+  {
+    id: "oddword",
+    title: "Odd Word Out",
+    tagline: "Everyone has the same secret word. Almost everyone.",
+    minPlayers: 1,
+    maxPlayers: 8,
+    colors: ["#ff7a3d", "#1d1236"],
+    glyph: "eye",
+    controls: parsePad(oddwordPad, "oddword.pad"),
+    settings: [
+      {
+        key: "mode",
+        label: "Mode",
+        options: [
+          { value: "words", label: "Words (say an adjective)" },
+          { value: "jobs", label: "Jobs (say what happens there)" },
+        ],
+        default: "words",
+      },
+      {
+        key: "hint",
+        label: "The odd one gets",
+        options: [
+          { value: "decoy", label: "A close word (doesn't know)" },
+          { value: "blank", label: "No word (knows)" },
+        ],
+        default: "decoy",
+      },
+      {
+        key: "bots",
+        label: "Computer players",
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : "None" })),
+        default: 0,
+        applies: "now",
+      },
+    ],
+    host: () => import("./oddword/host.ts"),
+    controller: () => import("./oddword/controller.ts"),
   },
   {
     id: "sandbox",
