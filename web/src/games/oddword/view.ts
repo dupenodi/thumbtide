@@ -25,6 +25,7 @@ export class Stage {
   private revealAt = 0;
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
   private last: { v: OddShared; watching: string[] } | null = null;
+  private join = { code: "", at: "" };
 
   constructor(root: HTMLElement) {
     this.el = document.createElement("div");
@@ -46,10 +47,15 @@ export class Stage {
     this.chips = $(".ow-chips");
   }
 
-  sync(v: OddShared, watching: string[]) {
+  /** The room code and where phones go, always on screen (people join mid-game). */
+  sync(v: OddShared, watching: string[], join: { code: string; at: string }) {
     this.last = { v, watching };
+    this.join = join;
     this.el.dataset.phase = v.phase;
-    this.chips.innerHTML = `<span class="ow-chip">${v.mode === "jobs" ? "Jobs" : "Words"}</span><span class="ow-chip">Round ${v.round}</span>`;
+    this.chips.innerHTML =
+      (join.code ? `<span class="ow-chip join">${esc(join.at)} · <b>${esc(join.code)}</b></span>` : "") +
+      `<span class="ow-chip">${v.mode === "jobs" ? "Jobs" : "Words"}</span>` +
+      (v.round ? `<span class="ow-chip">Round ${v.round}</span>` : "");
     this.drawMain(v);
     this.drawSeats(v);
     this.drawCount(v, watching);
@@ -64,7 +70,7 @@ export class Stage {
 
   // ------------------------------------------------------------------ the focal card
   private drawMain(v: OddShared) {
-    const key = `${v.phase}:${v.round}:${v.mode}:${v.order.length ? "" : "empty"}`;
+    const key = `${v.phase}:${v.round}:${v.mode}:${v.order.length ? "" : `empty:${this.join.code}`}`;
     if (key === this.mainKey) return;
     this.mainKey = key;
     if (v.phase === "reveal") {
@@ -74,7 +80,8 @@ export class Stage {
       this.settleTimer = setTimeout(() => this.last && this.drawSeats(this.last.v), REVEAL_SETTLE_MS + 50);
     }
     if (!v.order.length) {
-      this.main.innerHTML = `<div class="ow-card ow-banner"><h1>Waiting for players</h1></div>`;
+      const how = this.join.code ? `<p>Go to <b>${esc(this.join.at)}</b> on your phone and enter <b class="ow-code">${esc(this.join.code)}</b></p>` : "";
+      this.main.innerHTML = `<div class="ow-card ow-banner"><h1>Waiting for players</h1>${how}</div>`;
       return;
     }
     if (v.phase === "describe") {
@@ -151,6 +158,7 @@ export class Stage {
 
   private drawCount(v: OddShared, watching: string[]) {
     const watch = watching.length ? ` · ${watching.map(esc).join(", ")} watching` : "";
+    this.count.style.visibility = v.order.length ? "" : "hidden";
     if (v.phase === "describe") this.count.innerHTML = `<b>${v.done.length}</b> of ${v.order.length} done${watch}`;
     else if (v.phase === "vote") this.count.innerHTML = `<b>${v.voted.length}</b> of ${v.order.length} voted${watch}`;
     else this.count.innerHTML = `Next round in <b>${v.next}</b>${watch}`;

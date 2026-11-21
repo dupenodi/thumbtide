@@ -5,6 +5,7 @@
 // to another app keeps its seat but doesn't hold up the round. Someone who joins before anyone is done plays this
 // round; later than that, from the next one.
 import type { Host, HostPlayer } from "@thumbtide/sdk";
+import { joinDisplay } from "../../config.ts";
 import { shell } from "../../shell/host-state.ts";
 import { gameById } from "../registry.ts";
 import { isSys, type HostMount, type Settings } from "../types.ts";
@@ -79,7 +80,7 @@ const mount: HostMount = (ctx) => {
       sentOwn.set(p.id, k);
       host.setOwn(p.id, own);
     }
-    stage.sync(shared, watching());
+    stage.sync(shared, watching(), { code: host.code, at: joinDisplay() });
   }
 
   const tellAll = (msg: OddGame["toController"], who?: (id: string) => boolean) => {
@@ -110,6 +111,7 @@ const mount: HostMount = (ctx) => {
       fillBots();
       flush();
     }),
+    host.on("room", () => publish()),
     host.on("rejoin", (p) => {
       seat(p);
       game.setAway(p.id, awayOf(p));
